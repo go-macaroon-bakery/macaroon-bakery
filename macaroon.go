@@ -1,7 +1,7 @@
-// The macaroon package implements macaroons as described in
-// the paper "Macaroons: Cookies with Contextual Caveats for
-// Decentralized Authorization in the Cloud"
-// (http://theory.stanford.edu/~ataly/Papers/macaroons.pdf)
+// WARNING
+//
+// The macaroon package is deprecated at this import path.
+// Please use gopkg.in/macaroon.v1 instead.
 package macaroon
 
 import (

@@ -10,8 +10,8 @@ import (
 	"path"
 
 	"github.com/juju/errgo"
+	"gopkg.in/macaroon.v1"
 
-	"github.com/rogpeppe/macaroon"
 	"github.com/rogpeppe/macaroon/bakery"
 )
 

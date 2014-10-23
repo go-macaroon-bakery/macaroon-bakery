@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	gc "gopkg.in/check.v1"
+	"gopkg.in/macaroon.v1"
 
-	"github.com/rogpeppe/macaroon"
 	"github.com/rogpeppe/macaroon/bakery"
 )
 

@@ -9,8 +9,8 @@ import (
 
 	"github.com/juju/errgo"
 	"github.com/juju/utils/jsonhttp"
+	"gopkg.in/macaroon.v1"
 
-	"github.com/rogpeppe/macaroon"
 	"github.com/rogpeppe/macaroon/bakery"
 	"github.com/rogpeppe/macaroon/bakery/checkers"
 	"github.com/rogpeppe/macaroon/bakery/example/meeting"

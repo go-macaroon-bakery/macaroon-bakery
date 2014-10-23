@@ -5,8 +5,7 @@ import (
 
 	"github.com/juju/errgo"
 	"github.com/juju/utils/jsonhttp"
-
-	"github.com/rogpeppe/macaroon"
+	"gopkg.in/macaroon.v1"
 )
 
 // ErrorCode holds an error code that classifies

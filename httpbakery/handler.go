@@ -5,7 +5,7 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/rogpeppe/macaroon"
+	"gopkg.in/macaroon.v1"
 )
 
 type dischargeRequestedResponse struct {

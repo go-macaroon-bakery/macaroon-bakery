@@ -10,7 +10,7 @@ import (
 	"log"
 	"sync"
 
-	"github.com/rogpeppe/macaroon"
+	"gopkg.in/macaroon.v1"
 )
 
 const debug = false
