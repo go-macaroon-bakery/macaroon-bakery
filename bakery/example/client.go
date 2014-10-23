@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 
 	"github.com/juju/errgo"
 
@@ -24,7 +25,7 @@ func clientRequest(serverEndpoint string) (string, error) {
 	// when required, and retrying the request
 	// when necessary.
 
-	visitWebPage := func(url string) error {
+	visitWebPage := func(url *url.URL) error {
 		fmt.Printf("please visit this web page:\n")
 		fmt.Printf("\t%s\n", url)
 		return nil

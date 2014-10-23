@@ -13,8 +13,8 @@ import (
 	"strings"
 
 	"code.google.com/p/go.net/publicsuffix"
+	"gopkg.in/macaroon.v1"
 
-	"github.com/rogpeppe/macaroon"
 	"github.com/rogpeppe/macaroon/bakery"
 )
 
@@ -68,7 +68,7 @@ type cookieLogger struct {
 }
 
 func (j *cookieLogger) SetCookies(u *url.URL, cookies []*http.Cookie) {
-	log.Printf("%p setting %d cookies for %s", j.CookieJar, len(cookies), u)	
+	log.Printf("%p setting %d cookies for %s", j.CookieJar, len(cookies), u)
 	for i, c := range cookies {
 		log.Printf("\t%d. path %s; name %s", i, c.Path, c.Name)
 	}

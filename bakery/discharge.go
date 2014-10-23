@@ -4,8 +4,7 @@ import (
 	"fmt"
 
 	"github.com/juju/errgo"
-
-	"github.com/rogpeppe/macaroon"
+	"gopkg.in/macaroon.v1"
 )
 
 // NewMacaroon mints a new macaroon with the given id and caveats.
