@@ -22,12 +22,21 @@ import (
 	"log"
 	"net"
 	"net/http"
+
+	"github.com/rogpeppe/macaroon/caveatid"
 )
 
 func main() {
-	authEndpoint := mustServe(authService)
+	key, err := caveatid.GenerateKey()
+	if err != nil {
+		log.Fatalf("cannot generate auth service key pair: %v", err)
+	}
+	authPublicKey := key.PublicKey()
+	authEndpoint := mustServe(func(endpoint string) (http.Handler, error) {
+		return authService(endpoint, key)
+	})
 	serverEndpoint := mustServe(func(endpoint string) (http.Handler, error) {
-		return targetService(endpoint, authEndpoint)
+		return targetService(endpoint, authEndpoint, authPublicKey)
 	})
 	resp, err := clientRequest(serverEndpoint)
 	if err != nil {

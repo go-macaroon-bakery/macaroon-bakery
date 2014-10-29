@@ -137,6 +137,11 @@ type thirdPartyCaveatIdRecord struct {
 	Condition string
 }
 
+type caveatIdResponse struct {
+	CaveatId string
+	Error    string
+}
+
 func (d *dischargeHandler) serveCreate(w http.ResponseWriter, req *http.Request) (interface{}, error) {
 	req.ParseForm()
 	condition := req.Form.Get("condition")

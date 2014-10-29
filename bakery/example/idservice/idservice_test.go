@@ -15,6 +15,7 @@ import (
 
 	"github.com/rogpeppe/macaroon/bakery"
 	"github.com/rogpeppe/macaroon/bakery/example/idservice"
+	"github.com/rogpeppe/macaroon/caveatid"
 	"github.com/rogpeppe/macaroon/httpbakery"
 )
 
@@ -26,7 +27,7 @@ type suite struct {
 var _ = gc.Suite(&suite{})
 
 func (s *suite) SetUpSuite(c *gc.C) {
-	key, err := httpbakery.GenerateKey()
+	key, err := caveatid.GenerateKey()
 	c.Assert(err, gc.IsNil)
 	s.authPublicKey = key.PublicKey()
 	s.authEndpoint = serve(c, func(endpoint string) (http.Handler, error) {

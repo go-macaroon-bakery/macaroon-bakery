@@ -16,6 +16,7 @@ import (
 	"gopkg.in/macaroon.v1"
 
 	"github.com/rogpeppe/macaroon/bakery"
+	"github.com/rogpeppe/macaroon/caveatid"
 )
 
 // Service represents a service that can use client-provided
@@ -24,13 +25,14 @@ import (
 // to create third-party caveats.
 type Service struct {
 	*bakery.Service
-	caveatIdEncoder *caveatIdEncoder
-	key             KeyPair
+	publicKeyRing   *PublicKeyRing
+	caveatIdEncoder *caveatid.BoxEncoder
+	key             *caveatid.KeyPair
 }
 
 // Key returns the service's private/public key pair.
-func (svc *Service) Key() *KeyPair {
-	return &svc.key
+func (svc *Service) Key() *caveatid.KeyPair {
+	return svc.key
 }
 
 // DefaultHTTPClient is an http.Client that ensures that
@@ -87,7 +89,7 @@ type NewServiceParams struct {
 	// Key holds the private/public key pair for
 	// the service to use. If it is nil, a new key pair
 	// will be generated.
-	Key *KeyPair
+	Key *caveatid.KeyPair
 
 	// HTTPClient holds the http client to use when
 	// creating new third party caveats for third
@@ -98,25 +100,27 @@ type NewServiceParams struct {
 // NewService returns a new Service.
 func NewService(p NewServiceParams) (*Service, error) {
 	if p.Key == nil {
-		key, err := GenerateKey()
+		key, err := caveatid.GenerateKey()
 		if err != nil {
 			return nil, fmt.Errorf("cannot generate key: %v", err)
 		}
 		p.Key = key
 	}
-	log.Printf("new service at %s with public key %x", p.Location, p.Key.public[:])
+	log.Printf("new service at %s with public key %x", p.Location, p.Key.PublicKey()[:])
 	if p.HTTPClient == nil {
 		p.HTTPClient = DefaultHTTPClient
 	}
-	enc := newCaveatIdEncoder(p.HTTPClient, p.Key)
+	publicKeyRing := NewPublicKeyRing()
+	enc := caveatid.NewBoxEncoder(publicKeyRing.PublicKeyForLocation, p.Key)
 	return &Service{
 		Service: bakery.NewService(bakery.NewServiceParams{
 			Location:        p.Location,
 			Store:           p.Store,
 			CaveatIdEncoder: enc,
 		}),
+		publicKeyRing:   publicKeyRing,
 		caveatIdEncoder: enc,
-		key:             *p.Key,
+		key:             p.Key,
 	}, nil
 }
 
@@ -133,7 +137,7 @@ func NewService(p NewServiceParams) (*Service, error) {
 // by matching host name exactly and the path by
 // full path name elements only.)
 func (svc *Service) AddPublicKeyForLocation(loc string, prefix bool, publicKey *[32]byte) {
-	svc.caveatIdEncoder.addPublicKeyForLocation(loc, prefix, publicKey)
+	svc.publicKeyRing.addPublicKeyForLocation(loc, prefix, publicKey)
 }
 
 // Discharger returns a discharger that uses the receiving service
@@ -143,7 +147,7 @@ func (svc *Service) AddPublicKeyForLocation(loc string, prefix bool, publicKey *
 func (svc *Service) Discharger(checker bakery.ThirdPartyChecker) *bakery.Discharger {
 	return &bakery.Discharger{
 		Checker: checker,
-		Decoder: newCaveatIdDecoder(svc.Store(), svc.Key()),
+		Decoder: caveatid.NewBoxDecoder(svc.Key()),
 		Factory: svc,
 	}
 }
