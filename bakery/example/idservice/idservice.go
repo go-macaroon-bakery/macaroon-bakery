@@ -287,8 +287,7 @@ func (h *handler) waitHandler(_ http.Header, req *http.Request) (interface{}, er
 	}
 	// Now that we've verified the user, we can check again to see
 	// if we can discharge the original caveat.
-	discharger := h.svc.Discharger(ctxt)
-	macaroon, err := discharger.Discharge(caveat.CaveatId)
+	macaroon, err := h.svc.Discharge(ctxt, caveat.CaveatId)
 	if err != nil {
 		return nil, errgo.Mask(err)
 	}
