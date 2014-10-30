@@ -8,7 +8,6 @@ import (
 
 	"github.com/rogpeppe/macaroon/bakery"
 	"github.com/rogpeppe/macaroon/bakery/checkers"
-	"github.com/rogpeppe/macaroon/caveatid"
 	"github.com/rogpeppe/macaroon/httpbakery"
 )
 
@@ -22,15 +21,22 @@ type targetServiceHandler struct {
 // targetService implements a "target service", representing
 // an arbitrary web service that wants to delegate authorization
 // to third parties.
-func targetService(endpoint, authEndpoint string, authPK *[caveatid.KeyLen]byte) (http.Handler, error) {
-	svc, err := httpbakery.NewService(httpbakery.NewServiceParams{
+func targetService(endpoint, authEndpoint string, authPK *bakery.PublicKey) (http.Handler, error) {
+	key, err := bakery.GenerateKey()
+	if err != nil {
+		return nil, err
+	}
+	pkLocator := bakery.NewPublicKeyRing()
+	svc, err := httpbakery.NewService(bakery.NewServiceParams{
+		Key:      key,
 		Location: endpoint,
+		Locator:  pkLocator,
 	})
 	if err != nil {
 		return nil, err
 	}
 	log.Printf("adding public key for location %s: %x", authEndpoint, authPK[:])
-	svc.AddPublicKeyForLocation(authEndpoint, true, authPK)
+	pkLocator.AddPublicKeyForLocation(authEndpoint, true, authPK)
 	mux := http.NewServeMux()
 	srv := &targetServiceHandler{
 		svc:          svc,

@@ -4,17 +4,17 @@ import (
 	"net/http"
 
 	"github.com/rogpeppe/macaroon/bakery"
-	"github.com/rogpeppe/macaroon/caveatid"
 	"github.com/rogpeppe/macaroon/httpbakery"
 )
 
 // authService implements an authorization service,
 // that can discharge third-party caveats added
 // to other macaroons.
-func authService(endpoint string, key *caveatid.KeyPair) (http.Handler, error) {
-	svc, err := httpbakery.NewService(httpbakery.NewServiceParams{
+func authService(endpoint string, key *bakery.KeyPair) (http.Handler, error) {
+	svc, err := httpbakery.NewService(bakery.NewServiceParams{
 		Location: endpoint,
 		Key:      key,
+		Locator:  bakery.NewPublicKeyRing(),
 	})
 	if err != nil {
 		return nil, err

@@ -16,7 +16,6 @@ import (
 	"gopkg.in/macaroon.v1"
 
 	"github.com/rogpeppe/macaroon/bakery"
-	"github.com/rogpeppe/macaroon/caveatid"
 )
 
 // Service represents a service that can use client-provided
@@ -25,14 +24,6 @@ import (
 // to create third-party caveats.
 type Service struct {
 	*bakery.Service
-	publicKeyRing   *PublicKeyRing
-	caveatIdEncoder *caveatid.BoxEncoder
-	key             *caveatid.KeyPair
-}
-
-// Key returns the service's private/public key pair.
-func (svc *Service) Key() *caveatid.KeyPair {
-	return svc.key
 }
 
 // DefaultHTTPClient is an http.Client that ensures that
@@ -77,79 +68,13 @@ func (j *cookieLogger) SetCookies(u *url.URL, cookies []*http.Cookie) {
 	j.CookieJar.SetCookies(u, cookies)
 }
 
-// NewServiceParams holds parameters for the NewService call.
-type NewServiceParams struct {
-	// Location holds the location of the service.
-	// Macaroons minted by the service will have this location.
-	Location string
-
-	// Store defines where macaroons are stored.
-	Store bakery.Storage
-
-	// Key holds the private/public key pair for
-	// the service to use. If it is nil, a new key pair
-	// will be generated.
-	Key *caveatid.KeyPair
-
-	// HTTPClient holds the http client to use when
-	// creating new third party caveats for third
-	// parties. If it is nil, DefaultHTTPClient will be used.
-	HTTPClient *http.Client
-}
-
 // NewService returns a new Service.
-func NewService(p NewServiceParams) (*Service, error) {
-	if p.Key == nil {
-		key, err := caveatid.GenerateKey()
-		if err != nil {
-			return nil, fmt.Errorf("cannot generate key: %v", err)
-		}
-		p.Key = key
+func NewService(p bakery.NewServiceParams) (*Service, error) {
+	svc, err := bakery.NewService(p)
+	if err != nil {
+		return nil, err
 	}
-	log.Printf("new service at %s with public key %x", p.Location, p.Key.PublicKey()[:])
-	if p.HTTPClient == nil {
-		p.HTTPClient = DefaultHTTPClient
-	}
-	publicKeyRing := NewPublicKeyRing()
-	enc := caveatid.NewBoxEncoder(publicKeyRing.PublicKeyForLocation, p.Key)
-	return &Service{
-		Service: bakery.NewService(bakery.NewServiceParams{
-			Location:        p.Location,
-			Store:           p.Store,
-			CaveatIdEncoder: enc,
-		}),
-		publicKeyRing:   publicKeyRing,
-		caveatIdEncoder: enc,
-		key:             p.Key,
-	}, nil
-}
-
-// AddPublicKeyForLocation specifies that third party caveats
-// for the given location will be encrypted with the given public
-// key. If prefix is true, any locations with loc as a prefix will
-// be also associated with the given key. The longest prefix
-// match will be chosen.
-// TODO(rog) perhaps string might be a better representation
-// of public keys?
-// TODO(rog) strict string prefix is bad when locations
-// are URLs. We should probably parse them as URLs
-// and dispatch in a more intelligent way (for example
-// by matching host name exactly and the path by
-// full path name elements only.)
-func (svc *Service) AddPublicKeyForLocation(loc string, prefix bool, publicKey *[32]byte) {
-	svc.publicKeyRing.addPublicKeyForLocation(loc, prefix, publicKey)
-}
-
-// Discharger returns a discharger that uses the receiving service
-// to create its macaroons and to decode third-party caveat ids.
-// The decoded caveat ids are checked using the provided
-// checker.
-func (svc *Service) Discharger(checker bakery.ThirdPartyChecker) *bakery.Discharger {
-	return &bakery.Discharger{
-		Checker: checker,
-		Decoder: caveatid.NewBoxDecoder(svc.Key()),
-		Factory: svc,
-	}
+	return &Service{Service: svc}, nil
 }
 
 // NewRequest returns a new request, converting cookies from the

@@ -19,25 +19,22 @@ type Discharger struct {
 	// Checker is used to check the caveat's condition.
 	Checker ThirdPartyChecker
 
-	// Decoder is used to decode the caveat id.
-	Decoder CaveatIdDecoder
-
 	// Factory is used to create the macaroon.
 	// Note that *Service implements NewMacarooner.
 	Factory NewMacarooner
+
+	// boxDecoder is used to decode the caveat id.
+	decoder *boxDecoder
 }
 
-// Discharge creates a macaroon that discharges the third party
-// caveat with the given id. The id should have been created
-// earlier with a matching CaveatIdEncoder.
-// The condition implicit in the id is checked for validity
-// using d.Checker, and then if valid, a new macaroon
-// is minted which discharges the caveat, and
-// can eventually be associated with a client request using
-// AddClientMacaroon.
+// Discharge creates a macaroon that discharges the third party caveat with the
+// given id. The id should have been created earlier by a Service.  The
+// condition implicit in the id is checked for validity using d.Checker, and
+// then if valid, a new macaroon is minted which discharges the caveat, and can
+// eventually be associated with a client request using AddClientMacaroon.
 func (d *Discharger) Discharge(id string) (*macaroon.Macaroon, error) {
 	logf("server attempting to discharge %q", id)
-	rootKey, condition, err := d.Decoder.DecodeCaveatId(id)
+	rootKey, condition, err := d.decoder.decodeCaveatId(id)
 	if err != nil {
 		return nil, fmt.Errorf("discharger cannot decode caveat id: %v", err)
 	}

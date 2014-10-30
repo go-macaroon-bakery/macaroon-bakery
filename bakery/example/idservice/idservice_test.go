@@ -15,19 +15,18 @@ import (
 
 	"github.com/rogpeppe/macaroon/bakery"
 	"github.com/rogpeppe/macaroon/bakery/example/idservice"
-	"github.com/rogpeppe/macaroon/caveatid"
 	"github.com/rogpeppe/macaroon/httpbakery"
 )
 
 type suite struct {
 	authEndpoint  string
-	authPublicKey *[32]byte
+	authPublicKey *bakery.PublicKey
 }
 
 var _ = gc.Suite(&suite{})
 
 func (s *suite) SetUpSuite(c *gc.C) {
-	key, err := caveatid.GenerateKey()
+	key, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
 	s.authPublicKey = key.PublicKey()
 	s.authEndpoint = serve(c, func(endpoint string) (http.Handler, error) {
@@ -43,10 +42,11 @@ func (s *suite) SetUpSuite(c *gc.C) {
 					},
 				},
 			},
-			Service: httpbakery.NewServiceParams{
+			Service: bakery.NewServiceParams{
 				Location: endpoint,
 				Store:    bakery.NewMemStorage(),
 				Key:      key,
+				Locator:  bakery.NewPublicKeyRing(),
 			},
 		})
 	})

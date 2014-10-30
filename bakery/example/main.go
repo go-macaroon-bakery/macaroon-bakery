@@ -23,11 +23,11 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/rogpeppe/macaroon/caveatid"
+	"github.com/rogpeppe/macaroon/bakery"
 )
 
 func main() {
-	key, err := caveatid.GenerateKey()
+	key, err := bakery.GenerateKey()
 	if err != nil {
 		log.Fatalf("cannot generate auth service key pair: %v", err)
 	}

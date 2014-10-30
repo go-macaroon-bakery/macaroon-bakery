@@ -41,7 +41,7 @@ type UserInfo struct {
 
 // Params holds parameters for New.
 type Params struct {
-	Service httpbakery.NewServiceParams
+	Service bakery.NewServiceParams
 	Users   map[string]*UserInfo
 }
 
