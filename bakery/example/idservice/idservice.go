@@ -7,8 +7,8 @@ import (
 	"log"
 	"net/http"
 
-	"gopkg.in/errgo.v1"
 	"github.com/juju/utils/jsonhttp"
+	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v1"
 
 	"github.com/rogpeppe/macaroon/bakery"
