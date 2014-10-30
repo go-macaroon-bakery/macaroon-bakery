@@ -1,0 +1,6 @@
+code.google.com/p/go.crypto	hg	228579b1f8ccfc93ed9f1709e32e8361ffc9a7ae	229
+code.google.com/p/go.net	hg	c17ad62118ea511e1051721b429779fa40bddc74	116
+github.com/juju/utils	git	28f1fcf3aec9e481fa9fd7020d0b64c62fb30baf	
+gopkg.in/check.v1	git	f74cd4712c294b0b898bc694214563d14caf3b76	
+gopkg.in/errgo.v1	git	81357a83344ddd9f7772884874e5622c2a3da21c	
+gopkg.in/macaroon.v1	git	cca9c60024946c02129e3788d997cd00cd5a06ae	

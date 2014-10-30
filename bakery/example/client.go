@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/juju/errgo"
+	"gopkg.in/errgo.v1"
 
 	"github.com/rogpeppe/macaroon/httpbakery"
 )
