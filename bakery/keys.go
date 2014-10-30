@@ -27,7 +27,7 @@ type Key [KeyLen]byte
 // caveat or macaroon location.
 type PublicKeyLocator interface {
 	// PublicKeyForLocation returns the public key matching the caveat or
-	// macaroon location. Returns ErrNotFound if no match is found.
+	// macaroon location. It returns ErrNotFound if no match is found.
 	PublicKeyForLocation(loc string) (*PublicKey, error)
 }
 
@@ -47,8 +47,8 @@ func (m PublicKeyLocatorMap) PublicKeyForLocation(loc string) (*PublicKey, error
 // KeyPair holds a public/private pair of keys.
 // TODO(rog) marshal/unmarshal functions for KeyPair
 type KeyPair struct {
-	public  PublicKey
-	private Key
+	Public  PublicKey
+	Private Key
 }
 
 // GenerateKey generates a new key pair.
@@ -61,21 +61,6 @@ func GenerateKey() (*KeyPair, error) {
 	key.public = PublicKey(*pub)
 	key.private = *priv
 	return &key, nil
-}
-
-// PublicKey returns the public part of the key pair.
-func (key *KeyPair) PublicKey() *PublicKey {
-	return &key.public
-}
-
-// PrivateKey returns the private part of the key pair.
-func (key *KeyPair) PrivateKey() *Key {
-	return &key.private
-}
-
-// Zeroize sets the private key material to all zeros.
-func (key *KeyPair) Zeroize() {
-	key.private = Key{}
 }
 
 // String implements the fmt.Stringer interface.
@@ -106,6 +91,7 @@ func NewPublicKeyRing() *PublicKeyRing {
 
 // AddPublicKeyForLocation adds a public key to the keyring for the given
 // location or location prefix.
+// It is safe to call methods concurrently on this type.
 func (kr *PublicKeyRing) AddPublicKeyForLocation(loc string, prefix bool, key *PublicKey) {
 	kr.mu.Lock()
 	defer kr.mu.Unlock()

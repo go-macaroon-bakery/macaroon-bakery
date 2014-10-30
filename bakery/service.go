@@ -45,8 +45,9 @@ type NewServiceParams struct {
 	// third-party caveat encryption.
 	Key *KeyPair
 
-	// Locator provides public keys for third-party services
-	// by location when adding a third-party caveat.
+	// Locator provides public keys for third-party services by location when
+	// adding a third-party caveat.
+	// It may be nil, in which case, no third-party caveats can be created.
 	Locator PublicKeyLocator
 }
 
@@ -69,7 +70,7 @@ func NewService(p NewServiceParams) (*Service, error) {
 		}
 	}
 	if p.Locator == nil {
-		p.Locator = make(PublicKeyLocatorMap)
+		p.Locator = PublicKeyLocatorMap(nil)
 	}
 	svc.encoder = newBoxEncoder(p.Locator, p.Key)
 	return svc, nil
