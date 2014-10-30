@@ -24,10 +24,10 @@ func logf(f string, a ...interface{}) {
 // Service represents a service which can use macaroons
 // to check authorization.
 type Service struct {
-	location        string
-	store           storage
-	checker         FirstPartyChecker
-	caveatIdEncoder CaveatIdEncoder
+	location string
+	store    storage
+	checker  FirstPartyChecker
+	encoder  *boxEncoder
 }
 
 // NewServiceParams holds the parameters for a NewService call.
@@ -41,21 +41,39 @@ type NewServiceParams struct {
 	// an in-memory storage will be used.
 	Store Storage
 
-	// CaveatIdEncoder is used to create third-party caveats.
-	CaveatIdEncoder CaveatIdEncoder
+	// Key is the public key pair used by the service for
+	// third-party caveat encryption.
+	Key *KeyPair
+
+	// Locator provides public keys for third-party services by location when
+	// adding a third-party caveat.
+	// It may be nil, in which case, no third-party caveats can be created.
+	Locator PublicKeyLocator
 }
 
 // NewService returns a new service that can mint new
 // macaroons and store their associated root keys.
-func NewService(p NewServiceParams) *Service {
+func NewService(p NewServiceParams) (*Service, error) {
 	if p.Store == nil {
 		p.Store = NewMemStorage()
 	}
-	return &Service{
-		location:        p.Location,
-		store:           storage{p.Store},
-		caveatIdEncoder: p.CaveatIdEncoder,
+	svc := &Service{
+		location: p.Location,
+		store:    storage{p.Store},
 	}
+
+	var err error
+	if p.Key == nil {
+		p.Key, err = GenerateKey()
+		if err != nil {
+			return nil, err
+		}
+	}
+	if p.Locator == nil {
+		p.Locator = PublicKeyLocatorMap(nil)
+	}
+	svc.encoder = newBoxEncoder(p.Locator, p.Key)
+	return svc, nil
 }
 
 // Store returns the store used by the service.
@@ -66,18 +84,6 @@ func (svc *Service) Store() Storage {
 // Location returns the service's configured macaroon location.
 func (svc *Service) Location() string {
 	return svc.location
-}
-
-// CaveatIdDecoder decodes caveat ids created by a CaveatIdEncoder.
-type CaveatIdDecoder interface {
-	DecodeCaveatId(id string) (rootKey []byte, condition string, err error)
-}
-
-// CaveatIdEncoder can create caveat ids for
-// third parties. It is left abstract to allow location-dependent
-// caveat id creation.
-type CaveatIdEncoder interface {
-	EncodeCaveatId(caveat Caveat, rootKey []byte) (string, error)
 }
 
 // Caveat represents a condition that must be true for a check to
@@ -151,7 +157,10 @@ func (req *Request) AddClientMacaroon(m *macaroon.Macaroon) {
 	req.inStorage[m] = item
 }
 
-// NewMacaroon implements NewMacarooner.NewMacaroon.
+// NewMacaroon mints a new macaroon with the given id and caveats.
+// If the id is empty, a random id will be used.
+// If rootKey is nil, a random root key will be used.
+// The macaroon will be stored in the service's storage.
 func (svc *Service) NewMacaroon(id string, rootKey []byte, caveats []Caveat) (*macaroon.Macaroon, error) {
 	if rootKey == nil {
 		newRootKey, err := randomBytes(24)
@@ -205,7 +214,7 @@ func (svc *Service) AddCaveat(m *macaroon.Macaroon, cav Caveat) error {
 	if err != nil {
 		return fmt.Errorf("cannot generate third party secret: %v", err)
 	}
-	id, err := svc.caveatIdEncoder.EncodeCaveatId(cav, rootKey)
+	id, err := svc.encoder.encodeCaveatId(cav, rootKey)
 	if err != nil {
 		return fmt.Errorf("cannot create third party caveat id at %q: %v", cav.Location, err)
 	}
@@ -213,6 +222,26 @@ func (svc *Service) AddCaveat(m *macaroon.Macaroon, cav Caveat) error {
 		return fmt.Errorf("cannot add third party caveat: %v", err)
 	}
 	return nil
+}
+
+// Discharge creates a macaroon that discharges the third party caveat with the
+// given id. The id should have been created earlier by a Service.  The
+// condition implicit in the id is checked for validity using checker, and
+// then if valid, a new macaroon is minted which discharges the caveat, and can
+// eventually be associated with a client request using AddClientMacaroon.
+func (svc *Service) Discharge(checker ThirdPartyChecker, id string) (*macaroon.Macaroon, error) {
+	decoder := newBoxDecoder(svc.encoder.key)
+
+	logf("server attempting to discharge %q", id)
+	rootKey, condition, err := decoder.decodeCaveatId(id)
+	if err != nil {
+		return nil, fmt.Errorf("discharger cannot decode caveat id: %v", err)
+	}
+	caveats, err := checker.CheckThirdPartyCaveat(id, condition)
+	if err != nil {
+		return nil, err
+	}
+	return svc.NewMacaroon(id, rootKey, caveats)
 }
 
 func randomBytes(n int) ([]byte, error) {

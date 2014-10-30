@@ -110,13 +110,12 @@ func (d *dischargeHandler) serveDischarge1(h http.Header, req *http.Request) (in
 	checker := func(cavId, cav string) ([]bakery.Caveat, error) {
 		return d.checker(req, cavId, cav)
 	}
-	discharger := d.svc.Discharger(bakery.ThirdPartyCheckerFunc(checker))
 
 	// TODO(rog) pass location into discharge
 	// location := req.Form.Get("location")
 
 	var resp dischargeResponse
-	m, err := discharger.Discharge(id)
+	m, err := d.svc.Discharge(bakery.ThirdPartyCheckerFunc(checker), id)
 	if err != nil {
 		return nil, errgo.NoteMask(err, "cannot discharge", errgo.Any)
 	}
@@ -127,6 +126,11 @@ func (d *dischargeHandler) serveDischarge1(h http.Header, req *http.Request) (in
 type thirdPartyCaveatIdRecord struct {
 	RootKey   []byte
 	Condition string
+}
+
+type caveatIdResponse struct {
+	CaveatId string
+	Error    string
 }
 
 func (d *dischargeHandler) serveCreate(h http.Header, req *http.Request) (interface{}, error) {

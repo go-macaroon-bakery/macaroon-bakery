@@ -20,13 +20,13 @@ import (
 
 type suite struct {
 	authEndpoint  string
-	authPublicKey *[32]byte
+	authPublicKey *bakery.PublicKey
 }
 
 var _ = gc.Suite(&suite{})
 
 func (s *suite) SetUpSuite(c *gc.C) {
-	key, err := httpbakery.GenerateKey()
+	key, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
 	s.authPublicKey = key.PublicKey()
 	s.authEndpoint = serve(c, func(endpoint string) (http.Handler, error) {
@@ -42,10 +42,11 @@ func (s *suite) SetUpSuite(c *gc.C) {
 					},
 				},
 			},
-			Service: httpbakery.NewServiceParams{
+			Service: bakery.NewServiceParams{
 				Location: endpoint,
 				Store:    bakery.NewMemStorage(),
 				Key:      key,
+				Locator:  bakery.NewPublicKeyRing(),
 			},
 		})
 	})

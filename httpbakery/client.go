@@ -145,6 +145,13 @@ func (ctxt *clientContext) addCookies(req *http.Request, ms []*macaroon.Macaroon
 	return nil
 }
 
+func appendURLElem(u, elem string) string {
+	if strings.HasSuffix(u, "/") {
+		return u + elem
+	}
+	return u + "/" + elem
+}
+
 func (ctxt *clientContext) obtainThirdPartyDischarge(originalLocation string, cav macaroon.Caveat) (*macaroon.Macaroon, error) {
 	var resp dischargeResponse
 	loc := appendURLElem(cav.Location, "discharge")
