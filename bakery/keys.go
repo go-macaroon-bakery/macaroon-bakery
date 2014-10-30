@@ -6,8 +6,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/juju/errgo"
-
 	"code.google.com/p/go.crypto/nacl/box"
 )
 
@@ -53,21 +51,12 @@ type KeyPair struct {
 	private Key
 }
 
-// NewKeyPair creates a new KeyPair instance from a previously generated public
-// and private key.
-func NewKeyPair(public *PublicKey, private *Key) *KeyPair {
-	return &KeyPair{
-		public:  *public,
-		private: *private,
-	}
-}
-
 // GenerateKey generates a new key pair.
 func GenerateKey() (*KeyPair, error) {
 	var key KeyPair
 	pub, priv, err := box.GenerateKey(rand.Reader)
 	if err != nil {
-		return nil, errgo.Mask(err)
+		return nil, err
 	}
 	key.public = PublicKey(*pub)
 	key.private = *priv

@@ -10,8 +10,8 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/juju/errgo"
 	gc "gopkg.in/check.v1"
+	"gopkg.in/errgo.v1"
 
 	"github.com/rogpeppe/macaroon/bakery"
 	"github.com/rogpeppe/macaroon/bakery/example/idservice"
