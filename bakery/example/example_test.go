@@ -23,7 +23,7 @@ var _ = gc.Suite(&exampleSuite{})
 func (s *exampleSuite) SetUpSuite(c *gc.C) {
 	key, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
-	s.authPublicKey = key.PublicKey()
+	s.authPublicKey = &key.Public
 	s.authEndpoint, err = serve(func(endpoint string) (http.Handler, error) {
 		return authService(endpoint, key)
 	})

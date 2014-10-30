@@ -58,14 +58,14 @@ func GenerateKey() (*KeyPair, error) {
 	if err != nil {
 		return nil, err
 	}
-	key.public = PublicKey(*pub)
-	key.private = *priv
+	key.Public = PublicKey(*pub)
+	key.Private = *priv
 	return &key, nil
 }
 
 // String implements the fmt.Stringer interface.
 func (key *KeyPair) String() string {
-	return hex.EncodeToString(key.public[:])
+	return hex.EncodeToString(key.Public[:])
 }
 
 type publicKeyRecord struct {

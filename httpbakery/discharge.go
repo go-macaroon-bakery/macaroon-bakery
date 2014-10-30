@@ -85,8 +85,8 @@ type dischargeResponse struct {
 	Macaroon *macaroon.Macaroon `json:",omitempty"`
 }
 
-func (d *dischargeHandler) serveDischarge(h http.Header, req *http.Request) (interface{}, error) {
-	r, err := d.serveDischarge1(h, req)
+func (d *dischargeHandler) serveDischarge(_ http.ResponseWriter, req *http.Request) (interface{}, error) {
+	r, err := d.serveDischarge1(req)
 	if err != nil {
 		log.Printf("serveDischarge -> error %#v", err)
 	} else {
@@ -95,7 +95,7 @@ func (d *dischargeHandler) serveDischarge(h http.Header, req *http.Request) (int
 	return r, err
 }
 
-func (d *dischargeHandler) serveDischarge1(h http.Header, req *http.Request) (interface{}, error) {
+func (d *dischargeHandler) serveDischarge1(req *http.Request) (interface{}, error) {
 	log.Printf("dischargeHandler.serveDischarge {")
 	defer log.Printf("}")
 	if req.Method != "POST" {
@@ -133,7 +133,7 @@ type caveatIdResponse struct {
 	Error    string
 }
 
-func (d *dischargeHandler) serveCreate(h http.Header, req *http.Request) (interface{}, error) {
+func (d *dischargeHandler) serveCreate(_ http.ResponseWriter, req *http.Request) (interface{}, error) {
 	req.ParseForm()
 	condition := req.Form.Get("condition")
 	rootKeyStr := req.Form.Get("root-key")
@@ -170,7 +170,7 @@ func (d *dischargeHandler) serveCreate(h http.Header, req *http.Request) (interf
 	}, nil
 }
 
-func (d *dischargeHandler) servePublicKey(h http.Header, r *http.Request) (interface{}, error) {
+func (d *dischargeHandler) servePublicKey(_ http.ResponseWriter, r *http.Request) (interface{}, error) {
 	return nil, fmt.Errorf("not implemented yet")
 }
 

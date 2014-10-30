@@ -70,7 +70,7 @@ func New(p Params) (http.Handler, error) {
 
 // userHandler handles requests to add new users, change user details, etc.
 // It is only accessible to users that are members of the admin group.
-func (h *handler) userHandler(_ http.Header, req *http.Request) (interface{}, error) {
+func (h *handler) userHandler(_ http.ResponseWriter, req *http.Request) (interface{}, error) {
 	ctxt := h.newContext(req, "change-user")
 	breq := h.svc.NewRequest(req, ctxt)
 	err := breq.Check()
@@ -262,7 +262,7 @@ func (h *handler) needLogin(cavId string, caveat string, why string) error {
 
 // waitHandler serves an HTTP endpoint that waits until a macaroon
 // has been discharged, and returns the discharge macaroon.
-func (h *handler) waitHandler(_ http.Header, req *http.Request) (interface{}, error) {
+func (h *handler) waitHandler(_ http.ResponseWriter, req *http.Request) (interface{}, error) {
 	req.ParseForm()
 	waitId := req.Form.Get("waitid")
 	if waitId == "" {
@@ -296,7 +296,7 @@ func (h *handler) waitHandler(_ http.Header, req *http.Request) (interface{}, er
 	}, nil
 }
 
-func (h *handler) questionHandler(_ http.Header, req *http.Request) (interface{}, error) {
+func (h *handler) questionHandler(_ http.ResponseWriter, req *http.Request) (interface{}, error) {
 	return nil, errgo.New("question unimplemented")
 	// TODO
 	//	req.ParseForm()
