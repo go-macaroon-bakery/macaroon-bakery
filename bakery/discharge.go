@@ -3,7 +3,7 @@ package bakery
 import (
 	"fmt"
 
-	"github.com/juju/errgo"
+	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v1"
 )
 

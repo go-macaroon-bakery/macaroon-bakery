@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"path"
 
-	"github.com/juju/errgo"
+	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v1"
 
 	"github.com/rogpeppe/macaroon/bakery"
@@ -85,8 +85,8 @@ type dischargeResponse struct {
 	Macaroon *macaroon.Macaroon `json:",omitempty"`
 }
 
-func (d *dischargeHandler) serveDischarge(w http.ResponseWriter, req *http.Request) (interface{}, error) {
-	r, err := d.serveDischarge1(w, req)
+func (d *dischargeHandler) serveDischarge(h http.Header, req *http.Request) (interface{}, error) {
+	r, err := d.serveDischarge1(h, req)
 	if err != nil {
 		log.Printf("serveDischarge -> error %#v", err)
 	} else {
@@ -95,7 +95,7 @@ func (d *dischargeHandler) serveDischarge(w http.ResponseWriter, req *http.Reque
 	return r, err
 }
 
-func (d *dischargeHandler) serveDischarge1(w http.ResponseWriter, req *http.Request) (interface{}, error) {
+func (d *dischargeHandler) serveDischarge1(h http.Header, req *http.Request) (interface{}, error) {
 	log.Printf("dischargeHandler.serveDischarge {")
 	defer log.Printf("}")
 	if req.Method != "POST" {
@@ -124,20 +124,12 @@ func (d *dischargeHandler) serveDischarge1(w http.ResponseWriter, req *http.Requ
 	return &resp, nil
 }
 
-func (d *dischargeHandler) internalError(w http.ResponseWriter, f string, a ...interface{}) {
-	http.Error(w, fmt.Sprintf(f, a...), http.StatusInternalServerError)
-}
-
-func (d *dischargeHandler) badRequest(w http.ResponseWriter, f string, a ...interface{}) {
-	http.Error(w, fmt.Sprintf(f, a...), http.StatusBadRequest)
-}
-
 type thirdPartyCaveatIdRecord struct {
 	RootKey   []byte
 	Condition string
 }
 
-func (d *dischargeHandler) serveCreate(w http.ResponseWriter, req *http.Request) (interface{}, error) {
+func (d *dischargeHandler) serveCreate(h http.Header, req *http.Request) (interface{}, error) {
 	req.ParseForm()
 	condition := req.Form.Get("condition")
 	rootKeyStr := req.Form.Get("root-key")
@@ -174,7 +166,7 @@ func (d *dischargeHandler) serveCreate(w http.ResponseWriter, req *http.Request)
 	}, nil
 }
 
-func (d *dischargeHandler) servePublicKey(w http.ResponseWriter, r *http.Request) (interface{}, error) {
+func (d *dischargeHandler) servePublicKey(h http.Header, r *http.Request) (interface{}, error) {
 	return nil, fmt.Errorf("not implemented yet")
 }
 

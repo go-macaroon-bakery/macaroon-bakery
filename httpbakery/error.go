@@ -3,7 +3,7 @@ package httpbakery
 import (
 	"net/http"
 
-	"github.com/juju/errgo"
+	"gopkg.in/errgo.v1"
 	"github.com/juju/utils/jsonhttp"
 	"gopkg.in/macaroon.v1"
 )
