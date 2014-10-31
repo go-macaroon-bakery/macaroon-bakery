@@ -71,10 +71,10 @@ func (enc *boxEncoder) newCaveatId(cav Caveat, rootKey []byte, thirdPartyPub *Pu
 	if err != nil {
 		return nil, fmt.Errorf("cannot marshal %#v: %v", &plain, err)
 	}
-	sealed := box.Seal(nil, plainData, &nonce, (*[32]byte)(thirdPartyPub), (*[32]byte)(enc.key.PrivateKey()))
+	sealed := box.Seal(nil, plainData, &nonce, (*[32]byte)(thirdPartyPub), (*[32]byte)(&enc.key.Private))
 	return &caveatId{
 		ThirdPartyPublicKey: thirdPartyPub[:],
-		FirstPartyPublicKey: enc.key.PublicKey()[:],
+		FirstPartyPublicKey: enc.key.Public[:],
 		Nonce:               nonce[:],
 		Id:                  base64.StdEncoding.EncodeToString(sealed),
 	}, nil
@@ -120,7 +120,7 @@ func (d *boxDecoder) encryptedCaveatId(id caveatId) ([]byte, error) {
 	if d.key == nil {
 		return nil, fmt.Errorf("no public key for caveat id decryption")
 	}
-	if !bytes.Equal(d.key.PublicKey()[:], id.ThirdPartyPublicKey) {
+	if !bytes.Equal(d.key.Public[:], id.ThirdPartyPublicKey) {
 		return nil, fmt.Errorf("public key mismatch")
 	}
 	var nonce [NonceLen]byte
@@ -139,7 +139,7 @@ func (d *boxDecoder) encryptedCaveatId(id caveatId) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot base64-decode encrypted caveat id: %v", err)
 	}
-	out, ok := box.Open(nil, sealed, &nonce, (*[KeyLen]byte)(&firstPartyPublicKey), (*[KeyLen]byte)(d.key.PrivateKey()))
+	out, ok := box.Open(nil, sealed, &nonce, (*[KeyLen]byte)(&firstPartyPublicKey), (*[KeyLen]byte)(&d.key.Private))
 	if !ok {
 		return nil, fmt.Errorf("decryption of public-key encrypted caveat id %#v failed", id)
 	}

@@ -31,7 +31,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("cannot generate auth service key pair: %v", err)
 	}
-	authPublicKey := key.PublicKey()
+	authPublicKey := &key.Public
 	authEndpoint := mustServe(func(endpoint string) (http.Handler, error) {
 		return authService(endpoint, key)
 	})

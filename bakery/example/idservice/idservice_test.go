@@ -28,7 +28,7 @@ var _ = gc.Suite(&suite{})
 func (s *suite) SetUpSuite(c *gc.C) {
 	key, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
-	s.authPublicKey = key.PublicKey()
+	s.authPublicKey = &key.Public
 	s.authEndpoint = serve(c, func(endpoint string) (http.Handler, error) {
 		return idservice.New(idservice.Params{
 			Users: map[string]*idservice.UserInfo{
