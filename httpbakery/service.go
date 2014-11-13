@@ -15,7 +15,7 @@ import (
 	"code.google.com/p/go.net/publicsuffix"
 	"gopkg.in/macaroon.v1"
 
-	"github.com/rogpeppe/macaroon/bakery"
+	"gopkg.in/macaroon-bakery.v0/bakery"
 )
 
 // Service represents a service that can use client-provided

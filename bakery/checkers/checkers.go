@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/rogpeppe/macaroon/bakery"
+	"gopkg.in/macaroon-bakery.v0/bakery"
 )
 
 func FirstParty(condition string) bakery.Caveat {

@@ -11,10 +11,10 @@ import (
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v1"
 
-	"github.com/rogpeppe/macaroon/bakery"
-	"github.com/rogpeppe/macaroon/bakery/checkers"
-	"github.com/rogpeppe/macaroon/bakery/example/meeting"
-	"github.com/rogpeppe/macaroon/httpbakery"
+	"gopkg.in/macaroon-bakery.v0/bakery"
+	"gopkg.in/macaroon-bakery.v0/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v0/bakery/example/meeting"
+	"gopkg.in/macaroon-bakery.v0/httpbakery"
 )
 
 var (

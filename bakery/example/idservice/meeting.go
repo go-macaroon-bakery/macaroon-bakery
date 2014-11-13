@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/rogpeppe/macaroon/bakery/example/meeting"
+	"gopkg.in/macaroon-bakery.v0/bakery/example/meeting"
 )
 
 type thirdPartyCaveatInfo struct {

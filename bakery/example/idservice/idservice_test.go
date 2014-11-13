@@ -13,9 +13,9 @@ import (
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
 
-	"github.com/rogpeppe/macaroon/bakery"
-	"github.com/rogpeppe/macaroon/bakery/example/idservice"
-	"github.com/rogpeppe/macaroon/httpbakery"
+	"gopkg.in/macaroon-bakery.v0/bakery"
+	"gopkg.in/macaroon-bakery.v0/bakery/example/idservice"
+	"gopkg.in/macaroon-bakery.v0/httpbakery"
 )
 
 type suite struct {

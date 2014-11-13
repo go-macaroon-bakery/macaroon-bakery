@@ -5,7 +5,7 @@ import (
 
 	gc "gopkg.in/check.v1"
 
-	"github.com/rogpeppe/macaroon/bakery"
+	"gopkg.in/macaroon-bakery.v0/bakery"
 )
 
 type StorageSuite struct{}

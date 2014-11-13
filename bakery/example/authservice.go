@@ -3,8 +3,8 @@ package main
 import (
 	"net/http"
 
-	"github.com/rogpeppe/macaroon/bakery"
-	"github.com/rogpeppe/macaroon/httpbakery"
+	"gopkg.in/macaroon-bakery.v0/bakery"
+	"gopkg.in/macaroon-bakery.v0/httpbakery"
 )
 
 // authService implements an authorization service,
