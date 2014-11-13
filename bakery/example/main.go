@@ -23,7 +23,7 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/rogpeppe/macaroon/bakery"
+	"gopkg.in/macaroon-bakery.v0/bakery"
 )
 
 func main() {

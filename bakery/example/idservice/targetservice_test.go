@@ -6,9 +6,9 @@ import (
 	"net"
 	"net/http"
 
-	"github.com/rogpeppe/macaroon/bakery"
-	"github.com/rogpeppe/macaroon/bakery/checkers"
-	"github.com/rogpeppe/macaroon/httpbakery"
+	"gopkg.in/macaroon-bakery.v0/bakery"
+	"gopkg.in/macaroon-bakery.v0/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v0/httpbakery"
 )
 
 type targetServiceHandler struct {

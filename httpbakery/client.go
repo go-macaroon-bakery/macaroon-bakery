@@ -16,7 +16,7 @@ import (
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v1"
 
-	"github.com/rogpeppe/macaroon/bakery"
+	"gopkg.in/macaroon-bakery.v0/bakery"
 )
 
 // WaitResponse holds the type that should be returned

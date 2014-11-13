@@ -5,7 +5,7 @@ import (
 
 	gc "gopkg.in/check.v1"
 
-	"github.com/rogpeppe/macaroon/bakery/example/meeting"
+	"gopkg.in/macaroon-bakery.v0/bakery/example/meeting"
 )
 
 type suite struct{}
