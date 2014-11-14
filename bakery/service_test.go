@@ -57,8 +57,16 @@ func (s *ServiceSuite) TestSingleServiceFirstParty(c *gc.C) {
 // The target service verifies the original macaroon it delegated to fs
 // No direct contact between as and ts is required
 func (s *ServiceSuite) TestMacaroonPaperFig6(c *gc.C) {
-	ts, fs, as := setUpFig6Services(c)
+	locator := make(bakery.PublicKeyLocatorMap)
+	as := newService(c, "as-loc", locator)
+	ts := newService(c, "ts-loc", locator)
+	fs := newService(c, "fs-loc", locator)
+
+	// ts creates a macaroon.
+	// ts somehow sends the macaroon to fs which adds a third party caveat to be discharged by as.
 	tsMacaroon := createMacaroonWithThirdPartyCaveat(c, ts, fs, bakery.Caveat{Location: "as-loc", Condition: "user==bob"})
+
+	// client asks for a discharge macaroon for each third party caveat
 	d, err := bakery.DischargeAll(tsMacaroon, func(firstPartyLocation string, cav macaroon.Caveat) (*macaroon.Macaroon, error) {
 		c.Assert(firstPartyLocation, gc.Equals, "ts-loc")
 		c.Assert(cav.Location, gc.Equals, "as-loc")
@@ -82,10 +90,19 @@ func (s *ServiceSuite) TestMacaroonPaperFig6(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 }
 
+// TestMacaroonPaperFig6FailsWithoutDischarges runs a similar test as TestMacaroonPaperFig6
+// without the client discharging the third party caveats.
 func (s *ServiceSuite) TestMacaroonPaperFig6FailsWithoutDischarges(c *gc.C) {
-	ts, fs, _ := setUpFig6Services(c)
+	locator := make(bakery.PublicKeyLocatorMap)
+	ts := newService(c, "ts-loc", locator)
+	fs := newService(c, "fs-loc", locator)
+	_ = newService(c, "as-loc", locator)
+
+	// ts creates a macaroon.
+	// ts somehow sends the macaroon to fs which adds a third party caveat to be discharged by as.
 	tsMacaroon := createMacaroonWithThirdPartyCaveat(c, ts, fs, bakery.Caveat{Location: "as-loc", Condition: "user==bob"})
 
+	// client makes request to ts
 	req := ts.NewRequest(strCompFirstPartyChecker(""))
 	req.AddClientMacaroon(tsMacaroon)
 
@@ -93,9 +110,19 @@ func (s *ServiceSuite) TestMacaroonPaperFig6FailsWithoutDischarges(c *gc.C) {
 	c.Assert(err, gc.ErrorMatches, `verification failed: cannot find discharge macaroon for caveat ".*"`)
 }
 
+// TestMacaroonPaperFig6FailsWithBindingOnTamperedSignature runs a similar test as TestMacaroonPaperFig6
+// with the discharge macaroon binding being done on a tampered signature.
 func (s *ServiceSuite) TestMacaroonPaperFig6FailsWithBindingOnTamperedSignature(c *gc.C) {
-	ts, fs, as := setUpFig6Services(c)
+	locator := make(bakery.PublicKeyLocatorMap)
+	as := newService(c, "as-loc", locator)
+	ts := newService(c, "ts-loc", locator)
+	fs := newService(c, "fs-loc", locator)
+
+	// ts creates a macaroon.
+	// ts somehow sends the macaroon to fs which adds a third party caveat to be discharged by as.
 	tsMacaroon := createMacaroonWithThirdPartyCaveat(c, ts, fs, bakery.Caveat{Location: "as-loc", Condition: "user==bob"})
+
+	// client asks for a discharge macaroon for each third party caveat
 	d, err := bakery.DischargeAll(tsMacaroon, func(firstPartyLocation string, cav macaroon.Caveat) (*macaroon.Macaroon, error) {
 		c.Assert(firstPartyLocation, gc.Equals, "ts-loc")
 		c.Assert(cav.Location, gc.Equals, "as-loc")
@@ -105,10 +132,14 @@ func (s *ServiceSuite) TestMacaroonPaperFig6FailsWithBindingOnTamperedSignature(
 	})
 	c.Assert(err, gc.IsNil)
 
+	// client makes request to ts
 	req := ts.NewRequest(strCompFirstPartyChecker(""))
 	req.AddClientMacaroon(tsMacaroon)
+
+	// client has all the discharge macaroons. For each discharge macaroon bind it to our tsMacaroon
+	// and add it to our request.
 	for _, dm := range d {
-		dm.Bind([]byte("tampered-signature"))
+		dm.Bind([]byte("tampered-signature")) // Bind against an incorrect signature.
 		req.AddClientMacaroon(dm)
 	}
 
@@ -116,33 +147,20 @@ func (s *ServiceSuite) TestMacaroonPaperFig6FailsWithBindingOnTamperedSignature(
 	c.Assert(err, gc.ErrorMatches, "verification failed: signature mismatch after caveat verification")
 }
 
-func setUpFig6Services(c *gc.C) (*bakery.Service, *bakery.Service, *bakery.Service) {
-	fsKeyPair, err := bakery.GenerateKey()
-	c.Assert(err, gc.IsNil)
-	asKeyPair, err := bakery.GenerateKey()
+func newService(c *gc.C, location string, locator bakery.PublicKeyLocatorMap) *bakery.Service {
+	keyPair, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
 
-	publicKeyLocator := bakery.PublicKeyLocatorMap{
-		"fs-loc": &fsKeyPair.Public,
-		"as-loc": &asKeyPair.Public,
+	svc, err := bakery.NewService(bakery.NewServiceParams{
+		Location: location,
+		Key:      keyPair,
+		Locator:  locator,
+	})
+	c.Assert(err, gc.IsNil)
+	if locator != nil {
+		locator[location] = &keyPair.Public
 	}
-
-	ts, err := bakery.NewService(bakery.NewServiceParams{Location: "ts-loc"})
-	c.Assert(err, gc.IsNil)
-	fs, err := bakery.NewService(bakery.NewServiceParams{
-		Location: "fs-loc",
-		Key:      fsKeyPair,
-		Locator:  publicKeyLocator,
-	})
-	c.Assert(err, gc.IsNil)
-	as, err := bakery.NewService(bakery.NewServiceParams{
-		Location: "as-loc",
-		Key:      asKeyPair,
-		Locator:  publicKeyLocator,
-	})
-	c.Assert(err, gc.IsNil)
-
-	return ts, fs, as
+	return svc
 }
 
 func createMacaroonWithThirdPartyCaveat(c *gc.C, minter, caveater *bakery.Service, cav bakery.Caveat) *macaroon.Macaroon {
