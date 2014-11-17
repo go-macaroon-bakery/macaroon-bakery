@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"testing"
 
 	gc "gopkg.in/check.v1"
 
@@ -16,10 +15,6 @@ import (
 )
 
 type ServiceSuite struct{}
-
-func Test(t *testing.T) {
-	gc.TestingT(t)
-}
 
 var _ = gc.Suite(&ServiceSuite{})
 
@@ -52,7 +47,7 @@ func (s *ServiceSuite) TestSingleServiceFirstParty(c *gc.C) {
 	// Somehow the client has accquired the macaroon. Add it to the cookiejar in our request.
 
 	// Make the request to the server.
-	resp, err := httpbakery.Do(client, req, nil)
+	resp, err := client.Do(req)
 	c.Assert(err, gc.IsNil)
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
@@ -88,6 +83,7 @@ func clientRequestWithCookies(c *gc.C, u string, macaroons []*macaroon.Macaroon)
 	url, err := url.Parse(u)
 	c.Assert(err, gc.IsNil)
 	cookies, err := httpbakery.CookiesFromMacaroons(macaroons)
+	c.Assert(err, gc.IsNil)
 	client.Jar.SetCookies(url, cookies)
 	return client
 }
