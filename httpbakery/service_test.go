@@ -34,7 +34,6 @@ func (s *ServiceSuite) TestSingleServiceFirstParty(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	c.Assert(serverMacaroon.Location(), gc.Equals, "loc")
 	cav := bakery.Caveat{
-		Location:  "",
 		Condition: "something",
 	}
 	err = svc.AddCaveat(serverMacaroon, cav)
