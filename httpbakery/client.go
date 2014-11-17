@@ -125,9 +125,9 @@ func (ctxt *clientContext) do1(req *http.Request) (*http.Response, error) {
 	return hresp, err
 }
 
-// CookiesForMacaroons takes a slice of macaroons and returns them
+// CookiesFromMacaroons takes a slice of macaroons and returns them
 // encoded as cookies.
-func CookiesForMacaroons(ms []*macaroon.Macaroon) ([]*http.Cookie, error) {
+func CookiesFromMacaroons(ms []*macaroon.Macaroon) ([]*http.Cookie, error) {
 	var cookies []*http.Cookie
 	for _, m := range ms {
 		data, err := m.MarshalJSON()
@@ -144,9 +144,9 @@ func CookiesForMacaroons(ms []*macaroon.Macaroon) ([]*http.Cookie, error) {
 }
 
 func (ctxt *clientContext) addCookies(req *http.Request, ms []*macaroon.Macaroon) error {
-	cookies, err := CookiesForMacaroons(ms)
+	cookies, err := CookiesFromMacaroons(ms)
 	if err != nil {
-		return err
+		return errgo.Mask(err)
 	}
 	// TODO should we set it for the URL only, or the host.
 	// Can we set cookies such that they'll always get sent to any
