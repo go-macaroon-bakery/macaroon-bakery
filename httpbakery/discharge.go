@@ -170,8 +170,13 @@ func (d *dischargeHandler) serveCreate(h http.Header, req *http.Request) (interf
 	}, nil
 }
 
+type publicKeyResponse struct {
+	PublicKey []byte
+}
+
 func (d *dischargeHandler) servePublicKey(h http.Header, r *http.Request) (interface{}, error) {
-	return nil, fmt.Errorf("not implemented yet")
+	key := d.svc.PublicKey()
+	return publicKeyResponse{key[:]}, nil
 }
 
 func randomBytes(n int) ([]byte, error) {

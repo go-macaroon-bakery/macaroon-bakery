@@ -28,6 +28,7 @@ type Service struct {
 	store    storage
 	checker  FirstPartyChecker
 	encoder  *boxEncoder
+	key      *KeyPair
 }
 
 // NewServiceParams holds the parameters for a NewService call.
@@ -72,6 +73,7 @@ func NewService(p NewServiceParams) (*Service, error) {
 	if p.Locator == nil {
 		p.Locator = PublicKeyLocatorMap(nil)
 	}
+	svc.key = p.Key
 	svc.encoder = newBoxEncoder(p.Locator, p.Key)
 	return svc, nil
 }
@@ -84,6 +86,11 @@ func (svc *Service) Store() Storage {
 // Location returns the service's configured macaroon location.
 func (svc *Service) Location() string {
 	return svc.location
+}
+
+// PublicKey returns the service's public key.
+func (svc *Service) PublicKey() *PublicKey {
+	return &svc.key.Public
 }
 
 // Caveat represents a condition that must be true for a check to
