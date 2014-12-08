@@ -37,7 +37,7 @@ func targetService(endpoint, authEndpoint string, authPK *bakery.PublicKey) (htt
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("adding public key for location %s: %x", authEndpoint, authPK[:])
+	log.Printf("adding public key for location %s: %v", authEndpoint, authPK)
 	pkLocator.AddPublicKeyForLocation(authEndpoint, true, authPK)
 	mux := http.NewServeMux()
 	srv := &targetServiceHandler{
