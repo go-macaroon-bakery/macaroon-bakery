@@ -8,7 +8,7 @@ import (
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 
-	"github.com/go-macaroon-bakery/macaroon-bakery/bakery"
+	"gopkg.in/macaroon-bakery.v0/bakery"
 )
 
 // New returns an implementation of Storage
