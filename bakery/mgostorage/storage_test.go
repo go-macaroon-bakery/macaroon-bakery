@@ -1,6 +1,7 @@
 package mgostorage_test
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/juju/testing"
@@ -8,7 +9,7 @@ import (
 	"gopkg.in/mgo.v2"
 
 	"github.com/go-macaroon-bakery/macaroon-bakery/bakery"
-	storage "github.com/go-macaroon-bakery/macaroon-bakery/bakery/mgostorage"
+	"github.com/go-macaroon-bakery/macaroon-bakery/bakery/mgostorage"
 )
 
 type StorageSuite struct {
@@ -23,8 +24,7 @@ func (s *StorageSuite) SetUpTest(c *gc.C) {
 	s.MgoSuite.SetUpTest(c)
 	s.session = testing.MgoServer.MustDial()
 
-	store, err := storage.NewMgoStorage(s.session, "test", "items")
-	c.Assert(err, gc.IsNil)
+	store := mgostorage.New(s.session.DB("test").C("items"))
 
 	s.store = store
 }
@@ -92,4 +92,42 @@ func (s *StorageSuite) TestConcurrentMgoStorage(c *gc.C) {
 	for i := 0; i < 3; i++ {
 		<-done
 	}
+}
+
+type testChecker struct{}
+
+func (tc *testChecker) CheckFirstPartyCaveat(caveat string) error {
+	if caveat != "is-authorised bob" {
+		return errors.New("not bob")
+	}
+	return nil
+}
+
+func (s *StorageSuite) TestCreateMacaroon(c *gc.C) {
+	keypair, err := bakery.GenerateKey()
+	c.Assert(err, gc.IsNil)
+
+	params := bakery.NewServiceParams{Location: "local", Store: s.store, Key: keypair}
+	service, err := bakery.NewService(params)
+	c.Assert(err, gc.IsNil)
+	c.Assert(service, gc.NotNil)
+
+	macaroon, err := service.NewMacaroon(
+		"123",
+		[]byte("abc"),
+		[]bakery.Caveat{bakery.Caveat{Location: "", Condition: "is-authorised bob"}},
+	)
+	c.Assert(err, gc.IsNil)
+	c.Assert(macaroon, gc.NotNil)
+
+	item, err := s.store.Get("123")
+	c.Assert(err, gc.IsNil)
+	c.Assert(item, gc.DeepEquals, `{"RootKey":"YWJj"}`)
+
+	request := service.NewRequest(&testChecker{})
+	c.Assert(request, gc.NotNil)
+
+	request.AddClientMacaroon(macaroon)
+	err = request.Check()
+	c.Assert(err, gc.IsNil)
 }
