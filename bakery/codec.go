@@ -17,8 +17,8 @@ type caveatIdRecord struct {
 
 // caveatId defines the format of a third party caveat id.
 type caveatId struct {
-	ThirdPartyPublicKey []byte
-	FirstPartyPublicKey []byte
+	ThirdPartyPublicKey *PublicKey
+	FirstPartyPublicKey *PublicKey
 	Nonce               []byte
 	Id                  string
 }
@@ -71,10 +71,10 @@ func (enc *boxEncoder) newCaveatId(cav Caveat, rootKey []byte, thirdPartyPub *Pu
 	if err != nil {
 		return nil, fmt.Errorf("cannot marshal %#v: %v", &plain, err)
 	}
-	sealed := box.Seal(nil, plainData, &nonce, (*[32]byte)(thirdPartyPub), (*[32]byte)(&enc.key.Private))
+	sealed := box.Seal(nil, plainData, &nonce, thirdPartyPub.boxKey(), enc.key.Private.boxKey())
 	return &caveatId{
-		ThirdPartyPublicKey: thirdPartyPub[:],
-		FirstPartyPublicKey: enc.key.Public[:],
+		ThirdPartyPublicKey: thirdPartyPub,
+		FirstPartyPublicKey: &enc.key.Public,
 		Nonce:               nonce[:],
 		Id:                  base64.StdEncoding.EncodeToString(sealed),
 	}, nil
@@ -120,7 +120,7 @@ func (d *boxDecoder) encryptedCaveatId(id caveatId) ([]byte, error) {
 	if d.key == nil {
 		return nil, fmt.Errorf("no public key for caveat id decryption")
 	}
-	if !bytes.Equal(d.key.Public[:], id.ThirdPartyPublicKey) {
+	if !bytes.Equal(d.key.Public.Key[:], id.ThirdPartyPublicKey.Key[:]) {
 		return nil, fmt.Errorf("public key mismatch")
 	}
 	var nonce [NonceLen]byte
@@ -129,17 +129,11 @@ func (d *boxDecoder) encryptedCaveatId(id caveatId) ([]byte, error) {
 	}
 	copy(nonce[:], id.Nonce)
 
-	var firstPartyPublicKey [KeyLen]byte
-	if len(id.FirstPartyPublicKey) != len(firstPartyPublicKey) {
-		return nil, fmt.Errorf("bad public key length")
-	}
-	copy(firstPartyPublicKey[:], id.FirstPartyPublicKey)
-
 	sealed, err := base64.StdEncoding.DecodeString(id.Id)
 	if err != nil {
 		return nil, fmt.Errorf("cannot base64-decode encrypted caveat id: %v", err)
 	}
-	out, ok := box.Open(nil, sealed, &nonce, (*[KeyLen]byte)(&firstPartyPublicKey), (*[KeyLen]byte)(&d.key.Private))
+	out, ok := box.Open(nil, sealed, &nonce, id.FirstPartyPublicKey.boxKey(), d.key.Private.boxKey())
 	if !ok {
 		return nil, fmt.Errorf("decryption of public-key encrypted caveat id %#v failed", id)
 	}

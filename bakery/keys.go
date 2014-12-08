@@ -2,11 +2,12 @@ package bakery
 
 import (
 	"crypto/rand"
-	"encoding/hex"
+	"encoding/base64"
 	"strings"
 	"sync"
 
 	"code.google.com/p/go.crypto/nacl/box"
+	"gopkg.in/errgo.v1"
 )
 
 // KeyLen is the byte length of the Ed25519 public and private keys used for
@@ -18,10 +19,65 @@ const KeyLen = 32
 const NonceLen = 24
 
 // PublicKey is a 256-bit Ed25519 public key.
-type PublicKey [KeyLen]byte
+type PublicKey struct {
+	Key
+}
 
-// Key is a 256-bit Ed25519 private key.
+// PrivateKey is a 256-bit Ed25519 private key.
+type PrivateKey struct {
+	Key
+}
+
+// Key is a 256-bit Ed25519 key.
 type Key [KeyLen]byte
+
+// String returns the base64 representation of the key.
+func (k Key) String() string {
+	return base64.StdEncoding.EncodeToString(k[:])
+}
+
+// MarshalBinary implements encoding.BinaryMarshaler.MarshalBinary.
+func (k Key) MarshalBinary() ([]byte, error) {
+	return k[:], nil
+}
+
+// UnmarshalBinary implements encoding.BinaryUnmarshaler.UnmarshalBinary.
+func (k *Key) UnmarshalBinary(data []byte) error {
+	if len(data) != len(k) {
+		return errgo.Newf("wrong length for key, got %d want %d", len(data), len(k))
+	}
+	copy(k[:], data)
+	return nil
+}
+
+// MarshalText implements encoding.TextMarshaler.MarshalText.
+func (k Key) MarshalText() ([]byte, error) {
+	data := make([]byte, base64.StdEncoding.EncodedLen(len(k)))
+	base64.StdEncoding.Encode(data, k[:])
+	return data, nil
+}
+
+// boxKey returns the box package's type for a key.
+func (k Key) boxKey() *[KeyLen]byte {
+	return (*[KeyLen]byte)(&k)
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.UnmarshalText.
+func (k *Key) UnmarshalText(text []byte) error {
+	// Note: we cannot decode directly into key because
+	// DecodedLen can return more than the actual number
+	// of bytes that will be required.
+	data := make([]byte, base64.StdEncoding.DecodedLen(len(text)))
+	n, err := base64.StdEncoding.Decode(data, text)
+	if err != nil {
+		return errgo.Notef(err, "cannot decode base64 key")
+	}
+	if n != len(k) {
+		return errgo.Newf("wrong length for base64 key, got %d want %d", n, len(k))
+	}
+	copy(k[:], data[0:n])
+	return nil
+}
 
 // PublicKeyLocator is used to find the public key for a given
 // caveat or macaroon location.
@@ -47,8 +103,8 @@ func (m PublicKeyLocatorMap) PublicKeyForLocation(loc string) (*PublicKey, error
 // KeyPair holds a public/private pair of keys.
 // TODO(rog) marshal/unmarshal functions for KeyPair
 type KeyPair struct {
-	Public  PublicKey
-	Private Key
+	Public  PublicKey  `json:"public"`
+	Private PrivateKey `json:"private"`
 }
 
 // GenerateKey generates a new key pair.
@@ -58,14 +114,16 @@ func GenerateKey() (*KeyPair, error) {
 	if err != nil {
 		return nil, err
 	}
-	key.Public = PublicKey(*pub)
-	key.Private = *priv
+	key.Public = PublicKey{*pub}
+	key.Private = PrivateKey{*priv}
 	return &key, nil
 }
 
-// String implements the fmt.Stringer interface.
+// String implements the fmt.Stringer interface
+// by returning the base64 representation of the
+// public key part of key.
 func (key *KeyPair) String() string {
-	return hex.EncodeToString(key.Public[:])
+	return key.Public.String()
 }
 
 type publicKeyRecord struct {

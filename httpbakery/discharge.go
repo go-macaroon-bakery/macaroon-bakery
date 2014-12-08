@@ -171,12 +171,11 @@ func (d *dischargeHandler) serveCreate(h http.Header, req *http.Request) (interf
 }
 
 type publicKeyResponse struct {
-	PublicKey []byte
+	PublicKey *bakery.PublicKey
 }
 
 func (d *dischargeHandler) servePublicKey(h http.Header, r *http.Request) (interface{}, error) {
-	key := d.svc.PublicKey()
-	return publicKeyResponse{key[:]}, nil
+	return publicKeyResponse{d.svc.PublicKey()}, nil
 }
 
 func randomBytes(n int) ([]byte, error) {
