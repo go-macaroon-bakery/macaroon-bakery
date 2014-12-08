@@ -8,8 +8,8 @@ import (
 	gc "gopkg.in/check.v1"
 	"gopkg.in/mgo.v2"
 
-	"github.com/go-macaroon-bakery/macaroon-bakery/bakery"
-	"github.com/go-macaroon-bakery/macaroon-bakery/bakery/mgostorage"
+	"gopkg.in/macaroon-bakery.v0/bakery"
+	"gopkg.in/macaroon-bakery.v0/bakery/mgostorage"
 )
 
 type StorageSuite struct {
