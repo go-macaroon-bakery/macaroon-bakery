@@ -24,7 +24,8 @@ func (s *StorageSuite) SetUpTest(c *gc.C) {
 	s.MgoSuite.SetUpTest(c)
 	s.session = testing.MgoServer.MustDial()
 
-	store := mgostorage.New(s.session.DB("test").C("items"))
+	store, err := mgostorage.New(s.session.DB("test").C("items"))
+	c.Assert(err, gc.IsNil)
 
 	s.store = store
 }

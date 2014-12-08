@@ -13,12 +13,15 @@ import (
 
 // New returns an implementation of Storage
 // that stores all items in MongoDB.
-func New(c *mgo.Collection) *mgoStorage {
+func New(c *mgo.Collection) (*mgoStorage, error) {
 	m := mgoStorage{
 		col: c,
 	}
-	m.setupCollection()
-	return &m
+	err := m.setUpCollection()
+	if err != nil {
+		return nil, errgo.Mask(err)
+	}
+	return &m, nil
 }
 
 type mgoStorage struct {
@@ -30,11 +33,14 @@ type storageDoc struct {
 	Item     string `bson:"item"`
 }
 
-func (s *mgoStorage) setupCollection() error {
+func (s *mgoStorage) setUpCollection() error {
 	collection := s.collection()
 	defer collection.Close()
-
-	return collection.EnsureIndex(mgo.Index{Key: []string{"loc"}, Unique: true})
+	err := collection.EnsureIndex(mgo.Index{Key: []string{"loc"}, Unique: true})
+	if err != nil {
+		return errgo.Notef(err, "failed to ensure an index on loc exists")
+	}
+	return nil
 }
 
 // collection returns the collection with a copied mgo session.
@@ -52,7 +58,7 @@ func (c collectionCloser) Close() {
 	c.Collection.Database.Session.Close()
 }
 
-// Put implements the bakery Storage interface.
+// Put implements bakery.Storage.Put.
 func (s mgoStorage) Put(location, item string) error {
 	i := storageDoc{Location: location, Item: item}
 
@@ -66,7 +72,7 @@ func (s mgoStorage) Put(location, item string) error {
 	return nil
 }
 
-// Get implements the bakery Storage interface.
+// Get implements bakery.Storage.Get.
 func (s mgoStorage) Get(location string) (string, error) {
 	collection := s.collection()
 	defer collection.Close()
@@ -83,7 +89,7 @@ func (s mgoStorage) Get(location string) (string, error) {
 	return i.Item, nil
 }
 
-// Del implements the bakery Storage interface.
+// Del implements bakery.Storage.Del.
 func (s mgoStorage) Del(location string) error {
 	collection := s.collection()
 	defer collection.Close()
