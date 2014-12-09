@@ -8,10 +8,10 @@ import (
 	"net/url"
 
 	gc "gopkg.in/check.v1"
+	"gopkg.in/macaroon.v1"
 
 	"gopkg.in/macaroon-bakery.v0/bakery"
 	"gopkg.in/macaroon-bakery.v0/httpbakery"
-	"gopkg.in/macaroon.v1"
 )
 
 type ServiceSuite struct{}

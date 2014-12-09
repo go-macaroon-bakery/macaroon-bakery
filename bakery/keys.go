@@ -3,7 +3,7 @@ package bakery
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"strings"
+	"net/url"
 	"sync"
 
 	"code.google.com/p/go.crypto/nacl/box"
@@ -101,7 +101,6 @@ func (m PublicKeyLocatorMap) PublicKeyForLocation(loc string) (*PublicKey, error
 }
 
 // KeyPair holds a public/private pair of keys.
-// TODO(rog) marshal/unmarshal functions for KeyPair
 type KeyPair struct {
 	Public  PublicKey  `json:"public"`
 	Private PrivateKey `json:"private"`
@@ -127,9 +126,9 @@ func (key *KeyPair) String() string {
 }
 
 type publicKeyRecord struct {
-	location string
-	prefix   bool
-	key      PublicKey
+	url    *url.URL
+	prefix bool
+	key    PublicKey
 }
 
 // PublicKeyRing stores public keys for third-party services, accessible by
@@ -148,41 +147,86 @@ func NewPublicKeyRing() *PublicKeyRing {
 }
 
 // AddPublicKeyForLocation adds a public key to the keyring for the given
-// location or location prefix.
+// location. If prefix is true, then inexact locations will be allowed
+// (see PublicKeyForLocation). The matching is similar to that
+// of http.ServeMux, For example, http://foo.com/x/ matches http://foo.com/x/y
+// but http://foo.com/x does not.
+//
+// As a special case, http://foo.com is always treated the same as http://foo.com/.
+//
+// The scheme is not significant.
+//
 // It is safe to call methods concurrently on this type.
-func (kr *PublicKeyRing) AddPublicKeyForLocation(loc string, prefix bool, key *PublicKey) {
+// The loc argument should be a valid URL.
+func (kr *PublicKeyRing) AddPublicKeyForLocation(loc string, prefix bool, key *PublicKey) error {
+	url, err := url.Parse(loc)
+	if err != nil {
+		return errgo.Notef(err, "invalid location URL")
+	}
+	if url.Path == "" {
+		url.Path = "/"
+	}
 	kr.mu.Lock()
 	defer kr.mu.Unlock()
 	kr.publicKeys = append(kr.publicKeys, publicKeyRecord{
-		location: loc,
-		prefix:   prefix,
-		key:      *key,
+		url:    url,
+		prefix: prefix,
+		key:    *key,
 	})
+	return nil
 }
 
-// PublicKeyForLocation implements the PublicKeyLocator interface.
+// PublicKeyForLocation implements the PublicKeyLocator interface,
+// by returning the public key most closely associated with loc.
+// If loc is not a valid URL, it returns ErrNotFound; otherwise
+// the host part of the URL must match a registered location.
+//
+// Of those registered locations with matching host parts,
+// longer paths take precedence over short ones.
+// The matching is similar to that of http.ServeMux, except there
+// must be a host part.
 func (kr *PublicKeyRing) PublicKeyForLocation(loc string) (*PublicKey, error) {
-	kr.mu.Lock()
-	defer kr.mu.Unlock()
-	var (
-		longestPrefix    string
-		longestPrefixKey *PublicKey // public key associated with longest prefix
-	)
-	for i := len(kr.publicKeys) - 1; i >= 0; i-- {
-		k := kr.publicKeys[i]
-		if k.location == loc && !k.prefix {
-			return &k.key, nil
-		}
-		if !k.prefix {
-			continue
-		}
-		if strings.HasPrefix(loc, k.location) && len(k.location) > len(longestPrefix) {
-			longestPrefix = k.location
-			longestPrefixKey = &k.key
-		}
-	}
-	if len(longestPrefix) == 0 {
+	url, err := url.Parse(loc)
+	if err != nil {
 		return nil, ErrNotFound
 	}
-	return longestPrefixKey, nil
+	if url.Path == "" {
+		url.Path = "/"
+	}
+	kr.mu.Lock()
+	defer kr.mu.Unlock()
+	n := 0
+	var found *PublicKey
+	for i := range kr.publicKeys {
+		k := &kr.publicKeys[i]
+		if !k.match(url) {
+			continue
+		}
+		if found == nil || len(k.url.Path) > n {
+			found = &k.key
+			n = len(k.url.Path)
+		}
+	}
+	if found == nil {
+		return nil, ErrNotFound
+	}
+	return found, nil
+}
+
+func (r *publicKeyRecord) match(url *url.URL) bool {
+	if url == nil {
+		return false
+	}
+	if url.Host != r.url.Host {
+		return false
+	}
+	if !r.prefix {
+		return url.Path == r.url.Path
+	}
+	pattern := r.url.Path
+	n := len(pattern)
+	if pattern[n-1] != '/' {
+		return pattern == url.Path
+	}
+	return len(url.Path) >= n && url.Path[0:n] == pattern
 }
