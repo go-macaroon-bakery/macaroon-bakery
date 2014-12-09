@@ -1,7 +1,6 @@
 package idservice
 
 import (
-	"encoding/base64"
 	"fmt"
 	"html/template"
 	"log"
@@ -28,7 +27,7 @@ const (
 // handler implements http.Handler to serve the name space
 // provided by the id service.
 type handler struct {
-	svc   *httpbakery.Service
+	svc   *bakery.Service
 	place *place
 	users map[string]*UserInfo
 }
@@ -49,7 +48,7 @@ type Params struct {
 // service. This acts as a login service and can discharge third-party caveats
 // for users.
 func New(p Params) (http.Handler, error) {
-	svc, err := httpbakery.NewService(p.Service)
+	svc, err := bakery.NewService(p.Service)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +58,7 @@ func New(p Params) (http.Handler, error) {
 		place: &place{meeting.New()},
 	}
 	mux := http.NewServeMux()
-	svc.AddDischargeHandler("/", mux, h.checkThirdPartyCaveat)
+	httpbakery.AddDischargeHandler(mux, "/", svc, h.checkThirdPartyCaveat)
 	mux.Handle("/user/", handleJSON(h.userHandler))
 	mux.HandleFunc("/login", h.loginHandler)
 	mux.Handle("/question", handleJSON(h.questionHandler))
@@ -72,9 +71,8 @@ func New(p Params) (http.Handler, error) {
 // It is only accessible to users that are members of the admin group.
 func (h *handler) userHandler(_ http.Header, req *http.Request) (interface{}, error) {
 	ctxt := h.newContext(req, "change-user")
-	breq := h.svc.NewRequest(req, ctxt)
-	err := breq.Check()
-	if err != nil {
+	if err := httpbakery.CheckRequest(h.svc, req, ctxt); err != nil {
+		// TODO do this only if the error cause is *bakery.VerificationError
 		// We issue a macaroon with a third-party caveat targetting
 		// the id service itself. This means that the flow for self-created
 		// macaroons is just the same as for any other service.
@@ -174,10 +172,12 @@ func (h *handler) loginAttemptHandler(w http.ResponseWriter, req *http.Request) 
 		http.Error(w, "cannot mint macaroon: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	if err := addMacaroonAsCookie(w, m); err != nil {
-		http.Error(w, "cannot add macaroon cookie", http.StatusInternalServerError)
+	cookie, err := httpbakery.NewCookie([]*macaroon.Macaroon{m})
+	if err != nil {
+		http.Error(w, "cannot make cookie: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
+	http.SetCookie(w, cookie)
 	http.SetCookie(w, &http.Cookie{
 		Path:  "/",
 		Name:  cookieUser,
@@ -186,20 +186,6 @@ func (h *handler) loginAttemptHandler(w http.ResponseWriter, req *http.Request) 
 	h.place.Done(waitId, &loginInfo{
 		User: user,
 	})
-}
-
-func addMacaroonAsCookie(w http.ResponseWriter, m *macaroon.Macaroon) error {
-	data, err := m.MarshalJSON()
-	if err != nil {
-		return err
-	}
-	http.SetCookie(w, &http.Cookie{
-		Path:  "/",
-		Name:  fmt.Sprintf("macaroon-%x", m.Signature()),
-		Value: base64.StdEncoding.EncodeToString(data),
-		// TODO(rog) other fields
-	})
-	return nil
 }
 
 // checkThirdPartyCaveat is called by the httpbakery discharge handler.
@@ -230,6 +216,7 @@ func (h *handler) newContext(req *http.Request, operation string) *context {
 	return &context{
 		handler:      h,
 		req:          req,
+		svc:          h.svc,
 		declaredUser: username,
 		operation:    operation,
 	}
@@ -282,6 +269,7 @@ func (h *handler) waitHandler(_ http.Header, req *http.Request) (interface{}, er
 	ctxt := &context{
 		handler:      h,
 		req:          req,
+		svc:          h.svc,
 		declaredUser: login.User,
 		verifiedUser: true,
 	}
@@ -354,6 +342,8 @@ type context struct {
 
 	// operation holds the current operation, if any.
 	operation string
+
+	svc *bakery.Service
 
 	// req holds the current client's HTTP request.
 	req *http.Request
@@ -437,8 +427,7 @@ func (ctxt *context) canSpeakFor(user string) error {
 	}
 	ctxt1 := *ctxt
 	ctxt1.declaredUser = user
-	breq := ctxt.handler.svc.NewRequest(ctxt.req, &ctxt1)
-	err := breq.Check()
+	err := httpbakery.CheckRequest(ctxt.svc, ctxt.req, &ctxt1)
 	if err != nil {
 		log.Printf("client cannot speak for %q: %v", user, err)
 	} else {

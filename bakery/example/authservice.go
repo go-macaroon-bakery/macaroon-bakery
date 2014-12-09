@@ -11,7 +11,7 @@ import (
 // that can discharge third-party caveats added
 // to other macaroons.
 func authService(endpoint string, key *bakery.KeyPair) (http.Handler, error) {
-	svc, err := httpbakery.NewService(bakery.NewServiceParams{
+	svc, err := bakery.NewService(bakery.NewServiceParams{
 		Location: endpoint,
 		Key:      key,
 		Locator:  bakery.NewPublicKeyRing(),
@@ -20,7 +20,7 @@ func authService(endpoint string, key *bakery.KeyPair) (http.Handler, error) {
 		return nil, err
 	}
 	mux := http.NewServeMux()
-	svc.AddDischargeHandler("/", mux, thirdPartyChecker)
+	httpbakery.AddDischargeHandler(mux, "/", svc, thirdPartyChecker)
 	return mux, nil
 }
 

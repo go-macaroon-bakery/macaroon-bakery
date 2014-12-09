@@ -8,8 +8,8 @@ import (
 	"crypto/rand"
 	"fmt"
 	"log"
-	"sync"
 
+	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v1"
 )
 
@@ -44,6 +44,8 @@ type NewServiceParams struct {
 
 	// Key is the public key pair used by the service for
 	// third-party caveat encryption.
+	// It may be nil, in which case a new key pair
+	// will be generated.
 	Key *KeyPair
 
 	// Locator provides public keys for third-party services by location when
@@ -103,65 +105,39 @@ type Caveat struct {
 	Condition string
 }
 
-// Request represents a request made to a service
-// by a client. The request may be long-lived. It holds a set
-// of macaroons that the client wishes to be taken
-// into account.
+// Check checks that the given macaroons verify
+// correctly using the provided checker to check
+// first party caveats. The primary macaroon is in ms[0]; the discharges
+// fill the rest of the slice.
 //
-// Methods on a Request may be called concurrently
-// with each other.
-type Request struct {
-	svc     *Service
-	checker FirstPartyChecker
-
-	// mu guards the fields following it.
-	mu sync.Mutex
-
-	// macaroons holds the set of macaroons currently associated
-	// with the request.
-	macaroons []*macaroon.Macaroon
-
-	// inStorage maps from macaroon id
-	// to the storage associated with that macaroon
-	// for all elements in macaroons.
-	inStorage map[*macaroon.Macaroon]*storageItem
-}
-
-// NewRequest returns a new client request object that uses checker to
-// verify caveats.
-func (svc *Service) NewRequest(checker FirstPartyChecker) *Request {
-	return &Request{
-		svc:       svc,
-		checker:   checker,
-		inStorage: make(map[*macaroon.Macaroon]*storageItem),
+// If there is a verification error, it returns a VerificationError that
+// describes the error (other errors might be returned in other
+// circumstances).
+func (svc *Service) Check(ms []*macaroon.Macaroon, checker FirstPartyChecker) error {
+	if len(ms) == 0 {
+		return &VerificationError{
+			Reason: fmt.Errorf("no macaroons in slice"),
+		}
 	}
-}
-
-// AddClientMacaroon associates the given macaroon  with
-// the request. The macaroon will be taken into account when req.Check
-// is called.
-//
-// TODO(rog) provide a way of deleting client macaroons?
-func (req *Request) AddClientMacaroon(m *macaroon.Macaroon) {
-	req.mu.Lock()
-	defer req.mu.Unlock()
-
-	req.macaroons = append(req.macaroons, m)
-	if req.inStorage[m] != nil {
-		return
-	}
-	// TODO(rog) perhaps defer doing this until Check time,
-	// when we could fetch all the ids at once. We'd
-	// want to change Storage.Get to take a slice of ids.
-	item, err := req.svc.store.Get(m.Id())
-	if err == ErrNotFound {
-		return
-	}
+	item, err := svc.store.Get(ms[0].Id())
 	if err != nil {
-		log.Printf("warning: failed to read storage: %v", err)
-		return
+		if errgo.Cause(err) == ErrNotFound {
+			// If the macaroon was not found, it is probably
+			// because it's been removed after time-expiry,
+			// so return a verification error.
+			return &VerificationError{
+				Reason: errgo.New("macaroon not found in storage"),
+			}
+		}
+		return errgo.Notef(err, "cannot get macaroon")
 	}
-	req.inStorage[m] = item
+	err = ms[0].Verify(item.RootKey, checker.CheckFirstPartyCaveat, ms[1:])
+	if err != nil {
+		return &VerificationError{
+			Reason: err,
+		}
+	}
+	return nil
 }
 
 // NewMacaroon mints a new macaroon with the given id and caveats.
@@ -258,35 +234,6 @@ func randomBytes(n int) ([]byte, error) {
 		return nil, fmt.Errorf("cannot generate %d random bytes: %v", n, err)
 	}
 	return b, nil
-}
-
-// Check checks that the macaroons presented by the client verify
-// correctly. If the verification fails in a way which might be
-// remediable (for example by the addition of additional dicharge
-// macaroons), it returns a VerificationError that describes the error.
-func (req *Request) Check() error {
-	req.mu.Lock()
-	defer req.mu.Unlock()
-	if len(req.macaroons) == 0 {
-		return &VerificationError{
-			Reason: fmt.Errorf("no possible macaroons found"),
-		}
-	}
-	var anError error
-	for _, m := range req.macaroons {
-		item := req.inStorage[m]
-		if item == nil {
-			continue
-		}
-		err := m.Verify(item.RootKey, req.checker.CheckFirstPartyCaveat, req.macaroons)
-		if err == nil {
-			return nil
-		}
-		anError = err
-	}
-	return &VerificationError{
-		Reason: anError,
-	}
 }
 
 type CaveatNotRecognizedError struct {

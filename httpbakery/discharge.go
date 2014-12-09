@@ -16,13 +16,16 @@ import (
 )
 
 type dischargeHandler struct {
-	svc     *Service
+	svc     *bakery.Service
 	checker func(req *http.Request, cavId, cav string) ([]bakery.Caveat, error)
 }
 
-// AddDischargeHandler handles adds handlers to the given ServeMux
-// under the given root path to service third party caveats.
-// If rootPath is empty, "/" will be used.
+// AddDischargeHandler adds handlers to the given
+// ServeMux to serve third party caveat discharges
+// using the given service.
+//
+// The handlers are added under the given rootPath,
+// which must be non-empty.
 //
 // The check function is used to check whether a client making the given
 // request should be allowed a discharge for the given caveat. If it
@@ -62,17 +65,10 @@ type dischargeHandler struct {
 //	result:
 //		public key of service
 //		expiry time of key
-func (svc *Service) AddDischargeHandler(
-	rootPath string,
-	mux *http.ServeMux,
-	checker func(req *http.Request, cavId, cav string) ([]bakery.Caveat, error),
-) {
+func AddDischargeHandler(mux *http.ServeMux, rootPath string, svc *bakery.Service, checker func(req *http.Request, cavId, cav string) ([]bakery.Caveat, error)) {
 	d := &dischargeHandler{
 		svc:     svc,
 		checker: checker,
-	}
-	if rootPath == "" {
-		rootPath = "/"
 	}
 	mux.Handle(path.Join(rootPath, "discharge"), handleJSON(d.serveDischarge))
 	mux.Handle(path.Join(rootPath, "create"), handleJSON(d.serveCreate))

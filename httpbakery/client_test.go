@@ -14,15 +14,15 @@ import (
 	"gopkg.in/macaroon-bakery.v0/httpbakery"
 )
 
-type ServiceSuite struct{}
+type ClientSuite struct{}
 
-var _ = gc.Suite(&ServiceSuite{})
+var _ = gc.Suite(&ClientSuite{})
 
 // TestSingleServiceFirstParty creates a single service
 // with a macaroon with one first party caveat.
 // It creates a request with this macaroon and checks that the service
 // can verify this macaroon as valid.
-func (s *ServiceSuite) TestSingleServiceFirstParty(c *gc.C) {
+func (s *ClientSuite) TestSingleServiceFirstParty(c *gc.C) {
 
 	// Create a target service.
 	svc := newService(c, "loc", nil)
@@ -54,11 +54,11 @@ func (s *ServiceSuite) TestSingleServiceFirstParty(c *gc.C) {
 	c.Assert(string(body), gc.DeepEquals, "done")
 }
 
-func newService(c *gc.C, location string, locator bakery.PublicKeyLocatorMap) *httpbakery.Service {
+func newService(c *gc.C, location string, locator bakery.PublicKeyLocatorMap) *bakery.Service {
 	keyPair, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
 
-	svc, err := httpbakery.NewService(bakery.NewServiceParams{
+	svc, err := bakery.NewService(bakery.NewServiceParams{
 		Location: location,
 		Store:    nil,
 		Key:      keyPair,
@@ -81,16 +81,14 @@ func clientRequestWithCookies(c *gc.C, u string, macaroons []*macaroon.Macaroon)
 	client := httpbakery.DefaultHTTPClient
 	url, err := url.Parse(u)
 	c.Assert(err, gc.IsNil)
-	cookies, err := httpbakery.CookiesFromMacaroons(macaroons)
+	err = httpbakery.SetCookie(client.Jar, url, macaroons)
 	c.Assert(err, gc.IsNil)
-	client.Jar.SetCookies(url, cookies)
 	return client
 }
 
-func serverHandler(service *httpbakery.Service) func(http.ResponseWriter, *http.Request) {
+func serverHandler(service *bakery.Service) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
-		breq := service.NewRequest(req, strCompFirstPartyChecker("something"))
-		if err := breq.Check(); err != nil {
+		if err := httpbakery.CheckRequest(service, req, strCompFirstPartyChecker("something")); err != nil {
 			http.Error(w, "no macaroon", http.StatusUnauthorized)
 			return
 		}

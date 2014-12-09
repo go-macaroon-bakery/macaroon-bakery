@@ -1,6 +1,7 @@
 package bakery_test
 
 import (
+	"encoding/json"
 	"fmt"
 
 	gc "gopkg.in/check.v1"
@@ -27,22 +28,17 @@ func (s *ServiceSuite) TestSingleServiceFirstParty(c *gc.C) {
 	service, err := bakery.NewService(p)
 	c.Assert(err, gc.IsNil)
 
-	macaroon, err := service.NewMacaroon("", nil, nil)
+	primary, err := service.NewMacaroon("", nil, nil)
 	c.Assert(err, gc.IsNil)
-	c.Assert(macaroon.Location(), gc.Equals, "loc")
+	c.Assert(primary.Location(), gc.Equals, "loc")
 	cav := bakery.Caveat{
 		Location:  "",
 		Condition: "something",
 	}
-	err = service.AddCaveat(macaroon, cav)
+	err = service.AddCaveat(primary, cav)
 	c.Assert(err, gc.IsNil)
 
-	checker := strCompFirstPartyChecker("something")
-	req := service.NewRequest(checker)
-
-	req.AddClientMacaroon(macaroon)
-
-	err = req.Check()
+	err = service.Check([]*macaroon.Macaroon{primary}, strCompFirstPartyChecker("something"))
 	c.Assert(err, gc.IsNil)
 }
 
@@ -76,18 +72,16 @@ func (s *ServiceSuite) TestMacaroonPaperFig6(c *gc.C) {
 	})
 	c.Assert(err, gc.IsNil)
 
-	// client makes request to ts
-	req := ts.NewRequest(strCompFirstPartyChecker(""))
-	req.AddClientMacaroon(tsMacaroon)
-	// client has all the discharge macaroons. For each discharge macaroon bind it to our tsMacaroon
-	// and add it to our request.
-	for _, dm := range d {
-		dm.Bind(tsMacaroon.Signature())
-		req.AddClientMacaroon(dm)
-	}
-
-	err = req.Check()
+	err = ts.Check(d, strCompFirstPartyChecker(""))
 	c.Assert(err, gc.IsNil)
+}
+
+func macStr(m *macaroon.Macaroon) string {
+	data, err := json.MarshalIndent(m, "\t", "\t")
+	if err != nil {
+		panic(err)
+	}
+	return string(data)
 }
 
 // TestMacaroonPaperFig6FailsWithoutDischarges runs a similar test as TestMacaroonPaperFig6
@@ -103,10 +97,7 @@ func (s *ServiceSuite) TestMacaroonPaperFig6FailsWithoutDischarges(c *gc.C) {
 	tsMacaroon := createMacaroonWithThirdPartyCaveat(c, ts, fs, bakery.Caveat{Location: "as-loc", Condition: "user==bob"})
 
 	// client makes request to ts
-	req := ts.NewRequest(strCompFirstPartyChecker(""))
-	req.AddClientMacaroon(tsMacaroon)
-
-	err := req.Check()
+	err := ts.Check([]*macaroon.Macaroon{tsMacaroon}, strCompFirstPartyChecker(""))
 	c.Assert(err, gc.ErrorMatches, `verification failed: cannot find discharge macaroon for caveat ".*"`)
 }
 
@@ -132,18 +123,14 @@ func (s *ServiceSuite) TestMacaroonPaperFig6FailsWithBindingOnTamperedSignature(
 	})
 	c.Assert(err, gc.IsNil)
 
-	// client makes request to ts
-	req := ts.NewRequest(strCompFirstPartyChecker(""))
-	req.AddClientMacaroon(tsMacaroon)
-
 	// client has all the discharge macaroons. For each discharge macaroon bind it to our tsMacaroon
 	// and add it to our request.
-	for _, dm := range d {
+	for _, dm := range d[1:] {
 		dm.Bind([]byte("tampered-signature")) // Bind against an incorrect signature.
-		req.AddClientMacaroon(dm)
 	}
 
-	err = req.Check()
+	// client makes request to ts.
+	err = ts.Check(d, strCompFirstPartyChecker(""))
 	c.Assert(err, gc.ErrorMatches, "verification failed: signature mismatch after caveat verification")
 }
 

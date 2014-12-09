@@ -27,9 +27,10 @@ func (*DischargeSuite) TestDischargeAllNoDischarges(c *gc.C) {
 	}
 	ms, err := bakery.DischargeAll(m, getDischarge)
 	c.Assert(err, gc.IsNil)
-	c.Assert(ms, gc.HasLen, 0)
+	c.Assert(ms, gc.HasLen, 1)
+	c.Assert(ms[0], gc.Equals, m)
 
-	err = m.Verify(rootKey, alwaysOK, ms)
+	err = m.Verify(rootKey, alwaysOK, nil)
 	c.Assert(err, gc.IsNil)
 }
 
@@ -61,12 +62,8 @@ func (*DischargeSuite) TestDischargeAllManyDischarges(c *gc.C) {
 	}
 	ms, err := bakery.DischargeAll(m0, getDischarge)
 	c.Assert(err, gc.IsNil)
-	c.Assert(ms, gc.HasLen, 40)
+	c.Assert(ms, gc.HasLen, 41)
 
-	for _, m := range ms {
-		m.Bind(m0.Signature())
-	}
-
-	err = m0.Verify(rootKey, alwaysOK, ms)
+	err = ms[0].Verify(rootKey, alwaysOK, ms[1:])
 	c.Assert(err, gc.IsNil)
 }

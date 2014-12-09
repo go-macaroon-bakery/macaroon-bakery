@@ -19,6 +19,37 @@ import (
 	"gopkg.in/macaroon-bakery.v0/bakery"
 )
 
+// DefaultHTTPClient is an http.Client that ensures that
+// headers are sent to the server even when the server redirects.
+// See https://github.com/golang/go/issues/4677
+var DefaultHTTPClient = defaultHTTPClient()
+
+func defaultHTTPClient() *http.Client {
+	c := *http.DefaultClient
+	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return fmt.Errorf("too many redirects")
+		}
+		if len(via) == 0 {
+			return nil
+		}
+		for attr, val := range via[0].Header {
+			if _, ok := req.Header[attr]; !ok {
+				req.Header[attr] = val
+			}
+		}
+		return nil
+	}
+	jar, err := cookiejar.New(&cookiejar.Options{
+		PublicSuffixList: publicsuffix.List,
+	})
+	if err != nil {
+		panic(err)
+	}
+	c.Jar = &cookieLogger{jar}
+	return &c
+}
+
 // WaitResponse holds the type that should be returned
 // by an HTTP response made to a WaitURL
 // (See the ErrorInfo type).
@@ -110,48 +141,56 @@ func (ctxt *clientContext) do1(req *http.Request) (*http.Response, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Bind the discharge macaroons to the original macaroon.
-	for _, m := range macaroons {
-		m.Bind(mac.Signature())
-	}
-	// TODO(rog) perhaps we should add all the macaroons as a single
-	// cookie, with the principal macaroon first.
-	macaroons = append(macaroons, mac)
-	if err := ctxt.addCookies(req, macaroons); err != nil {
-		return nil, errgo.Notef(err, "cannot add cookie")
+	if err := SetCookie(ctxt.client.Jar, req.URL, macaroons); err != nil {
+		return nil, errgo.Notef(err, "cannot set cookie")
 	}
 	// Try again with our newly acquired discharge macaroons
 	hresp, err := ctxt.client.Do(req)
 	return hresp, err
 }
 
-// CookiesFromMacaroons takes a slice of macaroons and returns them
-// encoded as cookies.
-func CookiesFromMacaroons(ms []*macaroon.Macaroon) ([]*http.Cookie, error) {
-	var cookies []*http.Cookie
-	for _, m := range ms {
-		data, err := m.MarshalJSON()
-		if err != nil {
-			return nil, errgo.Notef(err, "cannot marshal macaroon")
-		}
-		cookies = append(cookies, &http.Cookie{
-			Name:  fmt.Sprintf("macaroon-%x", m.Signature()),
-			Value: base64.StdEncoding.EncodeToString(data),
-			// TODO(rog) other fields
-		})
+// NewCookie takes a slice of macaroons and returns them
+// encoded as a cookie. The slice should contain a single primary
+// macaroon in its first element, and any discharges after that.
+func NewCookie(ms []*macaroon.Macaroon) (*http.Cookie, error) {
+	if len(ms) == 0 {
+		return nil, errgo.New("no macaroons in cookie")
 	}
-	return cookies, nil
+	data, err := json.Marshal(ms)
+	if err != nil {
+		return nil, errgo.Notef(err, "cannot marshal macaroons")
+	}
+	return &http.Cookie{
+		Name:  fmt.Sprintf("macaroon-%x", ms[0].Signature()),
+		Value: base64.StdEncoding.EncodeToString(data),
+		// TODO(rog) other fields, particularly expiry time.
+	}, nil
 }
 
-func (ctxt *clientContext) addCookies(req *http.Request, ms []*macaroon.Macaroon) error {
-	cookies, err := CookiesFromMacaroons(ms)
+// SetCookie sets a cookie for the given URL on the given cookie jar
+// that will holds the given macaroon slice. The macaroon slice should
+// contain a single primary macaroon in its first element, and any
+// discharges after that.
+func SetCookie(jar http.CookieJar, url *url.URL, ms []*macaroon.Macaroon) error {
+	cookie, err := NewCookie(ms)
+	if err != nil {
+		return errgo.Mask(err)
+	}
+	// TODO verify that setting this for the URL makes it available
+	// to all paths under that URL.
+	jar.SetCookies(url, []*http.Cookie{cookie})
+	return nil
+}
+
+func (ctxt *clientContext) addCookie(req *http.Request, ms []*macaroon.Macaroon) error {
+	cookies, err := NewCookie(ms)
 	if err != nil {
 		return errgo.Mask(err)
 	}
 	// TODO should we set it for the URL only, or the host.
 	// Can we set cookies such that they'll always get sent to any
 	// URL on the given host?
-	ctxt.client.Jar.SetCookies(req.URL, cookies)
+	ctxt.client.Jar.SetCookies(req.URL, []*http.Cookie{cookies})
 	return nil
 }
 
@@ -269,4 +308,68 @@ func postFormJSON(url string, vals url.Values, resp interface{}, postForm func(u
 		return errgo.Notef(err, "cannot unmarshal response from %q", url)
 	}
 	return nil
+}
+
+// RequestMacaroons returns any collections of macaroons from the cookies
+// found in the request. By convention, each slice will contain a primary
+// macaroon followed by its discharges.
+func RequestMacaroons(req *http.Request) [][]*macaroon.Macaroon {
+	var mss [][]*macaroon.Macaroon
+	for _, cookie := range req.Cookies() {
+		if !strings.HasPrefix(cookie.Name, "macaroon-") {
+			continue
+		}
+		data, err := base64.StdEncoding.DecodeString(cookie.Value)
+		if err != nil {
+			log.Printf("cannot base64-decode cookie; ignoring: %v", err)
+			continue
+		}
+		var ms []*macaroon.Macaroon
+		if err := json.Unmarshal(data, &ms); err != nil {
+			log.Printf("cannot unmarshal macaroons from cookie; ignoring: %v", err)
+			continue
+		}
+		mss = append(mss, ms)
+	}
+	return mss
+}
+
+func isVerificationError(err error) bool {
+	_, ok := err.(*bakery.VerificationError)
+	return ok
+}
+
+// CheckRequest checks that the given http request contains at least one
+// valid macaroon minted by the given service, using checker to check
+// any first party caveats. It returns an error with a
+// *bakery.VerificationError cause if the macaroon verification failed.
+func CheckRequest(svc *bakery.Service, req *http.Request, checker bakery.FirstPartyChecker) error {
+	mss := RequestMacaroons(req)
+	if len(mss) == 0 {
+		return &bakery.VerificationError{
+			Reason: errgo.Newf("no macaroon cookies in request"),
+		}
+	}
+	var err error
+	for _, ms := range mss {
+		err = svc.Check(ms, checker)
+		if err == nil {
+			return nil
+		}
+	}
+	// Return an arbitrary error from the macaroons provided.
+	// TODO return all errors.
+	return errgo.Mask(err, isVerificationError)
+}
+
+type cookieLogger struct {
+	http.CookieJar
+}
+
+func (j *cookieLogger) SetCookies(u *url.URL, cookies []*http.Cookie) {
+	log.Printf("%p setting %d cookies for %s", j.CookieJar, len(cookies), u)
+	for i, c := range cookies {
+		log.Printf("\t%d. path %s; name %s", i, c.Path, c.Name)
+	}
+	j.CookieJar.SetCookies(u, cookies)
 }
