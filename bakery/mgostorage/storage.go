@@ -13,7 +13,7 @@ import (
 
 // New returns an implementation of Storage
 // that stores all items in MongoDB.
-func New(c *mgo.Collection) (*mgoStorage, error) {
+func New(c *mgo.Collection) (bakery.Storage, error) {
 	m := mgoStorage{
 		col: c,
 	}
