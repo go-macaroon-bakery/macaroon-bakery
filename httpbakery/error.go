@@ -27,9 +27,9 @@ const (
 )
 
 var (
-	handleJSON   = jsonhttp.HandleJSON(errorToResponse)
-	handleErrors = jsonhttp.HandleErrors(errorToResponse)
-	writeError   = jsonhttp.WriteError(errorToResponse)
+	handleJSON   = jsonhttp.HandleJSON(ErrorToResponse)
+	handleErrors = jsonhttp.HandleErrors(ErrorToResponse)
+	writeError   = jsonhttp.WriteError(ErrorToResponse)
 )
 
 // Error holds the type of a response from an httpbakery HTTP request,
@@ -78,7 +78,11 @@ func (e *Error) ErrorInfo() *ErrorInfo {
 	return e.Info
 }
 
-func errorToResponse(err error) (int, interface{}) {
+// ErrorToResponse returns the HTTP status and an error body to be
+// marshaled as JSON for the given error. This allows a third party
+// package to integrate bakery errors into their error responses when
+// they encounter an error with a *bakery.Error cause.
+func ErrorToResponse(err error) (int, interface{}) {
 	errorBody := errorResponseBody(err)
 	status := http.StatusInternalServerError
 	switch errorBody.Code {

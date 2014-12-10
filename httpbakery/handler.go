@@ -14,10 +14,10 @@ type dischargeRequestedResponse struct {
 	Macaroon  *macaroon.Macaroon
 }
 
-// WriteDischargeRequiredError writes a response to w that reports the
-// given error and sends the given macaroon to the client, indicating
-// that it should be discharged to allow the original request to be
-// accepted.
+// WriteDischargeRequiredError creates an error using
+// NewDischargeRequiredError and writes it to the given response writer,
+// indicating that the client should discharge the macaroon to allow the
+// original request to be accepted.
 func WriteDischargeRequiredError(w http.ResponseWriter, m *macaroon.Macaroon, originalErr error) {
 	log.Printf("write discharge required error")
 	if originalErr == nil {
@@ -30,6 +30,19 @@ func WriteDischargeRequiredError(w http.ResponseWriter, m *macaroon.Macaroon, or
 			Macaroon: m,
 		},
 	})
+}
+
+// NewDischargeRequiredError returns an error of type *Error
+// that reports the given original error and includes the
+// given macaroon.
+func NewDischargeRequiredError(m *macaroon.Macaroon, originalErr error) error {
+	return &Error{
+		Message: originalErr.Error(),
+		Code:    ErrDischargeRequired,
+		Info: &ErrorInfo{
+			Macaroon: m,
+		},
+	}
 }
 
 // It remains to be seen whether the following code is useful
