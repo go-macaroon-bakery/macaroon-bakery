@@ -11,6 +11,12 @@ import (
 	"gopkg.in/macaroon-bakery.v0/bakery"
 )
 
+// Constants for all the standard caveat conditions.
+const (
+	CondDeclared   = "declared"
+	CondTimeBefore = "time-before"
+)
+
 // Checker is implemented by types that can check caveats.
 type Checker interface {
 	// Condition returns the identifier of the condition

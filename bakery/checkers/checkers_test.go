@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"time"
 
+	jc "github.com/juju/testing/checkers"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
+	"gopkg.in/macaroon.v1"
 
 	"gopkg.in/macaroon-bakery.v0/bakery"
 	"gopkg.in/macaroon-bakery.v0/bakery/checkers"
@@ -176,6 +178,39 @@ var checkerTests = []struct {
 		caveat:      checkers.TimeBeforeCaveat(now).Condition + " ",
 		expectError: `caveat "time-before 2006-01-02T15:04:05.123Z " not fulfilled: parsing time "2006-01-02T15:04:05.123Z ": extra text:  `,
 	}},
+}, {
+	about:   "declared, no entries",
+	checker: checkers.New(checkers.Declared{}),
+	checks: []checkTest{{
+		caveat:      checkers.DeclaredCaveat("a", "aval").Condition,
+		expectError: `caveat "declared a aval" not fulfilled: got a=null, expected "aval"`,
+	}, {
+		caveat:      checkers.CondDeclared,
+		expectError: `caveat "declared" not fulfilled: declared caveat has no value`,
+	}},
+}, {
+	about: "declared, some entries",
+	checker: checkers.New(checkers.Declared{
+		"a":   "aval",
+		"b":   "bval",
+		"spc": " a b",
+	}),
+	checks: []checkTest{{
+		caveat: checkers.DeclaredCaveat("a", "aval").Condition,
+	}, {
+		caveat: checkers.DeclaredCaveat("b", "bval").Condition,
+	}, {
+		caveat: checkers.DeclaredCaveat("spc", " a b").Condition,
+	}, {
+		caveat:      checkers.DeclaredCaveat("a", "bval").Condition,
+		expectError: `caveat "declared a bval" not fulfilled: got a="aval", expected "bval"`,
+	}, {
+		caveat:      checkers.DeclaredCaveat("a", " aval").Condition,
+		expectError: `caveat "declared a  aval" not fulfilled: got a="aval", expected " aval"`,
+	}, {
+		caveat:      checkers.DeclaredCaveat("spc", "a b").Condition,
+		expectError: `caveat "declared spc a b" not fulfilled: got spc=" a b", expected "a b"`,
+	}},
 }}
 
 var errWrongArg = errgo.New("wrong arg")
@@ -195,6 +230,16 @@ func argChecker(expectCond, checkArg string) checkers.Checker {
 	}
 }
 
+func (s *CheckersSuite) TestDeclaredCaveatPanic(c *gc.C) {
+	c.Assert(func() {
+		checkers.DeclaredCaveat("", "hello")
+	}, gc.PanicMatches, `invalid caveat declared key ""`)
+
+	c.Assert(func() {
+		checkers.DeclaredCaveat("some thing", "hello")
+	}, gc.PanicMatches, `invalid caveat declared key "some thing"`)
+}
+
 func (s *CheckersSuite) TestMultiChecker(c *gc.C) {
 	c.Logf("time is %s", now)
 	for i, test := range checkerTests {
@@ -212,5 +257,132 @@ func (s *CheckersSuite) TestMultiChecker(c *gc.C) {
 				c.Assert(err, gc.IsNil)
 			}
 		}
+	}
+}
+
+var inferDeclaredTests = []struct {
+	about   string
+	caveats [][]bakery.Caveat
+	expect  checkers.Declared
+}{{
+	about:  "no macaroons",
+	expect: checkers.Declared{},
+}, {
+	about: "single macaroon with one declaration",
+	caveats: [][]bakery.Caveat{{{
+		Condition: "declared foo bar",
+	}}},
+	expect: checkers.Declared{
+		"foo": "bar",
+	},
+}, {
+	about: "only one argument to declared",
+	caveats: [][]bakery.Caveat{{{
+		Condition: "declared foo",
+	}}},
+	expect: checkers.Declared{},
+}, {
+	about: "spaces in value",
+	caveats: [][]bakery.Caveat{{{
+		Condition: "declared foo bar bloggs",
+	}}},
+	expect: checkers.Declared{
+		"foo": "bar bloggs",
+	},
+}, {
+	about: "attribute with declared prefix",
+	caveats: [][]bakery.Caveat{{{
+		Condition: "declaredccf foo",
+	}}},
+	expect: checkers.Declared{},
+}, {
+	about: "several macaroons with different declares",
+	caveats: [][]bakery.Caveat{{
+		checkers.DeclaredCaveat("a", "aval"),
+		checkers.DeclaredCaveat("b", "bval"),
+	}, {
+		checkers.DeclaredCaveat("c", "cval"),
+		checkers.DeclaredCaveat("d", "dval"),
+	}},
+	expect: checkers.Declared{
+		"a": "aval",
+		"b": "bval",
+		"c": "cval",
+		"d": "dval",
+	},
+}, {
+	about: "duplicate values",
+	caveats: [][]bakery.Caveat{{
+		checkers.DeclaredCaveat("a", "aval"),
+		checkers.DeclaredCaveat("a", "aval"),
+		checkers.DeclaredCaveat("b", "bval"),
+	}, {
+		checkers.DeclaredCaveat("a", "aval"),
+		checkers.DeclaredCaveat("b", "bval"),
+		checkers.DeclaredCaveat("c", "cval"),
+		checkers.DeclaredCaveat("d", "dval"),
+	}},
+	expect: checkers.Declared{
+		"a": "aval",
+		"b": "bval",
+		"c": "cval",
+		"d": "dval",
+	},
+}, {
+	about: "conflicting values",
+	caveats: [][]bakery.Caveat{{
+		checkers.DeclaredCaveat("a", "aval"),
+		checkers.DeclaredCaveat("a", "conflict"),
+		checkers.DeclaredCaveat("b", "bval"),
+	}, {
+		checkers.DeclaredCaveat("a", "conflict"),
+		checkers.DeclaredCaveat("b", "another conflict"),
+		checkers.DeclaredCaveat("c", "cval"),
+		checkers.DeclaredCaveat("d", "dval"),
+	}},
+	expect: checkers.Declared{
+		"c": "cval",
+		"d": "dval",
+	},
+}, {
+	about: "third party caveats ignored",
+	caveats: [][]bakery.Caveat{{{
+		Condition: "declared a no conflict",
+		Location:  "location",
+	},
+		checkers.DeclaredCaveat("a", "aval"),
+	}},
+	expect: checkers.Declared{
+		"a": "aval",
+	},
+}, {
+	about: "unparseable caveats ignored",
+	caveats: [][]bakery.Caveat{{{
+		Condition: " bad",
+	},
+		checkers.DeclaredCaveat("a", "aval"),
+	}},
+	expect: checkers.Declared{
+		"a": "aval",
+	},
+}}
+
+func (*CheckersSuite) TestInferDeclared(c *gc.C) {
+	for i, test := range inferDeclaredTests {
+		c.Logf("test %d: %s", i, test.about)
+		ms := make([]*macaroon.Macaroon, len(test.caveats))
+		for i, caveats := range test.caveats {
+			m, err := macaroon.New(nil, fmt.Sprint(i), "")
+			c.Assert(err, gc.IsNil)
+			for _, cav := range caveats {
+				if cav.Location == "" {
+					m.AddFirstPartyCaveat(cav.Condition)
+				} else {
+					m.AddThirdPartyCaveat(nil, cav.Condition, cav.Location)
+				}
+			}
+			ms[i] = m
+		}
+		c.Assert(checkers.InferDeclared(ms), jc.DeepEquals, test.expect)
 	}
 }
