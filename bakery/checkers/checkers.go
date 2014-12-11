@@ -1,93 +1,172 @@
-// The checkers package provides some standard caveat
-// checkers and checker-combining functions.
+// The checkers package provides some standard first-party
+// caveat checkers and some primitives for combining them.
 package checkers
 
 import (
 	"fmt"
 	"strings"
-	"time"
+
+	"gopkg.in/errgo.v1"
 
 	"gopkg.in/macaroon-bakery.v0/bakery"
 )
 
-func FirstParty(condition string) bakery.Caveat {
-	return bakery.Caveat{
-		Condition: condition,
+// Checker is implemented by types that can check caveats.
+type Checker interface {
+	// Condition returns the identifier of the condition
+	// to be checked - the Check method will be used
+	// to check caveats with this identifier.
+	//
+	// It may return an empty string, in which case
+	// it will be used to check any condition
+	Condition() string
+
+	// Check checks that the given caveat holds true.
+	// The condition and arg are as returned
+	// from ParseCaveat.
+	//
+	// For a checker with an empty condition, a
+	// return of bakery.ErrCaveatNotRecognised from
+	// this method indicates that the condition was
+	// not recognized.
+	Check(cond, arg string) error
+}
+
+// New returns a new MultiChecker that uses all the
+// provided Checkers to check caveats. If several checkers return the
+// same condition identifier, all of them will be used.
+//
+// The cause of any error returned by a checker will be preserved.
+//
+// Note that because the returned checker implements Checker
+// as well as bakery.FirstPartyChecker, calls to New can be nested.
+// For example, a checker can be easily added to an existing
+// MultiChecker, by doing:
+//
+//	checker := checkers.New(old, another)
+func New(checkers ...Checker) *MultiChecker {
+	return &MultiChecker{
+		checkers: checkers,
 	}
 }
 
-func ThirdParty(location, condition string) bakery.Caveat {
-	return bakery.Caveat{
-		Location:  location,
-		Condition: condition,
-	}
+// MultiChecker implements bakery.FirstPartyChecker
+// and Checker for a collection of checkers.
+type MultiChecker struct {
+	// TODO it may be faster to initialize a map, but we'd
+	// be paying the price of creating and initializing
+	// the map vs a few linear scans through a probably-small
+	// slice. Let's wait for some real-world numbers.
+	checkers []Checker
 }
 
-var Std = Map{
-	"time-before": bakery.FirstPartyCheckerFunc(timeBefore),
-}
-
-func TimeBefore(t time.Time) bakery.Caveat {
-	return bakery.Caveat{
-		Condition: "time-before " + t.Format(time.RFC3339),
+// Check implements Checker.Check.
+func (c *MultiChecker) Check(cond, arg string) error {
+	checked := false
+	for _, c := range c.checkers {
+		checkerCond := c.Condition()
+		if checkerCond != "" && checkerCond != cond {
+			continue
+		}
+		if err := c.Check(cond, arg); err != nil {
+			if checkerCond == "" && errgo.Cause(err) == bakery.ErrCaveatNotRecognized {
+				continue
+			}
+			return errgo.Mask(err, errgo.Any)
+		}
+		checked = true
 	}
-}
-
-func timeBefore(cav string) error {
-	_, timeStr, err := ParseCaveat(cav)
-	if err != nil {
-		return err
-	}
-	t, err := time.Parse(time.RFC3339, timeStr)
-	if err != nil {
-		return err
-	}
-	if time.Now().After(t) {
-		return fmt.Errorf("after expiry time")
+	if !checked {
+		return bakery.ErrCaveatNotRecognized
 	}
 	return nil
 }
 
-type Map map[string]bakery.FirstPartyCheckerFunc
+// Condition implements Checker.Condition.
+func (c *MultiChecker) Condition() string {
+	return ""
+}
 
-func (m Map) CheckFirstPartyCaveat(cav string) error {
-	id, _, err := ParseCaveat(cav)
+// CheckFirstPartyCaveat implements bakery.FirstPartyChecker.CheckFirstPartyCaveat.
+func (c *MultiChecker) CheckFirstPartyCaveat(cav string) error {
+	cond, arg, err := ParseCaveat(cav)
 	if err != nil {
-		return fmt.Errorf("cannot parse caveat %q: %v", cav, err)
+		// If we can't parse it, perhaps it's in some other format,
+		// return a not-recognised error.
+		return errgo.WithCausef(err, bakery.ErrCaveatNotRecognized, "cannot parse caveat %q", cav)
 	}
-	if c := m[id]; c != nil {
-		return c.CheckFirstPartyCaveat(cav)
+	if err := c.Check(cond, arg); err != nil {
+		return errgo.NoteMask(err, fmt.Sprintf("caveat %q not fulfilled", cav), errgo.Any)
 	}
-	return &bakery.CaveatNotRecognizedError{cav}
+	return nil
 }
 
-// PushFirstPartyChecker returns a checker that first
-// uses c0 to check caveats, and falls back to using c1
-// if c0 returns bakery.ErrCaveatNotRecognized.
-func PushFirstPartyChecker(c0, c1 bakery.FirstPartyChecker) bakery.FirstPartyChecker {
-	f := func(caveat string) error {
-		err := c0.CheckFirstPartyCaveat(caveat)
-		if _, ok := err.(*bakery.CaveatNotRecognizedError); ok {
-			err = c1.CheckFirstPartyCaveat(caveat)
-		}
-		return err
+// TODO add multiChecker.CheckThirdPartyCaveat ?
+// i.e. make this stuff reusable for 3rd party caveats too.
+
+func firstParty(cond, arg string) bakery.Caveat {
+	return bakery.Caveat{
+		Condition: cond + " " + arg,
 	}
-	return bakery.FirstPartyCheckerFunc(f)
 }
 
-// ParseCaveat parses a caveat into an identifier,
-// identifying the checker that should be used,
-// and the argument to the checker (the rest of
-// the string).
+// CheckerFunc implements Checker for a function.
+type CheckerFunc struct {
+	// Condition_ holds the condition that the checker
+	// implements.
+	Condition_ string
+
+	// Check_ holds the function to call to make the check.
+	Check_ func(cond, arg string) error
+}
+
+// Condition implements Checker.Condition.
+func (f CheckerFunc) Condition() string {
+	return f.Condition_
+}
+
+// Check implements Checker.Check
+func (f CheckerFunc) Check(cond, arg string) error {
+	return f.Check_(cond, arg)
+}
+
+// Map is a checker where the various checkers
+// are specified as entries in a map, one for each
+// condition.
+// The cond argument passed to the function
+// is always the same as its corresponding key
+// in the map.
+type Map map[string]func(cond string, arg string) error
+
+// Condition implements Checker.Condition.
+func (m Map) Condition() string {
+	return ""
+}
+
+// Check implements Checker.Check
+func (m Map) Check(cond, arg string) error {
+	f, ok := m[cond]
+	if !ok {
+		return bakery.ErrCaveatNotRecognized
+	}
+	if err := f(cond, arg); err != nil {
+		return errgo.Mask(err, errgo.Any)
+	}
+	return nil
+}
+
+// ParseCaveat parses a caveat into an identifier, identifying the
+// checker that should be used, and the argument to the checker (the
+// rest of the string).
 //
-// The identifier is taken from all the characters
-// before the first space character.
-func ParseCaveat(cav string) (string, string, error) {
+// The identifier is taken from all the characters before the first
+// space character.
+func ParseCaveat(cav string) (cond, arg string, err error) {
 	if cav == "" {
 		return "", "", fmt.Errorf("empty caveat")
 	}
 	i := strings.IndexByte(cav, ' ')
-	if i <= 0 {
+	if i < 0 {
 		return cav, "", nil
 	}
 	if i == 0 {

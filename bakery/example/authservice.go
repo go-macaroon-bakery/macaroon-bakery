@@ -32,7 +32,7 @@ func authService(endpoint string, key *bakery.KeyPair) (http.Handler, error) {
 // caveats which will be added to the original macaroon's caveats.
 func thirdPartyChecker(req *http.Request, cavId, condition string) ([]bakery.Caveat, error) {
 	if condition != "access-allowed" {
-		return nil, &bakery.CaveatNotRecognizedError{condition}
+		return nil, bakery.ErrCaveatNotRecognized
 	}
 	// TODO check that the HTTP request has cookies that prove
 	// something about the client.
