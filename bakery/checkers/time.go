@@ -14,7 +14,7 @@ var timeNow = time.Now
 // TimeBefore is a checker that checks caveats
 // as created by TimeBeforeCaveat.
 var TimeBefore = CheckerFunc{
-	Condition_: "time-before",
+	Condition_: CondTimeBefore,
 	Check_: func(_, cav string) error {
 		t, err := time.Parse(time.RFC3339Nano, cav)
 		if err != nil {
@@ -30,5 +30,5 @@ var TimeBefore = CheckerFunc{
 // TimeBeforeCaveat returns a caveat that specifies that
 // the time that it is checked should be before t.
 func TimeBeforeCaveat(t time.Time) bakery.Caveat {
-	return firstParty(TimeBefore.Condition(), t.UTC().Format(time.RFC3339Nano))
+	return firstParty(CondTimeBefore, t.UTC().Format(time.RFC3339Nano))
 }
