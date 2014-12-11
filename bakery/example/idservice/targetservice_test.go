@@ -73,13 +73,9 @@ func (srv *targetServiceHandler) serveSilver(w http.ResponseWriter, req *http.Re
 // to the standard checkers implemented by checkers.Std.
 func (svc *targetServiceHandler) checkers(req *http.Request, operation string) bakery.FirstPartyChecker {
 	m := checkers.Map{
-		"remote-host": func(s string) error {
+		"remote-host": func(_, host string) error {
 			// TODO(rog) do we want to distinguish between
 			// the two kinds of errors below?
-			_, host, err := checkers.ParseCaveat(s)
-			if err != nil {
-				return err
-			}
 			remoteHost, _, err := net.SplitHostPort(req.RemoteAddr)
 			if err != nil {
 				return fmt.Errorf("cannot parse request remote address")
@@ -89,18 +85,14 @@ func (svc *targetServiceHandler) checkers(req *http.Request, operation string) b
 			}
 			return nil
 		},
-		"operation": func(s string) error {
-			_, op, err := checkers.ParseCaveat(s)
-			if err != nil {
-				return err
-			}
+		"operation": func(_, op string) error {
 			if op != operation {
 				return fmt.Errorf("macaroon not valid for operation")
 			}
 			return nil
 		},
 	}
-	return checkers.PushFirstPartyChecker(m, checkers.Std)
+	return checkers.New(m, checkers.TimeBefore)
 }
 
 // writeError writes an error to w. If the error was generated because
@@ -125,10 +117,12 @@ func (srv *targetServiceHandler) writeError(w http.ResponseWriter, operation str
 
 	// Work out what caveats we need to apply for the given operation.
 	// Could special-case the operation here if desired.
-	caveats := []bakery.Caveat{
-		checkers.ThirdParty(srv.authEndpoint, "member-of-group target-service-users"),
-		checkers.FirstParty("operation " + operation),
-	}
+	caveats := []bakery.Caveat{{
+		Location:  srv.authEndpoint,
+		Condition: "member-of-group target-service-users",
+	}, {
+		Condition: "operation " + operation,
+	}}
 	// Mint an appropriate macaroon and send it back to the client.
 	m, err := srv.svc.NewMacaroon("", nil, caveats)
 	if err != nil {

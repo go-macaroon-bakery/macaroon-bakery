@@ -79,10 +79,12 @@ func (h *handler) userHandler(_ http.Header, req *http.Request) (interface{}, er
 		// Theoretically, we could just redirect the user to the
 		// login page, but that would require a different flow
 		// and it's not clear that it would be an advantage.
-		m, err := h.svc.NewMacaroon("", nil, []bakery.Caveat{
-			checkers.ThirdParty(h.svc.Location(), "member-of-group admin"),
-			checkers.FirstParty("operation change-user"),
-		})
+		m, err := h.svc.NewMacaroon("", nil, []bakery.Caveat{{
+			Location:  h.svc.Location(),
+			Condition: "member-of-group admin",
+		}, {
+			Condition: "operation change-user",
+		}})
 		if err != nil {
 			return nil, errgo.Notef(err, "cannot mint new macaroon")
 		}
@@ -366,7 +368,7 @@ func (ctxt *context) CheckFirstPartyCaveat(caveat string) error {
 		}
 		return errgo.Newf("operation mismatch")
 	default:
-		return &bakery.CaveatNotRecognizedError{caveat}
+		return bakery.ErrCaveatNotRecognized
 	}
 }
 
@@ -410,7 +412,7 @@ func (ctxt *context) CheckThirdPartyCaveat(cavId, cav string) ([]bakery.Caveat, 
 		}
 		return ctxt.firstPartyCaveats(), nil
 	default:
-		return nil, &bakery.CaveatNotRecognizedError{cav}
+		return nil, bakery.ErrCaveatNotRecognized
 	}
 }
 

@@ -236,13 +236,10 @@ func randomBytes(n int) ([]byte, error) {
 	return b, nil
 }
 
-type CaveatNotRecognizedError struct {
-	Caveat string
-}
-
-func (e *CaveatNotRecognizedError) Error() string {
-	return fmt.Sprintf("caveat %q not recognized", e.Caveat)
-}
+// ErrCaveatNotRecognized is the cause of errors returned
+// from caveat checkers when the caveat was not
+// recognized.
+var ErrCaveatNotRecognized = errgo.New("caveat not recognized")
 
 type VerificationError struct {
 	Reason error
@@ -258,16 +255,14 @@ func (e *VerificationError) Error() string {
 // that when used to check first-party caveats, the
 // checker does not return third-party caveats.
 
-// ThirdPartyChecker holds a function that checks
-// third party caveats for validity. If the
-// caveat is valid, it returns a nil error and
-// optionally a slice of extra caveats that
-// will be added to the discharge macaroon.
-// The caveatId parameter holds the still-encoded
-// id of the caveat.
+// ThirdPartyChecker holds a function that checks third party caveats
+// for validity. If the caveat is valid, it returns a nil error and
+// optionally a slice of extra caveats that will be added to the
+// discharge macaroon. The caveatId parameter holds the still-encoded id
+// of the caveat.
 //
-// If the caveat kind was not recognised, the checker
-// should return ErrCaveatNotRecognised.
+// If the caveat kind was not recognised, the checker should return an
+// error with a ErrCaveatNotRecognized cause.
 type ThirdPartyChecker interface {
 	CheckThirdPartyCaveat(caveatId, caveat string) ([]Caveat, error)
 }
@@ -278,11 +273,11 @@ func (c ThirdPartyCheckerFunc) CheckThirdPartyCaveat(caveatId, caveat string) ([
 	return c(caveatId, caveat)
 }
 
-// FirstPartyChecker holds a function that checks
-// first party caveats for validity.
+// FirstPartyChecker holds a function that checks first party caveats
+// for validity.
 //
-// If the caveat kind was not recognised, the checker
-// should return ErrCaveatNotRecognised.
+// If the caveat kind was not recognised, the checker should return
+// ErrCaveatNotRecognized.
 type FirstPartyChecker interface {
 	CheckFirstPartyCaveat(caveat string) error
 }
