@@ -6,6 +6,7 @@ import (
 
 	"github.com/juju/testing"
 	gc "gopkg.in/check.v1"
+	"gopkg.in/macaroon.v1"
 	"gopkg.in/mgo.v2"
 
 	"gopkg.in/macaroon-bakery.v0/bakery"
@@ -113,22 +114,18 @@ func (s *StorageSuite) TestCreateMacaroon(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	c.Assert(service, gc.NotNil)
 
-	macaroon, err := service.NewMacaroon(
+	m, err := service.NewMacaroon(
 		"123",
 		[]byte("abc"),
 		[]bakery.Caveat{bakery.Caveat{Location: "", Condition: "is-authorised bob"}},
 	)
 	c.Assert(err, gc.IsNil)
-	c.Assert(macaroon, gc.NotNil)
+	c.Assert(m, gc.NotNil)
 
 	item, err := s.store.Get("123")
 	c.Assert(err, gc.IsNil)
 	c.Assert(item, gc.DeepEquals, `{"RootKey":"YWJj"}`)
 
-	request := service.NewRequest(&testChecker{})
-	c.Assert(request, gc.NotNil)
-
-	request.AddClientMacaroon(macaroon)
-	err = request.Check()
+	err = service.Check([]*macaroon.Macaroon{m}, &testChecker{})
 	c.Assert(err, gc.IsNil)
 }

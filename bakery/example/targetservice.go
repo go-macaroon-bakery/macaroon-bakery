@@ -7,13 +7,15 @@ import (
 	"net/http"
 	"time"
 
+	"gopkg.in/errgo.v1"
+
 	"gopkg.in/macaroon-bakery.v0/bakery"
 	"gopkg.in/macaroon-bakery.v0/bakery/checkers"
 	"gopkg.in/macaroon-bakery.v0/httpbakery"
 )
 
 type targetServiceHandler struct {
-	svc          *httpbakery.Service
+	svc          *bakery.Service
 	authEndpoint string
 	endpoint     string
 	mux          *http.ServeMux
@@ -29,7 +31,7 @@ func targetService(endpoint, authEndpoint string, authPK *bakery.PublicKey) (htt
 		return nil, err
 	}
 	pkLocator := bakery.NewPublicKeyRing()
-	svc, err := httpbakery.NewService(bakery.NewServiceParams{
+	svc, err := bakery.NewService(bakery.NewServiceParams{
 		Key:      key,
 		Location: endpoint,
 		Locator:  pkLocator,
@@ -50,8 +52,8 @@ func targetService(endpoint, authEndpoint string, authPK *bakery.PublicKey) (htt
 }
 
 func (srv *targetServiceHandler) serveGold(w http.ResponseWriter, req *http.Request) {
-	breq := srv.svc.NewRequest(req, srv.checkers(req, "gold"))
-	if err := breq.Check(); err != nil {
+	checker := srv.checkers(req, "gold")
+	if err := httpbakery.CheckRequest(srv.svc, req, checker); err != nil {
 		srv.writeError(w, "gold", err)
 		return
 	}
@@ -59,8 +61,8 @@ func (srv *targetServiceHandler) serveGold(w http.ResponseWriter, req *http.Requ
 }
 
 func (srv *targetServiceHandler) serveSilver(w http.ResponseWriter, req *http.Request) {
-	breq := srv.svc.NewRequest(req, srv.checkers(req, "silver"))
-	if err := breq.Check(); err != nil {
+	checker := srv.checkers(req, "silver")
+	if err := httpbakery.CheckRequest(srv.svc, req, checker); err != nil {
 		srv.writeError(w, "silver", err)
 		return
 	}
@@ -111,6 +113,7 @@ func (svc *targetServiceHandler) checkers(req *http.Request, operation string) b
 // The logic in this function is crucial to the security of the service
 // - it must determine for a given operation what caveats to attach.
 func (srv *targetServiceHandler) writeError(w http.ResponseWriter, operation string, verr error) {
+	log.Printf("writing error with operation %q", operation)
 	fail := func(code int, msg string, args ...interface{}) {
 		if code == http.StatusInternalServerError {
 			msg = "internal error: " + msg
@@ -118,7 +121,7 @@ func (srv *targetServiceHandler) writeError(w http.ResponseWriter, operation str
 		http.Error(w, fmt.Sprintf(msg, args...), code)
 	}
 
-	if _, ok := verr.(*bakery.VerificationError); !ok {
+	if _, ok := errgo.Cause(verr).(*bakery.VerificationError); !ok {
 		fail(http.StatusForbidden, "%v", verr)
 		return
 	}
