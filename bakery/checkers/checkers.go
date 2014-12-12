@@ -8,8 +8,6 @@ import (
 	"strings"
 
 	"gopkg.in/errgo.v1"
-
-	"gopkg.in/macaroon-bakery.v0/bakery"
 )
 
 // Constants for all the standard caveat conditions.
@@ -19,6 +17,21 @@ const (
 	CondClientIPAddr = "client-ip-addr"
 	CondError        = "error"
 )
+
+// ErrCaveatNotRecognized is the cause of errors returned
+// from caveat checkers when the caveat was not
+// recognized.
+var ErrCaveatNotRecognized = errgo.New("caveat not recognized")
+
+// Caveat represents a condition that must be true for a check to
+// complete successfully. If Location is non-empty, the caveat must be
+// discharged by a third party at the given location.
+// This differs from macaroon.Caveat in that the condition
+// is not encrypted.
+type Caveat struct {
+	Location  string
+	Condition string
+}
 
 // Checker is implemented by types that can check caveats.
 type Checker interface {
@@ -87,7 +100,7 @@ func (c *MultiChecker) Check(cond, arg string) error {
 			continue
 		}
 		if err := c.Check(cond, arg); err != nil {
-			if checkerCond == "" && errgo.Cause(err) == bakery.ErrCaveatNotRecognized {
+			if checkerCond == "" && errgo.Cause(err) == ErrCaveatNotRecognized {
 				continue
 			}
 			return errgo.Mask(err, errgo.Any)
@@ -95,7 +108,7 @@ func (c *MultiChecker) Check(cond, arg string) error {
 		checked = true
 	}
 	if !checked {
-		return bakery.ErrCaveatNotRecognized
+		return ErrCaveatNotRecognized
 	}
 	return nil
 }
@@ -111,7 +124,7 @@ func (c *MultiChecker) CheckFirstPartyCaveat(cav string) error {
 	if err != nil {
 		// If we can't parse it, perhaps it's in some other format,
 		// return a not-recognised error.
-		return errgo.WithCausef(err, bakery.ErrCaveatNotRecognized, "cannot parse caveat %q", cav)
+		return errgo.WithCausef(err, ErrCaveatNotRecognized, "cannot parse caveat %q", cav)
 	}
 	if err := c.Check(cond, arg); err != nil {
 		return errgo.NoteMask(err, fmt.Sprintf("caveat %q not satisfied", cav), errgo.Any)
@@ -122,8 +135,8 @@ func (c *MultiChecker) CheckFirstPartyCaveat(cav string) error {
 // TODO add multiChecker.CheckThirdPartyCaveat ?
 // i.e. make this stuff reusable for 3rd party caveats too.
 
-func firstParty(cond, arg string) bakery.Caveat {
-	return bakery.Caveat{
+func firstParty(cond, arg string) Caveat {
+	return Caveat{
 		Condition: cond + " " + arg,
 	}
 }
@@ -165,7 +178,7 @@ func (m Map) Condition() string {
 func (m Map) Check(cond, arg string) error {
 	f, ok := m[cond]
 	if !ok {
-		return bakery.ErrCaveatNotRecognized
+		return ErrCaveatNotRecognized
 	}
 	if err := f(cond, arg); err != nil {
 		return errgo.Mask(err, errgo.Any)
@@ -198,7 +211,7 @@ func ParseCaveat(cav string) (cond, arg string, err error) {
 // Note that the checkers package provides no specific
 // implementation of the checker for this - that is
 // left to external transport-specific packages.
-func ClientIPAddrCaveat(addr net.IP) bakery.Caveat {
+func ClientIPAddrCaveat(addr net.IP) Caveat {
 	if len(addr) != net.IPv4len && len(addr) != net.IPv6len {
 		return ErrorCaveatf("bad IP address %d", []byte(addr))
 	}
@@ -216,6 +229,6 @@ func ClientIPAddrCaveat(addr net.IP) bakery.Caveat {
 // This mechanism means that caveats can be created without error
 // checking and a later systematic check at a higher level (in the
 // bakery package) can produce an error instead.
-func ErrorCaveatf(f string, a ...interface{}) bakery.Caveat {
+func ErrorCaveatf(f string, a ...interface{}) Caveat {
 	return firstParty(CondError, fmt.Sprintf(f, a...))
 }

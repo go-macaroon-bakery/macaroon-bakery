@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"gopkg.in/macaroon-bakery.v0/bakery/checkers"
+
 	"code.google.com/p/go.crypto/nacl/box"
 )
 
@@ -39,7 +41,7 @@ func newBoxEncoder(locator PublicKeyLocator, key *KeyPair) *boxEncoder {
 	}
 }
 
-func (enc *boxEncoder) encodeCaveatId(cav Caveat, rootKey []byte) (string, error) {
+func (enc *boxEncoder) encodeCaveatId(cav checkers.Caveat, rootKey []byte) (string, error) {
 	if cav.Location == "" {
 		return "", fmt.Errorf("cannot make caveat id for first party caveat")
 	}
@@ -58,7 +60,7 @@ func (enc *boxEncoder) encodeCaveatId(cav Caveat, rootKey []byte) (string, error
 	return base64.StdEncoding.EncodeToString(data), nil
 }
 
-func (enc *boxEncoder) newCaveatId(cav Caveat, rootKey []byte, thirdPartyPub *PublicKey) (*caveatId, error) {
+func (enc *boxEncoder) newCaveatId(cav checkers.Caveat, rootKey []byte, thirdPartyPub *PublicKey) (*caveatId, error) {
 	var nonce [NonceLen]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return nil, fmt.Errorf("cannot generate random number for nonce: %v", err)

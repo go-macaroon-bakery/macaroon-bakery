@@ -101,7 +101,7 @@ func (srv *targetServiceHandler) writeError(w http.ResponseWriter, operation str
 
 	// Work out what caveats we need to apply for the given operation.
 	// Could special-case the operation here if desired.
-	caveats := []bakery.Caveat{{
+	caveats := []checkers.Caveat{{
 		Location:  srv.authEndpoint,
 		Condition: "member-of-group target-service-users",
 	}, {

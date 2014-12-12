@@ -79,7 +79,7 @@ func (h *handler) userHandler(_ http.Header, req *http.Request) (interface{}, er
 		// Theoretically, we could just redirect the user to the
 		// login page, but that would require a different flow
 		// and it's not clear that it would be an advantage.
-		m, err := h.svc.NewMacaroon("", nil, []bakery.Caveat{{
+		m, err := h.svc.NewMacaroon("", nil, []checkers.Caveat{{
 			Location:  h.svc.Location(),
 			Condition: "member-of-group admin",
 		}, {
@@ -165,7 +165,7 @@ func (h *handler) loginAttemptHandler(w http.ResponseWriter, req *http.Request) 
 	// to have a macaroon that they can use later to prove
 	// to us that they have logged in. We also add a cookie
 	// to hold the logged in user name.
-	m, err := h.svc.NewMacaroon("", nil, []bakery.Caveat{{
+	m, err := h.svc.NewMacaroon("", nil, []checkers.Caveat{{
 		Condition: "user-is " + user,
 	}})
 	// TODO(rog) when this fails, we should complete the rendezvous
@@ -191,7 +191,7 @@ func (h *handler) loginAttemptHandler(w http.ResponseWriter, req *http.Request) 
 }
 
 // checkThirdPartyCaveat is called by the httpbakery discharge handler.
-func (h *handler) checkThirdPartyCaveat(req *http.Request, cavId, cav string) ([]bakery.Caveat, error) {
+func (h *handler) checkThirdPartyCaveat(req *http.Request, cavId, cav string) ([]checkers.Caveat, error) {
 	return h.newContext(req, "").CheckThirdPartyCaveat(cavId, cav)
 }
 
@@ -368,11 +368,11 @@ func (ctxt *context) Check(cond, arg string) error {
 		}
 		return errgo.Newf("operation mismatch")
 	default:
-		return bakery.ErrCaveatNotRecognized
+		return checkers.ErrCaveatNotRecognized
 	}
 }
 
-func (ctxt *context) CheckThirdPartyCaveat(cavId, cav string) ([]bakery.Caveat, error) {
+func (ctxt *context) CheckThirdPartyCaveat(cavId, cav string) ([]checkers.Caveat, error) {
 	h := ctxt.handler
 	log.Printf("checking third party caveat %q", cav)
 	op, rest, err := checkers.ParseCaveat(cav)
@@ -412,7 +412,7 @@ func (ctxt *context) CheckThirdPartyCaveat(cavId, cav string) ([]bakery.Caveat, 
 		}
 		return ctxt.firstPartyCaveats(), nil
 	default:
-		return nil, bakery.ErrCaveatNotRecognized
+		return nil, checkers.ErrCaveatNotRecognized
 	}
 }
 
@@ -441,7 +441,7 @@ func (ctxt *context) canSpeakFor(user string) error {
 // firstPartyCaveats returns first-party caveats suitable
 // for adding to a third-party caveat discharge macaroon
 // within the receiving context.
-func (ctxt *context) firstPartyCaveats() []bakery.Caveat {
+func (ctxt *context) firstPartyCaveats() []checkers.Caveat {
 	// TODO return caveat specifying that ip-addr is
 	// the same as that given in ctxt.req.RemoteAddr
 	// and other 1st party caveats, potentially.

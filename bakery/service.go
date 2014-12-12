@@ -10,6 +10,7 @@ import (
 	"log"
 
 	"gopkg.in/errgo.v1"
+	"gopkg.in/macaroon-bakery.v0/bakery/checkers"
 	"gopkg.in/macaroon.v1"
 )
 
@@ -144,7 +145,7 @@ func (svc *Service) Check(ms []*macaroon.Macaroon, checker FirstPartyChecker) er
 // If the id is empty, a random id will be used.
 // If rootKey is nil, a random root key will be used.
 // The macaroon will be stored in the service's storage.
-func (svc *Service) NewMacaroon(id string, rootKey []byte, caveats []Caveat) (*macaroon.Macaroon, error) {
+func (svc *Service) NewMacaroon(id string, rootKey []byte, caveats []checkers.Caveat) (*macaroon.Macaroon, error) {
 	if rootKey == nil {
 		newRootKey, err := randomBytes(24)
 		if err != nil {
@@ -187,7 +188,7 @@ func (svc *Service) NewMacaroon(id string, rootKey []byte, caveats []Caveat) (*m
 //
 // If it's a third-party caveat, it uses the service's caveat-id encoder
 // to create the id of the new caveat.
-func (svc *Service) AddCaveat(m *macaroon.Macaroon, cav Caveat) error {
+func (svc *Service) AddCaveat(m *macaroon.Macaroon, cav checkers.Caveat) error {
 	logf("Service.AddCaveat id %q; cav %#v", m.Id(), cav)
 	if cav.Location == "" {
 		m.AddFirstPartyCaveat(cav.Condition)
@@ -236,11 +237,6 @@ func randomBytes(n int) ([]byte, error) {
 	return b, nil
 }
 
-// ErrCaveatNotRecognized is the cause of errors returned
-// from caveat checkers when the caveat was not
-// recognized.
-var ErrCaveatNotRecognized = errgo.New("caveat not recognized")
-
 type VerificationError struct {
 	Reason error
 }
@@ -264,12 +260,12 @@ func (e *VerificationError) Error() string {
 // If the caveat kind was not recognised, the checker should return an
 // error with a ErrCaveatNotRecognized cause.
 type ThirdPartyChecker interface {
-	CheckThirdPartyCaveat(caveatId, caveat string) ([]Caveat, error)
+	CheckThirdPartyCaveat(caveatId, caveat string) ([]checkers.Caveat, error)
 }
 
-type ThirdPartyCheckerFunc func(caveatId, caveat string) ([]Caveat, error)
+type ThirdPartyCheckerFunc func(caveatId, caveat string) ([]checkers.Caveat, error)
 
-func (c ThirdPartyCheckerFunc) CheckThirdPartyCaveat(caveatId, caveat string) ([]Caveat, error) {
+func (c ThirdPartyCheckerFunc) CheckThirdPartyCaveat(caveatId, caveat string) ([]checkers.Caveat, error) {
 	return c(caveatId, caveat)
 }
 

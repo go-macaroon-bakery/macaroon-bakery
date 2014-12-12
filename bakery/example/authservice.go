@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"gopkg.in/macaroon-bakery.v0/bakery"
+	"gopkg.in/macaroon-bakery.v0/bakery/checkers"
 	"gopkg.in/macaroon-bakery.v0/httpbakery"
 )
 
@@ -30,13 +31,13 @@ func authService(endpoint string, key *bakery.KeyPair) (http.Handler, error) {
 //
 // Note how this function can return additional first- and third-party
 // caveats which will be added to the original macaroon's caveats.
-func thirdPartyChecker(req *http.Request, cavId, condition string) ([]bakery.Caveat, error) {
+func thirdPartyChecker(req *http.Request, cavId, condition string) ([]checkers.Caveat, error) {
 	if condition != "access-allowed" {
-		return nil, bakery.ErrCaveatNotRecognized
+		return nil, checkers.ErrCaveatNotRecognized
 	}
 	// TODO check that the HTTP request has cookies that prove
 	// something about the client.
-	return []bakery.Caveat{
+	return []checkers.Caveat{
 		httpbakery.SameClientIPAddrCaveat(req),
 	}, nil
 }
