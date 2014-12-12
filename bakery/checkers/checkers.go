@@ -4,6 +4,7 @@ package checkers
 
 import (
 	"fmt"
+	"net"
 	"strings"
 
 	"gopkg.in/errgo.v1"
@@ -13,8 +14,10 @@ import (
 
 // Constants for all the standard caveat conditions.
 const (
-	CondDeclared   = "declared"
-	CondTimeBefore = "time-before"
+	CondDeclared     = "declared"
+	CondTimeBefore   = "time-before"
+	CondClientIPAddr = "client-ip-addr"
+	CondError        = "error"
 )
 
 // Checker is implemented by types that can check caveats.
@@ -66,8 +69,17 @@ type MultiChecker struct {
 	checkers []Checker
 }
 
+var errBadCaveat = errgo.Newf("bad caveat")
+
 // Check implements Checker.Check.
 func (c *MultiChecker) Check(cond, arg string) error {
+	// Always check for the error caveat so that we're
+	// sure to get a nice error message even when there
+	// are no other checkers. This also prevents someone
+	// from inadvertently overriding the error condition.
+	if cond == CondError {
+		return errBadCaveat
+	}
 	checked := false
 	for _, c := range c.checkers {
 		checkerCond := c.Condition()
@@ -102,7 +114,7 @@ func (c *MultiChecker) CheckFirstPartyCaveat(cav string) error {
 		return errgo.WithCausef(err, bakery.ErrCaveatNotRecognized, "cannot parse caveat %q", cav)
 	}
 	if err := c.Check(cond, arg); err != nil {
-		return errgo.NoteMask(err, fmt.Sprintf("caveat %q not fulfilled", cav), errgo.Any)
+		return errgo.NoteMask(err, fmt.Sprintf("caveat %q not satisfied", cav), errgo.Any)
 	}
 	return nil
 }
@@ -179,4 +191,31 @@ func ParseCaveat(cav string) (cond, arg string, err error) {
 		return "", "", fmt.Errorf("caveat starts with space character")
 	}
 	return cav[0:i], cav[i+1:], nil
+}
+
+// ClientIPAddrCaveat returns a caveat that will check whether the
+// client's IP address is as provided.
+// Note that the checkers package provides no specific
+// implementation of the checker for this - that is
+// left to external transport-specific packages.
+func ClientIPAddrCaveat(addr net.IP) bakery.Caveat {
+	if len(addr) != net.IPv4len && len(addr) != net.IPv6len {
+		return ErrorCaveatf("bad IP address %d", []byte(addr))
+	}
+	return firstParty(CondClientIPAddr, addr.String())
+}
+
+// ErrorCaveatf returns a caveat that will never be satisfied, holding
+// the given fmt.Sprintf formatted text as the text of the caveat.
+//
+// This should only be used for highly unusual conditions that are never
+// expected to happen in practice, such as a malformed key that is
+// conventionally passed as a constant. It's not a panic but you should
+// only use it in cases where a panic might possibly be appropriate.
+//
+// This mechanism means that caveats can be created without error
+// checking and a later systematic check at a higher level (in the
+// bakery package) can produce an error instead.
+func ErrorCaveatf(f string, a ...interface{}) bakery.Caveat {
+	return firstParty(CondError, fmt.Sprintf(f, a...))
 }

@@ -2,6 +2,7 @@ package checkers_test
 
 import (
 	"fmt"
+	"net"
 	"time"
 
 	jc "github.com/juju/testing/checkers"
@@ -46,7 +47,7 @@ var checkerTests = []struct {
 	checker: checkers.New(),
 	checks: []checkTest{{
 		caveat:      "something",
-		expectError: `caveat "something" not fulfilled: caveat not recognized`,
+		expectError: `caveat "something" not satisfied: caveat not recognized`,
 		expectCause: isCaveatNotRecognized,
 	}, {
 		caveat:      "",
@@ -69,7 +70,7 @@ var checkerTests = []struct {
 		caveat: "b bval",
 	}, {
 		caveat:      "a wrong",
-		expectError: `caveat "a wrong" not fulfilled: wrong arg`,
+		expectError: `caveat "a wrong" not satisfied: wrong arg`,
 		expectCause: errgo.Is(errWrongArg),
 	}},
 }, {
@@ -80,11 +81,11 @@ var checkerTests = []struct {
 	),
 	checks: []checkTest{{
 		caveat:      "a aval",
-		expectError: `caveat "a aval" not fulfilled: wrong arg`,
+		expectError: `caveat "a aval" not satisfied: wrong arg`,
 		expectCause: errgo.Is(errWrongArg),
 	}, {
 		caveat:      "a bval",
-		expectError: `caveat "a bval" not fulfilled: wrong arg`,
+		expectError: `caveat "a bval" not satisfied: wrong arg`,
 		expectCause: errgo.Is(errWrongArg),
 	}},
 }, {
@@ -112,19 +113,19 @@ var checkerTests = []struct {
 		caveat: "e eval",
 	}, {
 		caveat:      "a wrong",
-		expectError: `caveat "a wrong" not fulfilled: wrong arg`,
+		expectError: `caveat "a wrong" not satisfied: wrong arg`,
 		expectCause: errgo.Is(errWrongArg),
 	}, {
 		caveat:      "c wrong",
-		expectError: `caveat "c wrong" not fulfilled: wrong arg`,
+		expectError: `caveat "c wrong" not satisfied: wrong arg`,
 		expectCause: errgo.Is(errWrongArg),
 	}, {
 		caveat:      "d wrong",
-		expectError: `caveat "d wrong" not fulfilled: wrong arg`,
+		expectError: `caveat "d wrong" not satisfied: wrong arg`,
 		expectCause: errgo.Is(errWrongArg),
 	}, {
 		caveat:      "f something",
-		expectError: `caveat "f something" not fulfilled: caveat not recognized`,
+		expectError: `caveat "f something" not satisfied: caveat not recognized`,
 		expectCause: isCaveatNotRecognized,
 	}},
 }, {
@@ -134,7 +135,7 @@ var checkerTests = []struct {
 	),
 	checks: []checkTest{{
 		caveat:      "a aval",
-		expectError: `caveat "a aval" not fulfilled: caveat not recognized`,
+		expectError: `caveat "a aval" not satisfied: caveat not recognized`,
 		expectCause: isCaveatNotRecognized,
 	}},
 }, {
@@ -151,11 +152,11 @@ var checkerTests = []struct {
 		caveat: "b bval",
 	}, {
 		caveat:      "a wrong",
-		expectError: `caveat "a wrong" not fulfilled: wrong arg`,
+		expectError: `caveat "a wrong" not satisfied: wrong arg`,
 		expectCause: errgo.Is(errWrongArg),
 	}, {
 		caveat:      "b wrong",
-		expectError: `caveat "b wrong" not fulfilled: wrong arg`,
+		expectError: `caveat "b wrong" not satisfied: wrong arg`,
 		expectCause: errgo.Is(errWrongArg),
 	}},
 }, {
@@ -167,26 +168,26 @@ var checkerTests = []struct {
 		caveat: checkers.TimeBeforeCaveat(now.Add(1)).Condition,
 	}, {
 		caveat:      checkers.TimeBeforeCaveat(now).Condition,
-		expectError: `caveat "time-before 2006-01-02T15:04:05.123Z" not fulfilled: macaroon has expired`,
+		expectError: `caveat "time-before 2006-01-02T15:04:05.123Z" not satisfied: macaroon has expired`,
 	}, {
 		caveat:      checkers.TimeBeforeCaveat(now.Add(-1)).Condition,
-		expectError: `caveat "time-before 2006-01-02T15:04:05.122999999Z" not fulfilled: macaroon has expired`,
+		expectError: `caveat "time-before 2006-01-02T15:04:05.122999999Z" not satisfied: macaroon has expired`,
 	}, {
 		caveat:      `time-before bad-date`,
-		expectError: `caveat "time-before bad-date" not fulfilled: parsing time "bad-date" as "2006-01-02T15:04:05.999999999Z07:00": cannot parse "bad-date" as "2006"`,
+		expectError: `caveat "time-before bad-date" not satisfied: parsing time "bad-date" as "2006-01-02T15:04:05.999999999Z07:00": cannot parse "bad-date" as "2006"`,
 	}, {
 		caveat:      checkers.TimeBeforeCaveat(now).Condition + " ",
-		expectError: `caveat "time-before 2006-01-02T15:04:05.123Z " not fulfilled: parsing time "2006-01-02T15:04:05.123Z ": extra text:  `,
+		expectError: `caveat "time-before 2006-01-02T15:04:05.123Z " not satisfied: parsing time "2006-01-02T15:04:05.123Z ": extra text:  `,
 	}},
 }, {
 	about:   "declared, no entries",
 	checker: checkers.New(checkers.Declared{}),
 	checks: []checkTest{{
 		caveat:      checkers.DeclaredCaveat("a", "aval").Condition,
-		expectError: `caveat "declared a aval" not fulfilled: got a=null, expected "aval"`,
+		expectError: `caveat "declared a aval" not satisfied: got a=null, expected "aval"`,
 	}, {
 		caveat:      checkers.CondDeclared,
-		expectError: `caveat "declared" not fulfilled: declared caveat has no value`,
+		expectError: `caveat "declared" not satisfied: declared caveat has no value`,
 	}},
 }, {
 	about: "declared, some entries",
@@ -203,13 +204,36 @@ var checkerTests = []struct {
 		caveat: checkers.DeclaredCaveat("spc", " a b").Condition,
 	}, {
 		caveat:      checkers.DeclaredCaveat("a", "bval").Condition,
-		expectError: `caveat "declared a bval" not fulfilled: got a="aval", expected "bval"`,
+		expectError: `caveat "declared a bval" not satisfied: got a="aval", expected "bval"`,
 	}, {
 		caveat:      checkers.DeclaredCaveat("a", " aval").Condition,
-		expectError: `caveat "declared a  aval" not fulfilled: got a="aval", expected " aval"`,
+		expectError: `caveat "declared a  aval" not satisfied: got a="aval", expected " aval"`,
 	}, {
 		caveat:      checkers.DeclaredCaveat("spc", "a b").Condition,
-		expectError: `caveat "declared spc a b" not fulfilled: got spc=" a b", expected "a b"`,
+		expectError: `caveat "declared spc a b" not satisfied: got spc=" a b", expected "a b"`,
+	}, {
+		caveat:      checkers.DeclaredCaveat("", "a b").Condition,
+		expectError: `caveat "error invalid caveat 'declared' key \\"\\"" not satisfied: bad caveat`,
+	}, {
+		caveat:      checkers.DeclaredCaveat("a b", "a b").Condition,
+		expectError: `caveat "error invalid caveat 'declared' key \\"a b\\"" not satisfied: bad caveat`,
+	}},
+}, {
+	about:   "error caveat",
+	checker: checkers.New(),
+	checks: []checkTest{{
+		caveat:      checkers.ErrorCaveatf("").Condition,
+		expectError: `caveat "error " not satisfied: bad caveat`,
+	}, {
+		caveat:      checkers.ErrorCaveatf("something %d", 134).Condition,
+		expectError: `caveat "error something 134" not satisfied: bad caveat`,
+	}},
+}, {
+	about:   "error caveat overrides other",
+	checker: checkers.New(argChecker("error", "something")),
+	checks: []checkTest{{
+		caveat:      checkers.ErrorCaveatf("something").Condition,
+		expectError: `caveat "error something" not satisfied: bad caveat`,
 	}},
 }}
 
@@ -230,18 +254,7 @@ func argChecker(expectCond, checkArg string) checkers.Checker {
 	}
 }
 
-func (s *CheckersSuite) TestDeclaredCaveatPanic(c *gc.C) {
-	c.Assert(func() {
-		checkers.DeclaredCaveat("", "hello")
-	}, gc.PanicMatches, `invalid caveat declared key ""`)
-
-	c.Assert(func() {
-		checkers.DeclaredCaveat("some thing", "hello")
-	}, gc.PanicMatches, `invalid caveat declared key "some thing"`)
-}
-
-func (s *CheckersSuite) TestMultiChecker(c *gc.C) {
-	c.Logf("time is %s", now)
+func (s *CheckersSuite) TestCheckers(c *gc.C) {
 	for i, test := range checkerTests {
 		c.Logf("test %d: %s", i, test.about)
 		for j, check := range test.checks {
@@ -258,6 +271,25 @@ func (s *CheckersSuite) TestMultiChecker(c *gc.C) {
 			}
 		}
 	}
+}
+
+func (s *CheckersSuite) TestClientIPAddrCaveat(c *gc.C) {
+	cav := checkers.ClientIPAddrCaveat(net.IP{127, 0, 0, 1})
+	c.Assert(cav, gc.Equals, bakery.Caveat{
+		Condition: "client-ip-addr 127.0.0.1",
+	})
+	cav = checkers.ClientIPAddrCaveat(net.ParseIP("2001:4860:0:2001::68"))
+	c.Assert(cav, gc.Equals, bakery.Caveat{
+		Condition: "client-ip-addr 2001:4860:0:2001::68",
+	})
+	cav = checkers.ClientIPAddrCaveat(nil)
+	c.Assert(cav, gc.Equals, bakery.Caveat{
+		Condition: "error bad IP address []",
+	})
+	cav = checkers.ClientIPAddrCaveat(net.IP{123, 3})
+	c.Assert(cav, gc.Equals, bakery.Caveat{
+		Condition: "error bad IP address [123 3]",
+	})
 }
 
 var inferDeclaredTests = []struct {

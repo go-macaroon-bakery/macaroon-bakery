@@ -1,7 +1,6 @@
 package checkers
 
 import (
-	"fmt"
 	"strings"
 
 	"gopkg.in/errgo.v1"
@@ -16,10 +15,11 @@ import (
 // will be able to infer the value, and then DeclaredChecker will allow
 // the declared value if it has the value specified here.
 //
-// DeclaredCaveat will panic if the key is empty or contains a space character.
+// If the key is empty or contains a space, DeclaredCaveat
+// will return an error caveat.
 func DeclaredCaveat(key string, value string) bakery.Caveat {
 	if strings.Contains(key, " ") || key == "" {
-		panic(fmt.Errorf("invalid caveat declared key %q", key))
+		return ErrorCaveatf("invalid caveat 'declared' key %q", key)
 	}
 	return firstParty(CondDeclared, key+" "+value)
 }
