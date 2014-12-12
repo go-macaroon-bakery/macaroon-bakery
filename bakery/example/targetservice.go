@@ -104,7 +104,7 @@ func (srv *targetServiceHandler) writeError(w http.ResponseWriter, operation str
 
 	// Work out what caveats we need to apply for the given operation.
 	// Could special-case the operation here if desired.
-	caveats := []bakery.Caveat{
+	caveats := []checkers.Caveat{
 		checkers.TimeBeforeCaveat(time.Now().Add(5 * time.Minute)),
 		{
 			Location:  srv.authEndpoint,

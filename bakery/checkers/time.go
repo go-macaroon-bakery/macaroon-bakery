@@ -5,8 +5,6 @@ import (
 	"time"
 
 	"gopkg.in/errgo.v1"
-
-	"gopkg.in/macaroon-bakery.v0/bakery"
 )
 
 var timeNow = time.Now
@@ -29,6 +27,6 @@ var TimeBefore = CheckerFunc{
 
 // TimeBeforeCaveat returns a caveat that specifies that
 // the time that it is checked should be before t.
-func TimeBeforeCaveat(t time.Time) bakery.Caveat {
+func TimeBeforeCaveat(t time.Time) Caveat {
 	return firstParty(CondTimeBefore, t.UTC().Format(time.RFC3339Nano))
 }

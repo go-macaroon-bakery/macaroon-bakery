@@ -10,6 +10,7 @@ import (
 	"gopkg.in/mgo.v2"
 
 	"gopkg.in/macaroon-bakery.v0/bakery"
+	"gopkg.in/macaroon-bakery.v0/bakery/checkers"
 	"gopkg.in/macaroon-bakery.v0/bakery/mgostorage"
 )
 
@@ -117,7 +118,7 @@ func (s *StorageSuite) TestCreateMacaroon(c *gc.C) {
 	m, err := service.NewMacaroon(
 		"123",
 		[]byte("abc"),
-		[]bakery.Caveat{bakery.Caveat{Location: "", Condition: "is-authorised bob"}},
+		[]checkers.Caveat{checkers.Caveat{Location: "", Condition: "is-authorised bob"}},
 	)
 	c.Assert(err, gc.IsNil)
 	c.Assert(m, gc.NotNil)

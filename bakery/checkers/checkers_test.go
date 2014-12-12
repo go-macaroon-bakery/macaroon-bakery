@@ -36,7 +36,7 @@ type checkTest struct {
 	expectCause func(err error) bool
 }
 
-var isCaveatNotRecognized = errgo.Is(bakery.ErrCaveatNotRecognized)
+var isCaveatNotRecognized = errgo.Is(checkers.ErrCaveatNotRecognized)
 
 var checkerTests = []struct {
 	about   string
@@ -275,33 +275,33 @@ func (s *CheckersSuite) TestCheckers(c *gc.C) {
 
 func (s *CheckersSuite) TestClientIPAddrCaveat(c *gc.C) {
 	cav := checkers.ClientIPAddrCaveat(net.IP{127, 0, 0, 1})
-	c.Assert(cav, gc.Equals, bakery.Caveat{
+	c.Assert(cav, gc.Equals, checkers.Caveat{
 		Condition: "client-ip-addr 127.0.0.1",
 	})
 	cav = checkers.ClientIPAddrCaveat(net.ParseIP("2001:4860:0:2001::68"))
-	c.Assert(cav, gc.Equals, bakery.Caveat{
+	c.Assert(cav, gc.Equals, checkers.Caveat{
 		Condition: "client-ip-addr 2001:4860:0:2001::68",
 	})
 	cav = checkers.ClientIPAddrCaveat(nil)
-	c.Assert(cav, gc.Equals, bakery.Caveat{
+	c.Assert(cav, gc.Equals, checkers.Caveat{
 		Condition: "error bad IP address []",
 	})
 	cav = checkers.ClientIPAddrCaveat(net.IP{123, 3})
-	c.Assert(cav, gc.Equals, bakery.Caveat{
+	c.Assert(cav, gc.Equals, checkers.Caveat{
 		Condition: "error bad IP address [123 3]",
 	})
 }
 
 var inferDeclaredTests = []struct {
 	about   string
-	caveats [][]bakery.Caveat
+	caveats [][]checkers.Caveat
 	expect  checkers.Declared
 }{{
 	about:  "no macaroons",
 	expect: checkers.Declared{},
 }, {
 	about: "single macaroon with one declaration",
-	caveats: [][]bakery.Caveat{{{
+	caveats: [][]checkers.Caveat{{{
 		Condition: "declared foo bar",
 	}}},
 	expect: checkers.Declared{
@@ -309,13 +309,13 @@ var inferDeclaredTests = []struct {
 	},
 }, {
 	about: "only one argument to declared",
-	caveats: [][]bakery.Caveat{{{
+	caveats: [][]checkers.Caveat{{{
 		Condition: "declared foo",
 	}}},
 	expect: checkers.Declared{},
 }, {
 	about: "spaces in value",
-	caveats: [][]bakery.Caveat{{{
+	caveats: [][]checkers.Caveat{{{
 		Condition: "declared foo bar bloggs",
 	}}},
 	expect: checkers.Declared{
@@ -323,13 +323,13 @@ var inferDeclaredTests = []struct {
 	},
 }, {
 	about: "attribute with declared prefix",
-	caveats: [][]bakery.Caveat{{{
+	caveats: [][]checkers.Caveat{{{
 		Condition: "declaredccf foo",
 	}}},
 	expect: checkers.Declared{},
 }, {
 	about: "several macaroons with different declares",
-	caveats: [][]bakery.Caveat{{
+	caveats: [][]checkers.Caveat{{
 		checkers.DeclaredCaveat("a", "aval"),
 		checkers.DeclaredCaveat("b", "bval"),
 	}, {
@@ -344,7 +344,7 @@ var inferDeclaredTests = []struct {
 	},
 }, {
 	about: "duplicate values",
-	caveats: [][]bakery.Caveat{{
+	caveats: [][]checkers.Caveat{{
 		checkers.DeclaredCaveat("a", "aval"),
 		checkers.DeclaredCaveat("a", "aval"),
 		checkers.DeclaredCaveat("b", "bval"),
@@ -362,7 +362,7 @@ var inferDeclaredTests = []struct {
 	},
 }, {
 	about: "conflicting values",
-	caveats: [][]bakery.Caveat{{
+	caveats: [][]checkers.Caveat{{
 		checkers.DeclaredCaveat("a", "aval"),
 		checkers.DeclaredCaveat("a", "conflict"),
 		checkers.DeclaredCaveat("b", "bval"),
@@ -378,7 +378,7 @@ var inferDeclaredTests = []struct {
 	},
 }, {
 	about: "third party caveats ignored",
-	caveats: [][]bakery.Caveat{{{
+	caveats: [][]checkers.Caveat{{{
 		Condition: "declared a no conflict",
 		Location:  "location",
 	},
@@ -389,7 +389,7 @@ var inferDeclaredTests = []struct {
 	},
 }, {
 	about: "unparseable caveats ignored",
-	caveats: [][]bakery.Caveat{{{
+	caveats: [][]checkers.Caveat{{{
 		Condition: " bad",
 	},
 		checkers.DeclaredCaveat("a", "aval"),

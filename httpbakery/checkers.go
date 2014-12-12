@@ -6,7 +6,6 @@ import (
 
 	"gopkg.in/errgo.v1"
 
-	"gopkg.in/macaroon-bakery.v0/bakery"
 	"gopkg.in/macaroon-bakery.v0/bakery/checkers"
 )
 
@@ -47,7 +46,7 @@ func (c httpContext) clientIPAddr(_, addr string) error {
 
 // SameClientIPAddrCaveat returns a caveat that will check that
 // the remote IP address is the same as that in the given HTTP request.
-func SameClientIPAddrCaveat(req *http.Request) bakery.Caveat {
+func SameClientIPAddrCaveat(req *http.Request) checkers.Caveat {
 	if req.RemoteAddr == "" {
 		return checkers.ErrorCaveatf("client has no remote IP address")
 	}

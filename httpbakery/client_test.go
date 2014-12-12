@@ -11,6 +11,7 @@ import (
 	"gopkg.in/macaroon.v1"
 
 	"gopkg.in/macaroon-bakery.v0/bakery"
+	"gopkg.in/macaroon-bakery.v0/bakery/checkers"
 	"gopkg.in/macaroon-bakery.v0/httpbakery"
 )
 
@@ -33,7 +34,7 @@ func (s *ClientSuite) TestSingleServiceFirstParty(c *gc.C) {
 	serverMacaroon, err := svc.NewMacaroon("", nil, nil)
 	c.Assert(err, gc.IsNil)
 	c.Assert(serverMacaroon.Location(), gc.Equals, "loc")
-	err = svc.AddCaveat(serverMacaroon, bakery.Caveat{
+	err = svc.AddCaveat(serverMacaroon, checkers.Caveat{
 		Condition: "is something",
 	})
 	c.Assert(err, gc.IsNil)

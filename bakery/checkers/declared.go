@@ -5,8 +5,6 @@ import (
 
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v1"
-
-	"gopkg.in/macaroon-bakery.v0/bakery"
 )
 
 // DeclaredCaveat returns a "declared" caveat asserting that the given key is
@@ -17,7 +15,7 @@ import (
 //
 // If the key is empty or contains a space, DeclaredCaveat
 // will return an error caveat.
-func DeclaredCaveat(key string, value string) bakery.Caveat {
+func DeclaredCaveat(key string, value string) Caveat {
 	if strings.Contains(key, " ") || key == "" {
 		return ErrorCaveatf("invalid caveat 'declared' key %q", key)
 	}

@@ -13,11 +13,12 @@ import (
 	"gopkg.in/macaroon.v1"
 
 	"gopkg.in/macaroon-bakery.v0/bakery"
+	"gopkg.in/macaroon-bakery.v0/bakery/checkers"
 )
 
 type dischargeHandler struct {
 	svc     *bakery.Service
-	checker func(req *http.Request, cavId, cav string) ([]bakery.Caveat, error)
+	checker func(req *http.Request, cavId, cav string) ([]checkers.Caveat, error)
 }
 
 // AddDischargeHandler adds handlers to the given
@@ -65,7 +66,7 @@ type dischargeHandler struct {
 //	result:
 //		public key of service
 //		expiry time of key
-func AddDischargeHandler(mux *http.ServeMux, rootPath string, svc *bakery.Service, checker func(req *http.Request, cavId, cav string) ([]bakery.Caveat, error)) {
+func AddDischargeHandler(mux *http.ServeMux, rootPath string, svc *bakery.Service, checker func(req *http.Request, cavId, cav string) ([]checkers.Caveat, error)) {
 	d := &dischargeHandler{
 		svc:     svc,
 		checker: checker,
@@ -103,7 +104,7 @@ func (d *dischargeHandler) serveDischarge1(h http.Header, req *http.Request) (in
 	if id == "" {
 		return nil, badRequestErrorf("id attribute is empty")
 	}
-	checker := func(cavId, cav string) ([]bakery.Caveat, error) {
+	checker := func(cavId, cav string) ([]checkers.Caveat, error) {
 		return d.checker(req, cavId, cav)
 	}
 
