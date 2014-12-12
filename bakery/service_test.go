@@ -39,7 +39,7 @@ func (s *ServiceSuite) TestSingleServiceFirstParty(c *gc.C) {
 	err = service.AddCaveat(primary, cav)
 	c.Assert(err, gc.IsNil)
 
-	err = service.Check([]*macaroon.Macaroon{primary}, strCompFirstPartyChecker("something"))
+	err = service.Check(macaroon.Slice{primary}, strCompFirstPartyChecker("something"))
 	c.Assert(err, gc.IsNil)
 }
 
@@ -98,7 +98,7 @@ func (s *ServiceSuite) TestMacaroonPaperFig6FailsWithoutDischarges(c *gc.C) {
 	tsMacaroon := createMacaroonWithThirdPartyCaveat(c, ts, fs, checkers.Caveat{Location: "as-loc", Condition: "user==bob"})
 
 	// client makes request to ts
-	err := ts.Check([]*macaroon.Macaroon{tsMacaroon}, strCompFirstPartyChecker(""))
+	err := ts.Check(macaroon.Slice{tsMacaroon}, strCompFirstPartyChecker(""))
 	c.Assert(err, gc.ErrorMatches, `verification failed: cannot find discharge macaroon for caveat ".*"`)
 }
 

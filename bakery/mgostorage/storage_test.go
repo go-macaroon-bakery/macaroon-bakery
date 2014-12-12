@@ -127,6 +127,6 @@ func (s *StorageSuite) TestCreateMacaroon(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	c.Assert(item, gc.DeepEquals, `{"RootKey":"YWJj"}`)
 
-	err = service.Check([]*macaroon.Macaroon{m}, &testChecker{})
+	err = service.Check(macaroon.Slice{m}, &testChecker{})
 	c.Assert(err, gc.IsNil)
 }

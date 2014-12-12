@@ -16,9 +16,9 @@ import (
 func DischargeAll(
 	m *macaroon.Macaroon,
 	getDischarge func(firstPartyLocation string, cav macaroon.Caveat) (*macaroon.Macaroon, error),
-) ([]*macaroon.Macaroon, error) {
+) (macaroon.Slice, error) {
 	sig := m.Signature()
-	discharges := []*macaroon.Macaroon{m}
+	discharges := macaroon.Slice{m}
 	var need []macaroon.Caveat
 	addCaveats := func(m *macaroon.Macaroon) {
 		for _, cav := range m.Caveats() {

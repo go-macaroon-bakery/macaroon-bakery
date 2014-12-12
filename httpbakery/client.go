@@ -153,7 +153,7 @@ func (ctxt *clientContext) do1(req *http.Request) (*http.Response, error) {
 // NewCookie takes a slice of macaroons and returns them
 // encoded as a cookie. The slice should contain a single primary
 // macaroon in its first element, and any discharges after that.
-func NewCookie(ms []*macaroon.Macaroon) (*http.Cookie, error) {
+func NewCookie(ms macaroon.Slice) (*http.Cookie, error) {
 	if len(ms) == 0 {
 		return nil, errgo.New("no macaroons in cookie")
 	}
@@ -172,7 +172,7 @@ func NewCookie(ms []*macaroon.Macaroon) (*http.Cookie, error) {
 // that will holds the given macaroon slice. The macaroon slice should
 // contain a single primary macaroon in its first element, and any
 // discharges after that.
-func SetCookie(jar http.CookieJar, url *url.URL, ms []*macaroon.Macaroon) error {
+func SetCookie(jar http.CookieJar, url *url.URL, ms macaroon.Slice) error {
 	cookie, err := NewCookie(ms)
 	if err != nil {
 		return errgo.Mask(err)
@@ -183,7 +183,7 @@ func SetCookie(jar http.CookieJar, url *url.URL, ms []*macaroon.Macaroon) error 
 	return nil
 }
 
-func (ctxt *clientContext) addCookie(req *http.Request, ms []*macaroon.Macaroon) error {
+func (ctxt *clientContext) addCookie(req *http.Request, ms macaroon.Slice) error {
 	cookies, err := NewCookie(ms)
 	if err != nil {
 		return errgo.Mask(err)
@@ -314,8 +314,8 @@ func postFormJSON(url string, vals url.Values, resp interface{}, postForm func(u
 // RequestMacaroons returns any collections of macaroons from the cookies
 // found in the request. By convention, each slice will contain a primary
 // macaroon followed by its discharges.
-func RequestMacaroons(req *http.Request) [][]*macaroon.Macaroon {
-	var mss [][]*macaroon.Macaroon
+func RequestMacaroons(req *http.Request) []macaroon.Slice {
+	var mss []macaroon.Slice
 	for _, cookie := range req.Cookies() {
 		if !strings.HasPrefix(cookie.Name, "macaroon-") {
 			continue
@@ -325,7 +325,7 @@ func RequestMacaroons(req *http.Request) [][]*macaroon.Macaroon {
 			log.Printf("cannot base64-decode cookie; ignoring: %v", err)
 			continue
 		}
-		var ms []*macaroon.Macaroon
+		var ms macaroon.Slice
 		if err := json.Unmarshal(data, &ms); err != nil {
 			log.Printf("cannot unmarshal macaroons from cookie; ignoring: %v", err)
 			continue
@@ -354,7 +354,7 @@ func isVerificationError(err error) bool {
 // It adds all the standard caveat checkers to the given checker.
 //
 // It returns any attributes declared in the successfully validated request.
-func CheckRequest(svc *bakery.Service, req *http.Request, checker checkers.Checker, assert map[string]string) (map[string]string, error) {
+func CheckRequest(svc *bakery.Service, req *http.Request, assert map[string]string, checker checkers.Checker) (map[string]string, error) {
 	mss := RequestMacaroons(req)
 	if len(mss) == 0 {
 		return nil, &bakery.VerificationError{
@@ -366,21 +366,11 @@ func CheckRequest(svc *bakery.Service, req *http.Request, checker checkers.Check
 		Checkers(req),
 		checkers.TimeBefore,
 	)
-
-	var err error
-	for _, ms := range mss {
-		declared := checkers.InferDeclared(ms)
-		for key, val := range assert {
-			declared[key] = val
-		}
-		err = svc.Check(ms, checkers.New(declared, checker))
-		if err == nil {
-			return declared, nil
-		}
+	attrs, err := svc.CheckAny(mss, assert, checker)
+	if err != nil {
+		return nil, errgo.Mask(err, isVerificationError)
 	}
-	// Return an arbitrary error from the macaroons provided.
-	// TODO return all errors.
-	return nil, errgo.Mask(err, isVerificationError)
+	return attrs, nil
 }
 
 type cookieLogger struct {

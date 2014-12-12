@@ -62,7 +62,7 @@ func (c Declared) Check(_, arg string) error {
 // different values, the information is omitted from the map.
 // When the caveats are later checked, this will cause the
 // check to fail.
-func InferDeclared(ms []*macaroon.Macaroon) Declared {
+func InferDeclared(ms macaroon.Slice) Declared {
 	var conflicts []string
 	info := make(Declared)
 	for _, m := range ms {

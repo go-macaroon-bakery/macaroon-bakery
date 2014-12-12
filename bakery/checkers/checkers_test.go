@@ -402,7 +402,7 @@ var inferDeclaredTests = []struct {
 func (*CheckersSuite) TestInferDeclared(c *gc.C) {
 	for i, test := range inferDeclaredTests {
 		c.Logf("test %d: %s", i, test.about)
-		ms := make([]*macaroon.Macaroon, len(test.caveats))
+		ms := make(macaroon.Slice, len(test.caveats))
 		for i, caveats := range test.caveats {
 			m, err := macaroon.New(nil, fmt.Sprint(i), "")
 			c.Assert(err, gc.IsNil)

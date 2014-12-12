@@ -7,9 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"gopkg.in/macaroon-bakery.v0/bakery/checkers"
-
 	"code.google.com/p/go.crypto/nacl/box"
+
+	"gopkg.in/macaroon-bakery.v0/bakery/checkers"
 )
 
 type caveatIdRecord struct {
