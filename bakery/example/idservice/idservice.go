@@ -71,7 +71,7 @@ func New(p Params) (http.Handler, error) {
 // It is only accessible to users that are members of the admin group.
 func (h *handler) userHandler(_ http.Header, req *http.Request) (interface{}, error) {
 	ctxt := h.newContext(req, "change-user")
-	if err := httpbakery.CheckRequest(h.svc, req, ctxt); err != nil {
+	if _, err := httpbakery.CheckRequest(h.svc, req, ctxt, nil); err != nil {
 		// TODO do this only if the error cause is *bakery.VerificationError
 		// We issue a macaroon with a third-party caveat targetting
 		// the id service itself. This means that the flow for self-created
@@ -351,19 +351,19 @@ type context struct {
 	req *http.Request
 }
 
-func (ctxt *context) CheckFirstPartyCaveat(caveat string) error {
-	op, rest, err := checkers.ParseCaveat(caveat)
-	if err != nil {
-		return fmt.Errorf("cannot parse caveat %q: %v", caveat, err)
-	}
-	switch op {
+func (ctxt *context) Condition() string {
+	return ""
+}
+
+func (ctxt *context) Check(cond, arg string) error {
+	switch cond {
 	case "user-is":
-		if rest != ctxt.declaredUser {
-			return fmt.Errorf("not logged in as %q", rest)
+		if arg != ctxt.declaredUser {
+			return fmt.Errorf("not logged in as %q", arg)
 		}
 		return nil
 	case "operation":
-		if ctxt.operation != "" && rest == ctxt.operation {
+		if ctxt.operation != "" && arg == ctxt.operation {
 			return nil
 		}
 		return errgo.Newf("operation mismatch")
@@ -429,7 +429,7 @@ func (ctxt *context) canSpeakFor(user string) error {
 	}
 	ctxt1 := *ctxt
 	ctxt1.declaredUser = user
-	err := httpbakery.CheckRequest(ctxt.svc, ctxt.req, &ctxt1)
+	_, err := httpbakery.CheckRequest(ctxt.svc, ctxt.req, &ctxt1, nil)
 	if err != nil {
 		log.Printf("client cannot speak for %q: %v", user, err)
 	} else {

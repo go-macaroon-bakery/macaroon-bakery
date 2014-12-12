@@ -36,7 +36,7 @@ func thirdPartyChecker(req *http.Request, cavId, condition string) ([]bakery.Cav
 	}
 	// TODO check that the HTTP request has cookies that prove
 	// something about the client.
-	return []bakery.Caveat{{
-		Condition: "remote-host 127.0.0.1",
-	}}, nil
+	return []bakery.Caveat{
+		httpbakery.SameClientIPAddrCaveat(req),
+	}, nil
 }

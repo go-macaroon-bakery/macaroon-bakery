@@ -33,10 +33,9 @@ func (s *ClientSuite) TestSingleServiceFirstParty(c *gc.C) {
 	serverMacaroon, err := svc.NewMacaroon("", nil, nil)
 	c.Assert(err, gc.IsNil)
 	c.Assert(serverMacaroon.Location(), gc.Equals, "loc")
-	cav := bakery.Caveat{
-		Condition: "something",
-	}
-	err = svc.AddCaveat(serverMacaroon, cav)
+	err = svc.AddCaveat(serverMacaroon, bakery.Caveat{
+		Condition: "is something",
+	})
 	c.Assert(err, gc.IsNil)
 
 	// Create a client request.
@@ -88,7 +87,7 @@ func clientRequestWithCookies(c *gc.C, u string, macaroons []*macaroon.Macaroon)
 
 func serverHandler(service *bakery.Service) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
-		if err := httpbakery.CheckRequest(service, req, strCompFirstPartyChecker("something")); err != nil {
+		if _, err := httpbakery.CheckRequest(service, req, isChecker("something"), nil); err != nil {
 			http.Error(w, "no macaroon", http.StatusUnauthorized)
 			return
 		}
@@ -96,11 +95,15 @@ func serverHandler(service *bakery.Service) func(http.ResponseWriter, *http.Requ
 	}
 }
 
-type strCompFirstPartyChecker string
+type isChecker string
 
-func (c strCompFirstPartyChecker) CheckFirstPartyCaveat(caveat string) error {
-	if caveat != string(c) {
-		return fmt.Errorf("%v doesn't match %s", caveat, c)
+func (isChecker) Condition() string {
+	return "is"
+}
+
+func (c isChecker) Check(_, arg string) error {
+	if arg != string(c) {
+		return fmt.Errorf("%v doesn't match %s", arg, c)
 	}
 	return nil
 }

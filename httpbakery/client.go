@@ -17,6 +17,7 @@ import (
 	"gopkg.in/macaroon.v1"
 
 	"gopkg.in/macaroon-bakery.v0/bakery"
+	"gopkg.in/macaroon-bakery.v0/bakery/checkers"
 )
 
 // DefaultHTTPClient is an http.Client that ensures that
@@ -343,23 +344,43 @@ func isVerificationError(err error) bool {
 // valid macaroon minted by the given service, using checker to check
 // any first party caveats. It returns an error with a
 // *bakery.VerificationError cause if the macaroon verification failed.
-func CheckRequest(svc *bakery.Service, req *http.Request, checker bakery.FirstPartyChecker) error {
+//
+// The assert map holds any required attributes of "declared" attributes,
+// overriding any inferences made from the macaroons themselves.
+// It has a similar effect to adding a checkers.DeclaredCaveat
+// for each key and value, but the error message will be more
+// useful.
+//
+// It adds all the standard caveat checkers to the given checker.
+//
+// It returns any attributes declared in the successfully validated request.
+func CheckRequest(svc *bakery.Service, req *http.Request, checker checkers.Checker, assert map[string]string) (map[string]string, error) {
 	mss := RequestMacaroons(req)
 	if len(mss) == 0 {
-		return &bakery.VerificationError{
+		return nil, &bakery.VerificationError{
 			Reason: errgo.Newf("no macaroon cookies in request"),
 		}
 	}
+	checker = checkers.New(
+		checker,
+		Checkers(req),
+		checkers.TimeBefore,
+	)
+
 	var err error
 	for _, ms := range mss {
-		err = svc.Check(ms, checker)
+		declared := checkers.InferDeclared(ms)
+		for key, val := range assert {
+			declared[key] = val
+		}
+		err = svc.Check(ms, checkers.New(declared, checker))
 		if err == nil {
-			return nil
+			return declared, nil
 		}
 	}
 	// Return an arbitrary error from the macaroons provided.
 	// TODO return all errors.
-	return errgo.Mask(err, isVerificationError)
+	return nil, errgo.Mask(err, isVerificationError)
 }
 
 type cookieLogger struct {
