@@ -3,7 +3,6 @@ package idservice_test
 import (
 	"fmt"
 	"log"
-	"net"
 	"net/http"
 
 	"gopkg.in/errgo.v1"
@@ -51,7 +50,7 @@ func targetService(endpoint, authEndpoint string, authPK *bakery.PublicKey) (htt
 
 func (srv *targetServiceHandler) serveGold(w http.ResponseWriter, req *http.Request) {
 	checker := srv.checkers(req, "gold")
-	if err := httpbakery.CheckRequest(srv.svc, req, checker); err != nil {
+	if _, err := httpbakery.CheckRequest(srv.svc, req, checker, nil); err != nil {
 		srv.writeError(w, "gold", err)
 		return
 	}
@@ -60,7 +59,7 @@ func (srv *targetServiceHandler) serveGold(w http.ResponseWriter, req *http.Requ
 
 func (srv *targetServiceHandler) serveSilver(w http.ResponseWriter, req *http.Request) {
 	checker := srv.checkers(req, "silver")
-	if err := httpbakery.CheckRequest(srv.svc, req, checker); err != nil {
+	if _, err := httpbakery.CheckRequest(srv.svc, req, checker, nil); err != nil {
 		srv.writeError(w, "silver", err)
 		return
 	}
@@ -68,31 +67,16 @@ func (srv *targetServiceHandler) serveSilver(w http.ResponseWriter, req *http.Re
 }
 
 // checkers implements the caveat checking for the service.
-// Note how we add context-sensitive checkers
-// (remote-host checks information from the HTTP request)
-// to the standard checkers implemented by checkers.Std.
-func (svc *targetServiceHandler) checkers(req *http.Request, operation string) bakery.FirstPartyChecker {
-	m := checkers.Map{
-		"remote-host": func(_, host string) error {
-			// TODO(rog) do we want to distinguish between
-			// the two kinds of errors below?
-			remoteHost, _, err := net.SplitHostPort(req.RemoteAddr)
-			if err != nil {
-				return fmt.Errorf("cannot parse request remote address")
-			}
-			if remoteHost != host {
-				return fmt.Errorf("remote address mismatch (need %q, got %q)", host, remoteHost)
-			}
-			return nil
-		},
-		"operation": func(_, op string) error {
+func (svc *targetServiceHandler) checkers(req *http.Request, operation string) checkers.Checker {
+	return checkers.CheckerFunc{
+		Condition_: "operation",
+		Check_: func(_, op string) error {
 			if op != operation {
 				return fmt.Errorf("macaroon not valid for operation")
 			}
 			return nil
 		},
 	}
-	return checkers.New(m, checkers.TimeBefore)
 }
 
 // writeError writes an error to w. If the error was generated because
