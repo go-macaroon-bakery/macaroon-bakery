@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"sync"
 
-	"code.google.com/p/go.crypto/nacl/box"
+	"golang.org/x/crypto/nacl/box"
 	"gopkg.in/errgo.v1"
 )
 

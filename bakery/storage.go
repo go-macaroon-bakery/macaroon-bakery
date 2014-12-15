@@ -39,7 +39,7 @@ type memStorage struct {
 	values map[string]string
 }
 
-func (s memStorage) Put(location, item string) error {
+func (s *memStorage) Put(location, item string) error {
 	logf("storage.Put[%q] %q", location, item)
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -47,7 +47,7 @@ func (s memStorage) Put(location, item string) error {
 	return nil
 }
 
-func (s memStorage) Get(location string) (string, error) {
+func (s *memStorage) Get(location string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	item, ok := s.values[location]
@@ -59,7 +59,7 @@ func (s memStorage) Get(location string) (string, error) {
 	return item, nil
 }
 
-func (s memStorage) Del(location string) error {
+func (s *memStorage) Del(location string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.values, location)
