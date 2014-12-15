@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"code.google.com/p/go.crypto/nacl/box"
+	"golang.org/x/crypto/nacl/box"
 
 	"gopkg.in/macaroon-bakery.v0/bakery/checkers"
 )
