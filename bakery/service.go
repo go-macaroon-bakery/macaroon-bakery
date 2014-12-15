@@ -10,8 +10,9 @@ import (
 	"log"
 
 	"gopkg.in/errgo.v1"
-	"gopkg.in/macaroon-bakery.v0/bakery/checkers"
 	"gopkg.in/macaroon.v1"
+
+	"gopkg.in/macaroon-bakery.v0/bakery/checkers"
 )
 
 const debug = false
@@ -114,7 +115,7 @@ type Caveat struct {
 // If there is a verification error, it returns a VerificationError that
 // describes the error (other errors might be returned in other
 // circumstances).
-func (svc *Service) Check(ms []*macaroon.Macaroon, checker FirstPartyChecker) error {
+func (svc *Service) Check(ms macaroon.Slice, checker FirstPartyChecker) error {
 	if len(ms) == 0 {
 		return &VerificationError{
 			Reason: fmt.Errorf("no macaroons in slice"),
@@ -139,6 +140,44 @@ func (svc *Service) Check(ms []*macaroon.Macaroon, checker FirstPartyChecker) er
 		}
 	}
 	return nil
+}
+
+// CheckAny checks that the given slice of slices contains at least
+// one macaroon minted by the given service, using checker to check
+// any first party caveats. It returns an error with a
+// *bakery.VerificationError cause if the macaroon verification failed.
+//
+// The assert map holds any required attributes of "declared" attributes,
+// overriding any inferences made from the macaroons themselves.
+// It has a similar effect to adding a checkers.DeclaredCaveat
+// for each key and value, but the error message will be more
+// useful.
+//
+// It adds all the standard caveat checkers to the given checker.
+//
+// It returns any attributes declared in the successfully validated request.
+func (svc *Service) CheckAny(mss []macaroon.Slice, assert map[string]string, checker checkers.Checker) (map[string]string, error) {
+	// TODO perhaps return a slice of attribute maps, one
+	// for each successfully validated macaroon slice?
+	var err error
+	for _, ms := range mss {
+		declared := checkers.InferDeclared(ms)
+		for key, val := range assert {
+			declared[key] = val
+		}
+		err = svc.Check(ms, checkers.New(declared, checker))
+		if err == nil {
+			return declared, nil
+		}
+	}
+	// Return an arbitrary error from the macaroons provided.
+	// TODO return all errors.
+	return nil, errgo.Mask(err, isVerificationError)
+}
+
+func isVerificationError(err error) bool {
+	_, ok := err.(*VerificationError)
+	return ok
 }
 
 // NewMacaroon mints a new macaroon with the given id and caveats.

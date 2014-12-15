@@ -42,7 +42,7 @@ func (s *ClientSuite) TestSingleServiceFirstParty(c *gc.C) {
 	// Create a client request.
 	req, err := http.NewRequest("GET", ts.URL, nil)
 	c.Assert(err, gc.IsNil)
-	client := clientRequestWithCookies(c, ts.URL, []*macaroon.Macaroon{serverMacaroon})
+	client := clientRequestWithCookies(c, ts.URL, macaroon.Slice{serverMacaroon})
 	// Somehow the client has accquired the macaroon. Add it to the cookiejar in our request.
 
 	// Make the request to the server.
@@ -77,7 +77,7 @@ func newServer(h func(http.ResponseWriter, *http.Request)) *httptest.Server {
 	return httptest.NewServer(mux)
 }
 
-func clientRequestWithCookies(c *gc.C, u string, macaroons []*macaroon.Macaroon) *http.Client {
+func clientRequestWithCookies(c *gc.C, u string, macaroons macaroon.Slice) *http.Client {
 	client := httpbakery.DefaultHTTPClient
 	url, err := url.Parse(u)
 	c.Assert(err, gc.IsNil)
@@ -88,7 +88,7 @@ func clientRequestWithCookies(c *gc.C, u string, macaroons []*macaroon.Macaroon)
 
 func serverHandler(service *bakery.Service) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
-		if _, err := httpbakery.CheckRequest(service, req, isChecker("something"), nil); err != nil {
+		if _, err := httpbakery.CheckRequest(service, req, nil, isChecker("something")); err != nil {
 			http.Error(w, "no macaroon", http.StatusUnauthorized)
 			return
 		}

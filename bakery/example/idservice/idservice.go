@@ -71,7 +71,7 @@ func New(p Params) (http.Handler, error) {
 // It is only accessible to users that are members of the admin group.
 func (h *handler) userHandler(_ http.Header, req *http.Request) (interface{}, error) {
 	ctxt := h.newContext(req, "change-user")
-	if _, err := httpbakery.CheckRequest(h.svc, req, ctxt, nil); err != nil {
+	if _, err := httpbakery.CheckRequest(h.svc, req, nil, ctxt); err != nil {
 		// TODO do this only if the error cause is *bakery.VerificationError
 		// We issue a macaroon with a third-party caveat targetting
 		// the id service itself. This means that the flow for self-created
@@ -174,7 +174,7 @@ func (h *handler) loginAttemptHandler(w http.ResponseWriter, req *http.Request) 
 		http.Error(w, "cannot mint macaroon: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
-	cookie, err := httpbakery.NewCookie([]*macaroon.Macaroon{m})
+	cookie, err := httpbakery.NewCookie(macaroon.Slice{m})
 	if err != nil {
 		http.Error(w, "cannot make cookie: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -429,7 +429,7 @@ func (ctxt *context) canSpeakFor(user string) error {
 	}
 	ctxt1 := *ctxt
 	ctxt1.declaredUser = user
-	_, err := httpbakery.CheckRequest(ctxt.svc, ctxt.req, &ctxt1, nil)
+	_, err := httpbakery.CheckRequest(ctxt.svc, ctxt.req, nil, &ctxt1)
 	if err != nil {
 		log.Printf("client cannot speak for %q: %v", user, err)
 	} else {

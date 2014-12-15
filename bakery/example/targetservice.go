@@ -52,7 +52,7 @@ func targetService(endpoint, authEndpoint string, authPK *bakery.PublicKey) (htt
 
 func (srv *targetServiceHandler) serveGold(w http.ResponseWriter, req *http.Request) {
 	checker := srv.checkers(req, "gold")
-	if _, err := httpbakery.CheckRequest(srv.svc, req, checker, nil); err != nil {
+	if _, err := httpbakery.CheckRequest(srv.svc, req, nil, checker); err != nil {
 		srv.writeError(w, "gold", err)
 		return
 	}
@@ -61,7 +61,7 @@ func (srv *targetServiceHandler) serveGold(w http.ResponseWriter, req *http.Requ
 
 func (srv *targetServiceHandler) serveSilver(w http.ResponseWriter, req *http.Request) {
 	checker := srv.checkers(req, "silver")
-	if _, err := httpbakery.CheckRequest(srv.svc, req, checker, nil); err != nil {
+	if _, err := httpbakery.CheckRequest(srv.svc, req, nil, checker); err != nil {
 		srv.writeError(w, "silver", err)
 		return
 	}
