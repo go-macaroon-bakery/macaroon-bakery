@@ -65,6 +65,10 @@ type WaitResponse struct {
 //
 // If the client.Jar field is non-nil, the macaroons will be
 // stored there and made available to subsequent requests.
+//
+// If interaction is required by the user, the visitWebPage
+// function is called with a URL to be opened in a
+// web browser.
 func Do(client *http.Client, req *http.Request, visitWebPage func(url *url.URL) error) (*http.Response, error) {
 	// Add a temporary cookie jar (without mutating the original
 	// client) if there isn't one available.
@@ -84,6 +88,20 @@ func Do(client *http.Client, req *http.Request, visitWebPage func(url *url.URL) 
 		visitWebPage: visitWebPage,
 	}
 	return ctxt.do(req)
+}
+
+// DischargeAll attempts to acquire discharge macaroons for all the
+// third party caveats in m, and returns a slice containing all
+// of them bound to m.
+//
+// The returned macaroon slice will not be stored in the client
+// cookie jar (see SetCookie if you need to do that).
+func DischargeAll(m *macaroon.Macaroon, client *http.Client, visitWebPage func(url *url.URL) error) (macaroon.Slice, error) {
+	ctxt := &clientContext{
+		client:       client,
+		visitWebPage: visitWebPage,
+	}
+	return bakery.DischargeAll(m, ctxt.obtainThirdPartyDischarge)
 }
 
 type clientContext struct {
