@@ -168,11 +168,19 @@ func (kr *PublicKeyRing) AddPublicKeyForLocation(loc string, prefix bool, key *P
 	}
 	kr.mu.Lock()
 	defer kr.mu.Unlock()
-	kr.publicKeys = append(kr.publicKeys, publicKeyRecord{
+	newr := publicKeyRecord{
 		url:    url,
 		prefix: prefix,
 		key:    *key,
-	})
+	}
+	for i := range kr.publicKeys {
+		k := &kr.publicKeys[i]
+		if k.url.Path == url.Path && k.url.Host == url.Host {
+			*k = newr
+			return nil
+		}
+	}
+	kr.publicKeys = append(kr.publicKeys, newr)
 	return nil
 }
 

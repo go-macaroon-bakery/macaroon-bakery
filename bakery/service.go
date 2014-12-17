@@ -10,9 +10,9 @@ import (
 	"log"
 	"strings"
 
+	"github.com/juju/loggo"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v1"
-	"github.com/juju/loggo"
 
 	"gopkg.in/macaroon-bakery.v0/bakery/checkers"
 )
