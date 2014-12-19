@@ -11,11 +11,14 @@ import (
 )
 
 // Constants for all the standard caveat conditions.
+// First and third party caveat conditions are both defined here,
+// even though notionally they exist in separate name spaces.
 const (
 	CondDeclared     = "declared"
 	CondTimeBefore   = "time-before"
 	CondClientIPAddr = "client-ip-addr"
 	CondError        = "error"
+	CondNeedDeclared = "need-declared"
 )
 
 // ErrCaveatNotRecognized is the cause of errors returned
