@@ -2,6 +2,7 @@ package bakerytest_test
 
 import (
 	"fmt"
+	"net/http"
 	"net/url"
 
 	gc "gopkg.in/check.v1"
@@ -12,7 +13,13 @@ import (
 	"gopkg.in/macaroon-bakery.v0/httpbakery"
 )
 
-type suite struct{}
+type suite struct {
+	httpClient *http.Client
+}
+
+func (s *suite) SetUpTest(c *gc.C) {
+	s.httpClient = httpbakery.NewHTTPClient()
+}
 
 var _ = gc.Suite(&suite{})
 
@@ -20,7 +27,7 @@ func noCaveatChecker(cond, arg string) ([]checkers.Caveat, error) {
 	return nil, nil
 }
 
-func (*suite) TestDischargerSimple(c *gc.C) {
+func (s *suite) TestDischargerSimple(c *gc.C) {
 	d := bakerytest.NewDischarger(nil, noCaveatChecker)
 	defer d.Close()
 
@@ -34,7 +41,7 @@ func (*suite) TestDischargerSimple(c *gc.C) {
 		Condition: "something",
 	}})
 	c.Assert(err, gc.IsNil)
-	ms, err := httpbakery.DischargeAll(m, httpbakery.DefaultHTTPClient, noInteraction)
+	ms, err := httpbakery.DischargeAll(m, s.httpClient, noInteraction)
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 2)
 
@@ -46,7 +53,7 @@ var failChecker = bakery.FirstPartyCheckerFunc(func(s string) error {
 	return fmt.Errorf("fail %s", s)
 })
 
-func (*suite) TestDischargerTwoLevels(c *gc.C) {
+func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 	d1checker := func(cond, arg string) ([]checkers.Caveat, error) {
 		if cond != "xtrue" {
 			return nil, fmt.Errorf("caveat refused")
@@ -79,7 +86,7 @@ func (*suite) TestDischargerTwoLevels(c *gc.C) {
 	}})
 	c.Assert(err, gc.IsNil)
 
-	ms, err := httpbakery.DischargeAll(m, httpbakery.DefaultHTTPClient, noInteraction)
+	ms, err := httpbakery.DischargeAll(m, s.httpClient, noInteraction)
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 3)
 
@@ -92,7 +99,7 @@ func (*suite) TestDischargerTwoLevels(c *gc.C) {
 	})
 	c.Assert(err, gc.IsNil)
 
-	ms, err = httpbakery.DischargeAll(m, httpbakery.DefaultHTTPClient, noInteraction)
+	ms, err = httpbakery.DischargeAll(m, s.httpClient, noInteraction)
 	c.Assert(err, gc.ErrorMatches, `cannot get discharge from "http://[^"]*": cannot discharge: caveat refused`)
 	c.Assert(ms, gc.HasLen, 0)
 }

@@ -20,12 +20,13 @@ import (
 	"gopkg.in/macaroon-bakery.v0/bakery/checkers"
 )
 
-// DefaultHTTPClient is an http.Client that ensures that
-// headers are sent to the server even when the server redirects.
+// NewHTTPClient returns an http.Client that ensures
+// that headers are sent to the server even when the
+// server redirects a GET request. The returned client
+// also contains an empty in-memory cookie jar.
+//
 // See https://github.com/golang/go/issues/4677
-var DefaultHTTPClient = defaultHTTPClient()
-
-func defaultHTTPClient() *http.Client {
+func NewHTTPClient() *http.Client {
 	c := *http.DefaultClient
 	c.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		if len(via) >= 10 {

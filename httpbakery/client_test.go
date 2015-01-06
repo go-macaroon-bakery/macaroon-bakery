@@ -78,7 +78,7 @@ func newServer(h func(http.ResponseWriter, *http.Request)) *httptest.Server {
 }
 
 func clientRequestWithCookies(c *gc.C, u string, macaroons macaroon.Slice) *http.Client {
-	client := httpbakery.DefaultHTTPClient
+	client := httpbakery.NewHTTPClient()
 	url, err := url.Parse(u)
 	c.Assert(err, gc.IsNil)
 	err = httpbakery.SetCookie(client.Jar, url, macaroons)
