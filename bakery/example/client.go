@@ -15,7 +15,7 @@ import (
 // In this simple example, it just tries a GET
 // request, which will fail unless the client
 // has the required authorization.
-func clientRequest(serverEndpoint string) (string, error) {
+func clientRequest(httpClient *http.Client, serverEndpoint string) (string, error) {
 	req, err := http.NewRequest("GET", serverEndpoint, nil)
 	if err != nil {
 		return "", errgo.Notef(err, "cannot make new HTTP request")
@@ -30,7 +30,7 @@ func clientRequest(serverEndpoint string) (string, error) {
 		fmt.Printf("\t%s\n", url)
 		return nil
 	}
-	resp, err := httpbakery.Do(httpbakery.DefaultHTTPClient, req, visitWebPage)
+	resp, err := httpbakery.Do(httpClient, req, visitWebPage)
 	if err != nil {
 		return "", errgo.NoteMask(err, "GET failed", errgo.Any)
 	}

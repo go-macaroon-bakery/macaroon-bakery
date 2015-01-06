@@ -24,7 +24,10 @@ import (
 	"net/http"
 
 	"gopkg.in/macaroon-bakery.v0/bakery"
+	"gopkg.in/macaroon-bakery.v0/httpbakery"
 )
+
+var defaultHTTPClient = httpbakery.NewHTTPClient()
 
 func main() {
 	key, err := bakery.GenerateKey()
@@ -38,7 +41,7 @@ func main() {
 	serverEndpoint := mustServe(func(endpoint string) (http.Handler, error) {
 		return targetService(endpoint, authEndpoint, authPublicKey)
 	})
-	resp, err := clientRequest(serverEndpoint)
+	resp, err := clientRequest(defaultHTTPClient, serverEndpoint)
 	if err != nil {
 		log.Fatalf("client failed: %v", err)
 	}
