@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"log"
+	"strings"
 
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v1"
@@ -95,16 +96,6 @@ func (svc *Service) Location() string {
 // PublicKey returns the service's public key.
 func (svc *Service) PublicKey() *PublicKey {
 	return &svc.key.Public
-}
-
-// Caveat represents a condition that must be true for a check to
-// complete successfully. If Location is non-empty, the caveat must be
-// discharged by a third party at the given location.
-// This differs from macaroon.Caveat in that the condition
-// is not encrypted.
-type Caveat struct {
-	Location  string
-	Condition string
 }
 
 // Check checks that the given macaroons verify
@@ -260,11 +251,65 @@ func (svc *Service) Discharge(checker ThirdPartyChecker, id string) (*macaroon.M
 	if err != nil {
 		return nil, fmt.Errorf("discharger cannot decode caveat id: %v", err)
 	}
-	caveats, err := checker.CheckThirdPartyCaveat(id, condition)
+	// Note that we don't check the error - we allow the
+	// third party checker to see even caveats that we can't
+	// understand.
+	cond, arg, _ := checkers.ParseCaveat(condition)
+	var caveats []checkers.Caveat
+	if cond == checkers.CondNeedDeclared {
+		caveats, err = checkNeedDeclared(id, arg, checker)
+	} else {
+		caveats, err = checker.CheckThirdPartyCaveat(id, condition)
+	}
 	if err != nil {
-		return nil, err
+		return nil, errgo.Mask(err, errgo.Any)
 	}
 	return svc.NewMacaroon(id, rootKey, caveats)
+}
+
+func checkNeedDeclared(caveatId, arg string, checker ThirdPartyChecker) ([]checkers.Caveat, error) {
+	i := strings.Index(arg, " ")
+	if i <= 0 {
+		return nil, errgo.Newf("need-declared caveat requires an argument, got %q", arg)
+	}
+	needDeclared := strings.Split(arg[0:i], ",")
+	for _, d := range needDeclared {
+		if d == "" {
+			return nil, errgo.New("need-declared caveat with empty required attribute")
+		}
+	}
+	if len(needDeclared) == 0 {
+		return nil, fmt.Errorf("need-declared caveat with no required attributes")
+	}
+	caveats, err := checker.CheckThirdPartyCaveat(caveatId, arg[i+1:])
+	if err != nil {
+		return nil, errgo.Mask(err, errgo.Any)
+	}
+	declared := make(map[string]bool)
+	for _, cav := range caveats {
+		if cav.Location != "" {
+			continue
+		}
+		// Note that we ignore the error. We allow the service to
+		// generate caveats that we don't understand here.
+		cond, arg, _ := checkers.ParseCaveat(cav.Condition)
+		if cond != checkers.CondDeclared {
+			continue
+		}
+		parts := strings.SplitN(arg, " ", 2)
+		if len(parts) != 2 {
+			return nil, errgo.Newf("declared caveat has no value")
+		}
+		declared[parts[0]] = true
+	}
+	// Add empty declarations for everything mentioned in need-declared
+	// that was not actually declared.
+	for _, d := range needDeclared {
+		if !declared[d] {
+			caveats = append(caveats, checkers.DeclaredCaveat(d, ""))
+		}
+	}
+	return caveats, nil
 }
 
 func randomBytes(n int) ([]byte, error) {

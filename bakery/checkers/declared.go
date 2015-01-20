@@ -22,6 +22,20 @@ func DeclaredCaveat(key string, value string) Caveat {
 	return firstParty(CondDeclared, key+" "+value)
 }
 
+// NeedDeclaredCaveat returns a third party caveat that
+// wraps the provided third party caveat and requires
+// that the third party must add "declared" caveats for
+// all the named keys.
+func NeedDeclaredCaveat(cav Caveat, keys ...string) Caveat {
+	if cav.Location == "" {
+		return ErrorCaveatf("need-declared caveat is not third-party")
+	}
+	return Caveat{
+		Location: cav.Location,
+		Condition: CondNeedDeclared +  " " + strings.Join(keys, ",") + " " + cav.Condition,
+	}
+}
+
 // Declared implements a checker that will
 // check that any "declared" caveats have a matching
 // key for their value in the map.
