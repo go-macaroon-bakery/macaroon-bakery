@@ -64,6 +64,12 @@ type WaitResponse struct {
 // any required discharge macaroons will be acquired,
 // and the request will be repeated with those attached.
 //
+// Note that because the request may be retried, no
+// body may be provided in the http request (otherwise
+// the contents will be lost when retrying). For requests
+// with a body (for example PUT or POST methods),
+// use DoWithBody instead.
+//
 // If the client.Jar field is non-nil, the macaroons will be
 // stored there and made available to subsequent requests.
 //
@@ -71,6 +77,20 @@ type WaitResponse struct {
 // function is called with a URL to be opened in a
 // web browser.
 func Do(client *http.Client, req *http.Request, visitWebPage func(url *url.URL) error) (*http.Response, error) {
+	if req.Body != nil {
+		return nil, fmt.Errorf("body unexpectedly provided in request - use DoWithBody")
+	}
+	return DoWithBody(client, req, noBody, visitWebPage)
+}
+
+func noBody() (io.ReadCloser, error) {
+	return nil, nil
+}
+
+// DoWithBody is like Do except that the given getBody function is
+// called to obtain the body for the HTTP request. Any returned body
+// will be closed after each request is made.
+func DoWithBody(client *http.Client, req *http.Request, getBody BodyGetter, visitWebPage func(url *url.URL) error) (*http.Response, error) {
 	// Add a temporary cookie jar (without mutating the original
 	// client) if there isn't one available.
 	if client.Jar == nil {
@@ -88,7 +108,7 @@ func Do(client *http.Client, req *http.Request, visitWebPage func(url *url.URL) 
 		client:       client,
 		visitWebPage: visitWebPage,
 	}
-	return ctxt.do(req)
+	return ctxt.do(req, getBody)
 }
 
 // DischargeAll attempts to acquire discharge macaroons for all the
@@ -126,14 +146,17 @@ func relativeURL(base, new string) (*url.URL, error) {
 	return baseURL.ResolveReference(newURL), nil
 }
 
-func (ctxt *clientContext) do(req *http.Request) (*http.Response, error) {
+func (ctxt *clientContext) do(req *http.Request, getBody BodyGetter) (*http.Response, error) {
 	log.Printf("client do %s %s {", req.Method, req.URL)
-	resp, err := ctxt.do1(req)
+	resp, err := ctxt.do1(req, getBody)
 	log.Printf("} -> error %#v", err)
 	return resp, err
 }
 
-func (ctxt *clientContext) do1(req *http.Request) (*http.Response, error) {
+func (ctxt *clientContext) do1(req *http.Request, getBody BodyGetter) (*http.Response, error) {
+	if err := ctxt.setRequestBody(req, getBody); err != nil {
+		return nil, errgo.Mask(err)
+	}
 	httpResp, err := ctxt.client.Do(req)
 	if err != nil {
 		return nil, err
@@ -164,9 +187,21 @@ func (ctxt *clientContext) do1(req *http.Request) (*http.Response, error) {
 	if err := SetCookie(ctxt.client.Jar, req.URL, macaroons); err != nil {
 		return nil, errgo.Notef(err, "cannot set cookie")
 	}
+	if err := ctxt.setRequestBody(req, getBody); err != nil {
+		return nil, errgo.Mask(err)
+	}
 	// Try again with our newly acquired discharge macaroons
 	hresp, err := ctxt.client.Do(req)
 	return hresp, err
+}
+
+func (ctxt *clientContext) setRequestBody(req *http.Request, getBody BodyGetter) error {
+	body, err := getBody()
+	if err != nil {
+		return errgo.Notef(err, "cannot get request body")
+	}
+	req.Body = body
+	return nil
 }
 
 // NewCookie takes a slice of macaroons and returns them
@@ -289,17 +324,33 @@ func (ctxt *clientContext) interact(location, visitURLStr, waitURLStr string) (*
 func (ctxt *clientContext) postForm(url string, data url.Values) (*http.Response, error) {
 	log.Printf("clientContext.postForm {")
 	defer log.Printf("}")
-	return ctxt.post(url, "application/x-www-form-urlencoded", strings.NewReader(data.Encode()))
+	getBody := SeekerBody(strings.NewReader(data.Encode()))
+	return ctxt.post(url, "application/x-www-form-urlencoded", getBody)
 }
 
-func (ctxt *clientContext) post(url string, bodyType string, body io.Reader) (resp *http.Response, err error) {
-	req, err := http.NewRequest("POST", url, body)
+// SeekerBody returns a body getter function suitable for
+// passing to DoWithBody that always returns the given reader,
+// first seeking to its start.
+func SeekerBody(r io.ReadSeeker) BodyGetter {
+	rc := ioutil.NopCloser(r)
+	return func() (io.ReadCloser, error) {
+		if _, err := r.Seek(0, 0); err != nil {
+			return nil, errgo.Notef(err, "cannot seek")
+		}
+		return rc, nil
+	}
+}
+
+type BodyGetter func() (io.ReadCloser, error)
+
+func (ctxt *clientContext) post(url string, bodyType string, getBody BodyGetter) (resp *http.Response, err error) {
+	req, err := http.NewRequest("POST", url, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", bodyType)
 	// TODO(rog) see http.shouldRedirectPost
-	return ctxt.do(req)
+	return ctxt.do(req, getBody)
 }
 
 // postFormJSON does an HTTP POST request to the given url with the given
