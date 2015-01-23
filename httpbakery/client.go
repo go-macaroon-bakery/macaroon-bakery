@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -15,10 +14,13 @@ import (
 	"code.google.com/p/go.net/publicsuffix"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v1"
+	"github.com/juju/loggo"
 
 	"gopkg.in/macaroon-bakery.v0/bakery"
 	"gopkg.in/macaroon-bakery.v0/bakery/checkers"
 )
+
+var logger = loggo.GetLogger("httpbakery")
 
 // NewHTTPClient returns an http.Client that ensures
 // that headers are sent to the server even when the
@@ -147,9 +149,9 @@ func relativeURL(base, new string) (*url.URL, error) {
 }
 
 func (ctxt *clientContext) do(req *http.Request, getBody BodyGetter) (*http.Response, error) {
-	log.Printf("client do %s %s {", req.Method, req.URL)
+	logger.Debugf("client do %s %s {", req.Method, req.URL)
 	resp, err := ctxt.do1(req, getBody)
-	log.Printf("} -> error %#v", err)
+	logger.Debugf("} -> error %#v", err)
 	return resp, err
 }
 
@@ -271,7 +273,6 @@ func (ctxt *clientContext) obtainThirdPartyDischarge(originalLocation string, ca
 	if err == nil {
 		return resp.Macaroon, nil
 	}
-	log.Printf("discharge post got error %#v", err)
 	cause, ok := errgo.Cause(err).(*Error)
 	if !ok {
 		return nil, errgo.Notef(err, "cannot acquire discharge")
@@ -322,8 +323,6 @@ func (ctxt *clientContext) interact(location, visitURLStr, waitURLStr string) (*
 }
 
 func (ctxt *clientContext) postForm(url string, data url.Values) (*http.Response, error) {
-	log.Printf("clientContext.postForm {")
-	defer log.Printf("}")
 	getBody := SeekerBody(strings.NewReader(data.Encode()))
 	return ctxt.post(url, "application/x-www-form-urlencoded", getBody)
 }
@@ -357,7 +356,7 @@ func (ctxt *clientContext) post(url string, bodyType string, getBody BodyGetter)
 // values and unmarshals the response in the value pointed to be resp.
 // It uses the given postForm function to actually make the POST request.
 func postFormJSON(url string, vals url.Values, resp interface{}, postForm func(url string, vals url.Values) (*http.Response, error)) error {
-	log.Printf("postFormJSON to %s; vals: %#v", url, vals)
+	logger.Debugf("postFormJSON to %s; vals: %#v", url, vals)
 	httpResp, err := postForm(url, vals)
 	if err != nil {
 		return errgo.NoteMask(err, fmt.Sprintf("cannot http POST to %q", url), errgo.Any)
@@ -392,12 +391,12 @@ func RequestMacaroons(req *http.Request) []macaroon.Slice {
 		}
 		data, err := base64.StdEncoding.DecodeString(cookie.Value)
 		if err != nil {
-			log.Printf("cannot base64-decode cookie; ignoring: %v", err)
+			logger.Errorf("cannot base64-decode cookie; ignoring: %v", err)
 			continue
 		}
 		var ms macaroon.Slice
 		if err := json.Unmarshal(data, &ms); err != nil {
-			log.Printf("cannot unmarshal macaroons from cookie; ignoring: %v", err)
+			logger.Errorf("cannot unmarshal macaroons from cookie; ignoring: %v", err)
 			continue
 		}
 		mss = append(mss, ms)
@@ -448,9 +447,9 @@ type cookieLogger struct {
 }
 
 func (j *cookieLogger) SetCookies(u *url.URL, cookies []*http.Cookie) {
-	log.Printf("%p setting %d cookies for %s", j.CookieJar, len(cookies), u)
+	logger.Debugf("%p setting %d cookies for %s", j.CookieJar, len(cookies), u)
 	for i, c := range cookies {
-		log.Printf("\t%d. path %s; name %s", i, c.Path, c.Name)
+		logger.Debugf("\t%d. path %s; name %s", i, c.Path, c.Name)
 	}
 	j.CookieJar.SetCookies(u, cookies)
 }
