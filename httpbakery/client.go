@@ -127,6 +127,33 @@ func DischargeAll(m *macaroon.Macaroon, client *http.Client, visitWebPage func(u
 	return bakery.DischargeAll(m, ctxt.obtainThirdPartyDischarge)
 }
 
+// PublicKeyForLocation returns the public key from a macaroon
+// discharge server running at the given location URL.
+// Note that this is insecure if an http: URL scheme is used.
+func PublicKeyForLocation(client *http.Client, url string) (*bakery.PublicKey, error) {
+	url = url + "/publickey"
+	resp, err := client.Get(url)
+	if err != nil {
+		return nil, errgo.Notef(err, "cannot get public key from %q", url)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, errgo.Newf("cannot get public key from %q: got status %s", url, resp.Status)
+	}
+	defer resp.Body.Close()
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, errgo.Notef(err, "failed to read response body from %q", url)
+	}
+	var pubkey struct {
+		PublicKey *bakery.PublicKey
+	}
+	err = json.Unmarshal(data, &pubkey)
+	if err != nil {
+		return nil, errgo.Notef(err, "failed to decode response from %q", url)
+	}
+	return pubkey.PublicKey, nil
+}
+
 type clientContext struct {
 	client       *http.Client
 	visitWebPage func(*url.URL) error

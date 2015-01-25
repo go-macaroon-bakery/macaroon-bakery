@@ -62,6 +62,7 @@ func (d *Discharger) Close() {
 
 // Location returns the location of the discharger, suitable
 // for setting as the location in a third party caveat.
+// This will be the URL of the server.
 func (d *Discharger) Location() string {
 	return d.Service.Location()
 }
