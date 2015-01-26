@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"path"
 
@@ -85,16 +84,16 @@ type dischargeResponse struct {
 func (d *dischargeHandler) serveDischarge(h http.Header, req *http.Request) (interface{}, error) {
 	r, err := d.serveDischarge1(h, req)
 	if err != nil {
-		log.Printf("serveDischarge -> error %#v", err)
+		logger.Debugf("serveDischarge -> error %#v", err)
 	} else {
-		log.Printf("serveDischarge -> %#v", r)
+		logger.Debugf("serveDischarge -> %#v", r)
 	}
 	return r, err
 }
 
 func (d *dischargeHandler) serveDischarge1(h http.Header, req *http.Request) (interface{}, error) {
-	log.Printf("dischargeHandler.serveDischarge {")
-	defer log.Printf("}")
+	logger.Debugf("dischargeHandler.serveDischarge {")
+	defer logger.Debugf("}")
 	if req.Method != "POST" {
 		// TODO http.StatusMethodNotAllowed)
 		return nil, badRequestErrorf("method not allowed")

@@ -12,17 +12,12 @@ import (
 
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v1"
+	"github.com/juju/loggo"
 
 	"gopkg.in/macaroon-bakery.v0/bakery/checkers"
 )
 
-const debug = false
-
-func logf(f string, a ...interface{}) {
-	if debug {
-		log.Printf(f, a...)
-	}
-}
+var logger = loggo.GetLogger("bakery")
 
 // Service represents a service which can use macaroons
 // to check authorization.
@@ -219,7 +214,7 @@ func (svc *Service) NewMacaroon(id string, rootKey []byte, caveats []checkers.Ca
 // If it's a third-party caveat, it uses the service's caveat-id encoder
 // to create the id of the new caveat.
 func (svc *Service) AddCaveat(m *macaroon.Macaroon, cav checkers.Caveat) error {
-	logf("Service.AddCaveat id %q; cav %#v", m.Id(), cav)
+	logger.Infof("Service.AddCaveat id %q; cav %#v", m.Id(), cav)
 	if cav.Location == "" {
 		m.AddFirstPartyCaveat(cav.Condition)
 		return nil
@@ -246,7 +241,7 @@ func (svc *Service) AddCaveat(m *macaroon.Macaroon, cav checkers.Caveat) error {
 func (svc *Service) Discharge(checker ThirdPartyChecker, id string) (*macaroon.Macaroon, error) {
 	decoder := newBoxDecoder(svc.encoder.key)
 
-	logf("server attempting to discharge %q", id)
+	logger.Infof("server attempting to discharge %q", id)
 	rootKey, condition, err := decoder.decodeCaveatId(id)
 	if err != nil {
 		return nil, fmt.Errorf("discharger cannot decode caveat id: %v", err)
