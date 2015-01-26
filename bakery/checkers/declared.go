@@ -31,8 +31,8 @@ func NeedDeclaredCaveat(cav Caveat, keys ...string) Caveat {
 		return ErrorCaveatf("need-declared caveat is not third-party")
 	}
 	return Caveat{
-		Location: cav.Location,
-		Condition: CondNeedDeclared +  " " + strings.Join(keys, ",") + " " + cav.Condition,
+		Location:  cav.Location,
+		Condition: CondNeedDeclared + " " + strings.Join(keys, ",") + " " + cav.Condition,
 	}
 }
 
