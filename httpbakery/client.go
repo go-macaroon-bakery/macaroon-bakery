@@ -184,9 +184,18 @@ func (ctxt *clientContext) do1(req *http.Request, getBody BodyGetter) (*http.Res
 	mac := resp.Info.Macaroon
 	macaroons, err := bakery.DischargeAll(mac, ctxt.obtainThirdPartyDischarge)
 	if err != nil {
-		return nil, err
+		return nil, errgo.Mask(err, errgo.Any)
 	}
-	if err := SetCookie(ctxt.client.Jar, req.URL, macaroons); err != nil {
+	cookieURL := req.URL
+	if path := resp.Info.MacaroonPath; path != "" {
+		relURL, err := parseURLPath(path)
+		if err != nil {
+			logger.Warningf("ignoring invalid path in discharge-required response: %v", err)
+		} else {
+			cookieURL = req.URL.ResolveReference(relURL)
+		}
+	}
+	if err := SetCookie(ctxt.client.Jar, cookieURL, macaroons); err != nil {
 		return nil, errgo.Notef(err, "cannot set cookie")
 	}
 	if err := ctxt.setRequestBody(req, getBody); err != nil {
@@ -194,7 +203,26 @@ func (ctxt *clientContext) do1(req *http.Request, getBody BodyGetter) (*http.Res
 	}
 	// Try again with our newly acquired discharge macaroons
 	hresp, err := ctxt.client.Do(req)
-	return hresp, err
+	if err != nil {
+		return nil, errgo.Mask(err, errgo.Any)
+	}
+	return hresp, nil
+}
+
+func parseURLPath(path string) (*url.URL, error) {
+	u, err := url.Parse(path)
+	if err != nil {
+		return nil, errgo.Mask(err)
+	}
+	if u.Scheme != "" ||
+		u.Opaque != "" ||
+		u.User != nil ||
+		u.Host != "" ||
+		u.RawQuery != "" ||
+		u.Fragment != "" {
+		return nil, errgo.Newf("URL path %q is not clean", path)
+	}
+	return u, nil
 }
 
 func (ctxt *clientContext) setRequestBody(req *http.Request, getBody BodyGetter) error {
