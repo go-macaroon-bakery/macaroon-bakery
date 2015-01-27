@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 
+	jujuTesting "github.com/juju/testing"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/macaroon.v1"
 
@@ -18,7 +19,9 @@ import (
 	"gopkg.in/macaroon-bakery.v0/httpbakery"
 )
 
-type ClientSuite struct{}
+type ClientSuite struct {
+	jujuTesting.LoggingSuite
+}
 
 var _ = gc.Suite(&ClientSuite{})
 
@@ -30,8 +33,9 @@ func (s *ClientSuite) TestSingleServiceFirstParty(c *gc.C) {
 	// Create a target service.
 	svc := newService(c, "loc", nil)
 	// No discharge required, so pass "unknown" for the third party
-	// caveat discharger location.
-	ts := newServer(serverHandler(svc, "unknown"))
+	// caveat discharger location so we know that we don't try
+	// to discharge the location.
+	ts := newServer(serverHandler(svc, "unknown", nil))
 	defer ts.Close()
 
 	// Mint a macaroon for the target service.
@@ -53,9 +57,7 @@ func (s *ClientSuite) TestSingleServiceFirstParty(c *gc.C) {
 	resp, err := client.Do(req)
 	c.Assert(err, gc.IsNil)
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
-	c.Assert(err, gc.IsNil)
-	c.Assert(string(body), gc.DeepEquals, "done")
+	assertResponse(c, resp, "done")
 }
 
 func (s *ClientSuite) TestRepeatedRequestWithBody(c *gc.C) {
@@ -65,7 +67,7 @@ func (s *ClientSuite) TestRepeatedRequestWithBody(c *gc.C) {
 	// Create a target service.
 	svc := newService(c, "loc", d)
 
-	ts := newServer(serverHandler(svc, d.Location()))
+	ts := newServer(serverHandler(svc, d.Location(), nil))
 	defer ts.Close()
 
 	// Create a client request.
@@ -91,14 +93,76 @@ func (s *ClientSuite) TestRepeatedRequestWithBody(c *gc.C) {
 
 	resp, err = httpbakery.DoWithBody(httpbakery.NewHTTPClient(), req, httpbakery.SeekerBody(bodyReader), noVisit)
 	c.Assert(err, gc.IsNil)
-	c.Assert(resp.StatusCode, gc.Equals, http.StatusOK)
-	data, err := ioutil.ReadAll(resp.Body)
-	c.Assert(err, gc.IsNil)
-	c.Assert(string(data), gc.Equals, "done postbody")
+	defer resp.Body.Close()
+	assertResponse(c, resp, "done postbody")
 
 	// Sanity check that the body really was read twice and hence
 	// that we are checking the logic we intend to check.
 	c.Assert(bodyReader.byteCount, gc.Equals, len(bodyText)*2)
+}
+
+func (s *ClientSuite) TestMacaroonCookiePath(c *gc.C) {
+	svc := newService(c, "loc", nil)
+
+	cookiePath := ""
+	ts := newServer(serverHandler(svc, "", func(*http.Request) string {
+		return cookiePath
+	}))
+	defer ts.Close()
+
+	var client *http.Client
+	doRequest := func() {
+		req, err := http.NewRequest("GET", ts.URL+"/foo/bar/", nil)
+		c.Assert(err, gc.IsNil)
+		client = httpbakery.NewHTTPClient()
+		resp, err := httpbakery.Do(client, req, noVisit)
+		c.Assert(err, gc.IsNil)
+		defer resp.Body.Close()
+		assertResponse(c, resp, "done")
+	}
+	assertCookieCount := func(path string, n int) {
+		u, err := url.Parse(ts.URL + path)
+		c.Assert(err, gc.IsNil)
+		c.Logf("client jar %p", client.Jar)
+		c.Assert(client.Jar.Cookies(u), gc.HasLen, n)
+	}
+	cookiePath = ""
+	c.Logf("- cookie path %q", cookiePath)
+	doRequest()
+	assertCookieCount("", 0)
+	assertCookieCount("/foo", 0)
+	assertCookieCount("/foo", 0)
+	assertCookieCount("/foo/", 0)
+	assertCookieCount("/foo/bar/", 1)
+	assertCookieCount("/foo/bar/baz", 1)
+
+	cookiePath = "/foo/"
+	c.Logf("- cookie path %q", cookiePath)
+	doRequest()
+	assertCookieCount("", 0)
+	assertCookieCount("/foo", 1)
+	assertCookieCount("/foo/", 1)
+	assertCookieCount("/foo/bar/", 1)
+	assertCookieCount("/foo/bar/baz", 1)
+
+	cookiePath = "../"
+	c.Logf("- cookie path %q", cookiePath)
+	doRequest()
+	assertCookieCount("", 0)
+	assertCookieCount("/bar", 0)
+	assertCookieCount("/foo", 1)
+	assertCookieCount("/foo/", 1)
+	assertCookieCount("/foo/bar/", 1)
+	assertCookieCount("/foo/bar/baz", 1)
+}
+
+// assertResponse asserts that the given response is OK and contains
+// the expected body text.
+func assertResponse(c *gc.C, resp *http.Response, expectBody string) {
+	c.Assert(resp.StatusCode, gc.Equals, http.StatusOK)
+	body, err := ioutil.ReadAll(resp.Body)
+	c.Assert(err, gc.IsNil)
+	c.Assert(string(body), gc.DeepEquals, expectBody)
 }
 
 func noVisit(*url.URL) error {
@@ -140,17 +204,25 @@ func clientRequestWithCookies(c *gc.C, u string, macaroons macaroon.Slice) *http
 	return client
 }
 
-func serverHandler(service *bakery.Service, authLocation string) func(http.ResponseWriter, *http.Request) {
+func serverHandler(service *bakery.Service, authLocation string, cookiePath func(req *http.Request) string) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, req *http.Request) {
 		if _, checkErr := httpbakery.CheckRequest(service, req, nil, isChecker("something")); checkErr != nil {
-			m, err := service.NewMacaroon("", nil, []checkers.Caveat{{
-				Location:  authLocation,
-				Condition: "is-ok",
-			}})
+			var caveats []checkers.Caveat
+			if authLocation != "" {
+				caveats = []checkers.Caveat{{
+					Location:  authLocation,
+					Condition: "is-ok",
+				}}
+			}
+			m, err := service.NewMacaroon("", nil, caveats)
 			if err != nil {
 				panic(fmt.Errorf("cannot make new macaroon: %v", err))
 			}
-			httpbakery.WriteDischargeRequiredError(w, m, checkErr)
+			path := ""
+			if cookiePath != nil {
+				path = cookiePath(req)
+			}
+			httpbakery.WriteDischargeRequiredError(w, m, path, checkErr)
 			return
 		}
 		fmt.Fprintf(w, "done")

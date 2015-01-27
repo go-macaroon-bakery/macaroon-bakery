@@ -49,6 +49,13 @@ type ErrorInfo struct {
 	// error code.
 	Macaroon *macaroon.Macaroon `json:",omitempty"`
 
+	// MacaroonPath holds the URL path to be associated
+	// with the macaroon. The macaroon is potentially
+	// valid for all URLs under the given path.
+	// If it is empty, the macaroon will be associated with
+	// the original URL from which the error was returned.
+	MacaroonPath string `json:",omitempty"`
+
 	// VisitURL and WaitURL are associated with the
 	// ErrInteractionRequired error code.
 
@@ -126,28 +133,30 @@ func badRequestErrorf(f string, a ...interface{}) error {
 // NewDischargeRequiredError and writes it to the given response writer,
 // indicating that the client should discharge the macaroon to allow the
 // original request to be accepted.
-func WriteDischargeRequiredError(w http.ResponseWriter, m *macaroon.Macaroon, originalErr error) {
-	if originalErr == nil {
-		originalErr = ErrDischargeRequired
-	}
-	writeError(w, &Error{
-		Message: originalErr.Error(),
-		Code:    ErrDischargeRequired,
-		Info: &ErrorInfo{
-			Macaroon: m,
-		},
-	})
+func WriteDischargeRequiredError(w http.ResponseWriter, m *macaroon.Macaroon, path string, originalErr error) {
+	writeError(w, NewDischargeRequiredError(m, path, originalErr))
 }
 
 // NewDischargeRequiredError returns an error of type *Error
 // that reports the given original error and includes the
 // given macaroon.
-func NewDischargeRequiredError(m *macaroon.Macaroon, originalErr error) error {
+//
+// The returned macaroon will be
+// declared as valid for the given URL path and may
+// be relative. When the client stores the discharged
+// macaroon as a cookie this will be the path associated
+// with the cookie. See ErrorInfo.MacaroonPath for
+// more information.
+func NewDischargeRequiredError(m *macaroon.Macaroon, path string, originalErr error) error {
+	if originalErr == nil {
+		originalErr = ErrDischargeRequired
+	}
 	return &Error{
 		Message: originalErr.Error(),
 		Code:    ErrDischargeRequired,
 		Info: &ErrorInfo{
-			Macaroon: m,
+			Macaroon:     m,
+			MacaroonPath: path,
 		},
 	}
 }
