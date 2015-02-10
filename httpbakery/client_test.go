@@ -156,6 +156,45 @@ func (s *ClientSuite) TestMacaroonCookiePath(c *gc.C) {
 	assertCookieCount("/foo/bar/baz", 1)
 }
 
+func (s *ClientSuite) TestPublicKey(c *gc.C) {
+	d := bakerytest.NewDischarger(nil, noCaveatChecker)
+	defer d.Close()
+	client := httpbakery.NewHTTPClient()
+	publicKey, err := httpbakery.PublicKeyForLocation(client, d.Location())
+	c.Assert(err, gc.IsNil)
+	expectedKey := d.Service.PublicKey()
+	c.Assert(publicKey, gc.DeepEquals, expectedKey)
+}
+
+func (s *ClientSuite) TestPublicKeyWrongURL(c *gc.C) {
+	client := httpbakery.NewHTTPClient()
+	_, err := httpbakery.PublicKeyForLocation(client, "http://localhost:0")
+	c.Assert(err, gc.ErrorMatches,
+		`cannot get public key from "http://localhost:0/publickey": Get http://localhost:0/publickey: dial tcp 127.0.0.1:0: connection refused`)
+}
+
+func (s *ClientSuite) TestPublicKeyReturnsInvalidJson(c *gc.C) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "BADJSON")
+	}))
+	defer ts.Close()
+	client := httpbakery.NewHTTPClient()
+	_, err := httpbakery.PublicKeyForLocation(client, ts.URL)
+	c.Assert(err, gc.ErrorMatches,
+		fmt.Sprintf(`failed to decode response from "%s/publickey": invalid character 'B' looking for beginning of value`, ts.URL))
+}
+
+func (s *ClientSuite) TestPublicKeyReturnsStatusInternalServerError(c *gc.C) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+	client := httpbakery.NewHTTPClient()
+	_, err := httpbakery.PublicKeyForLocation(client, ts.URL)
+	c.Assert(err, gc.ErrorMatches,
+		fmt.Sprintf(`cannot get public key from "%s/publickey": got status 500 Internal Server Error`, ts.URL))
+}
+
 // assertResponse asserts that the given response is OK and contains
 // the expected body text.
 func assertResponse(c *gc.C, resp *http.Response, expectBody string) {
