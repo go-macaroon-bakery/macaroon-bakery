@@ -113,5 +113,5 @@ func (srv *targetServiceHandler) writeError(w http.ResponseWriter, operation str
 		fail(http.StatusInternalServerError, "cannot mint macaroon: %v", err)
 		return
 	}
-	httpbakery.WriteDischargeRequiredError(w, m, verr)
+	httpbakery.WriteDischargeRequiredError(w, m, "", verr)
 }
