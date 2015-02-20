@@ -22,8 +22,8 @@ func (s *suite) SetUpTest(c *gc.C) {
 
 var _ = gc.Suite(&suite{})
 
-func noCaveatChecker(_ *http.Request, cond, arg string) ([]checkers.Caveat, error) {
-	return nil, nil
+func noCaveatChecker(_ *http.Request, cond, arg string) ([]checkers.Caveat, *bakery.PublicKey, error) {
+	return nil, nil, nil
 }
 
 func (s *suite) TestDischargerSimple(c *gc.C) {
@@ -53,19 +53,19 @@ var failChecker = bakery.FirstPartyCheckerFunc(func(s string) error {
 })
 
 func (s *suite) TestDischargerTwoLevels(c *gc.C) {
-	d1checker := func(_ *http.Request, cond, arg string) ([]checkers.Caveat, error) {
+	d1checker := func(_ *http.Request, cond, arg string) ([]checkers.Caveat, *bakery.PublicKey, error) {
 		if cond != "xtrue" {
-			return nil, fmt.Errorf("caveat refused")
+			return nil, nil, fmt.Errorf("caveat refused")
 		}
-		return nil, nil
+		return nil, nil, nil
 	}
 	d1 := bakerytest.NewDischarger(nil, d1checker)
 	defer d1.Close()
-	d2checker := func(_ *http.Request, cond, arg string) ([]checkers.Caveat, error) {
+	d2checker := func(_ *http.Request, cond, arg string) ([]checkers.Caveat, *bakery.PublicKey, error) {
 		return []checkers.Caveat{{
 			Location:  d1.Location(),
 			Condition: "x" + cond,
-		}}, nil
+		}}, nil, nil
 	}
 	d2 := bakerytest.NewDischarger(d1, d2checker)
 	defer d2.Close()

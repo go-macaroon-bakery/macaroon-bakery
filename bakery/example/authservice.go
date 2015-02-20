@@ -31,13 +31,13 @@ func authService(endpoint string, key *bakery.KeyPair) (http.Handler, error) {
 //
 // Note how this function can return additional first- and third-party
 // caveats which will be added to the original macaroon's caveats.
-func thirdPartyChecker(req *http.Request, cavId, condition string) ([]checkers.Caveat, error) {
+func thirdPartyChecker(req *http.Request, cavId, condition string) ([]checkers.Caveat, *bakery.PublicKey, error) {
 	if condition != "access-allowed" {
-		return nil, checkers.ErrCaveatNotRecognized
+		return nil, nil, checkers.ErrCaveatNotRecognized
 	}
 	// TODO check that the HTTP request has cookies that prove
 	// something about the client.
 	return []checkers.Caveat{
 		httpbakery.SameClientIPAddrCaveat(req),
-	}, nil
+	}, nil, nil
 }

@@ -120,25 +120,25 @@ func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
 	// create the services from leaf discharger to primary
 	// service so that each one can know the location
 	// to discharge at.
-	key2, h2 := newHTTPDischarger(locator, func(svc *bakery.Service, req *http.Request, cavId, cav string) ([]checkers.Caveat, error) {
+	key2, h2 := newHTTPDischarger(locator, func(svc *bakery.Service, req *http.Request, cavId, cav string) ([]checkers.Caveat, *bakery.PublicKey, error) {
 		called[2]++
 		if cav != "is-ok" {
-			return nil, fmt.Errorf("unrecognized caveat at srv2")
+			return nil, nil, fmt.Errorf("unrecognized caveat at srv2")
 		}
-		return nil, nil
+		return nil, nil, nil
 	})
 	srv2 := httptest.NewServer(h2)
 	locator.AddPublicKeyForLocation(srv2.URL, true, key2)
 
-	key1, h1 := newHTTPDischarger(locator, func(svc *bakery.Service, req *http.Request, cavId, cav string) ([]checkers.Caveat, error) {
+	key1, h1 := newHTTPDischarger(locator, func(svc *bakery.Service, req *http.Request, cavId, cav string) ([]checkers.Caveat, *bakery.PublicKey, error) {
 		called[1]++
 		if _, err := httpbakery.CheckRequest(svc, req, nil, checkers.New()); err != nil {
-			return nil, newDischargeRequiredError(svc, srv2.URL, nil, err)
+			return nil, nil, newDischargeRequiredError(svc, srv2.URL, nil, err)
 		}
 		if cav != "is-ok" {
-			return nil, fmt.Errorf("unrecognized caveat at srv1")
+			return nil, nil, fmt.Errorf("unrecognized caveat at srv1")
 		}
-		return nil, nil
+		return nil, nil, nil
 	})
 	srv1 := httptest.NewServer(h1)
 	locator.AddPublicKeyForLocation(srv1.URL, true, key1)
@@ -158,10 +158,10 @@ func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
 	c.Assert(called, gc.DeepEquals, [3]int{0, 2, 1})
 }
 
-func newHTTPDischarger(locator bakery.PublicKeyLocator, checker func(svc *bakery.Service, req *http.Request, cavId, cav string) ([]checkers.Caveat, error)) (*bakery.PublicKey, http.Handler) {
+func newHTTPDischarger(locator bakery.PublicKeyLocator, checker func(svc *bakery.Service, req *http.Request, cavId, cav string) ([]checkers.Caveat, *bakery.PublicKey, error)) (*bakery.PublicKey, http.Handler) {
 	svc := newService("loc", locator)
 	mux := http.NewServeMux()
-	httpbakery.AddDischargeHandler(mux, "/", svc, func(req *http.Request, cavId, cav string) ([]checkers.Caveat, error) {
+	httpbakery.AddDischargeHandler(mux, "/", svc, func(req *http.Request, cavId, cav string) ([]checkers.Caveat, *bakery.PublicKey, error) {
 		return checker(svc, req, cavId, cav)
 	})
 	return svc.PublicKey(), mux
@@ -262,8 +262,8 @@ func (s *ClientSuite) TestPublicKeyReturnsStatusInternalServerError(c *gc.C) {
 }
 
 func (s *ClientSuite) TestThirdPartyDischargeRefused(c *gc.C) {
-	d := bakerytest.NewDischarger(nil, func(_ *http.Request, cond, arg string) ([]checkers.Caveat, error) {
-		return nil, errgo.New("boo! cond " + cond)
+	d := bakerytest.NewDischarger(nil, func(_ *http.Request, cond, arg string) ([]checkers.Caveat, *bakery.PublicKey, error) {
+		return nil, nil, errgo.New("boo! cond " + cond)
 	})
 	defer d.Close()
 
@@ -287,8 +287,8 @@ func (s *ClientSuite) TestThirdPartyDischargeRefused(c *gc.C) {
 }
 
 func (s *ClientSuite) TestDischargeWithInteractionRequiredError(c *gc.C) {
-	d := bakerytest.NewDischarger(nil, func(_ *http.Request, cond, arg string) ([]checkers.Caveat, error) {
-		return nil, &httpbakery.Error{
+	d := bakerytest.NewDischarger(nil, func(_ *http.Request, cond, arg string) ([]checkers.Caveat, *bakery.PublicKey, error) {
+		return nil, nil, &httpbakery.Error{
 			Code:    httpbakery.ErrInteractionRequired,
 			Message: "interaction required",
 			Info: &httpbakery.ErrorInfo{
@@ -431,6 +431,6 @@ func (c isChecker) Check(_, arg string) error {
 	return nil
 }
 
-func noCaveatChecker(_ *http.Request, cond, arg string) ([]checkers.Caveat, error) {
-	return nil, nil
+func noCaveatChecker(_ *http.Request, cond, arg string) ([]checkers.Caveat, *bakery.PublicKey, error) {
+	return nil, nil, nil
 }

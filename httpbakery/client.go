@@ -98,16 +98,23 @@ func NewHTTPClient() *http.Client {
 // Client holds the context for making HTTP requests
 // that automatically acquire and discharge macaroons.
 type Client struct {
-	*http.Client
 	// Client holds the HTTP client to use. It should have
 	// a cookie jar configured, and when redirecting
 	// it should preserve the headers (see NewHTTPClient).
+	*http.Client
 
 	// VisitWebPage is called when the authorization process
 	// requires user interaction, and should cause the
 	// given URL to be opened in a web browser.
 	// If this is nil, no interaction will be allowed.
 	VisitWebPage func(*url.URL) error
+
+	// Key holds the client's key.
+	// If set, the client will be try to discharge third party
+	// caveats with the special location "self" by
+	// using this key. See bakery.DischargeAll for
+	// more information.
+	Key *bakery.KeyPair
 }
 
 // NewClient returns a new Client containing an HTTP client
@@ -118,7 +125,7 @@ func NewClient() *Client {
 	}
 }
 
-// Do makes an http request to the given client.
+// Do sends the given HTTP request and returns its response.
 // If the request fails with a discharge-required error,
 // any required discharge macaroons will be acquired,
 // and the request will be repeated with those attached.
@@ -127,13 +134,10 @@ func NewClient() *Client {
 // party, an error with a *DischargeError cause will be returned.
 //
 // Note that because the request may be retried, no
-// body may be provided in the http request (otherwise
-// the contents will be lost when retrying). For requests
+// body may be provided in the request, otherwise
+// the contents will be lost when retrying. For requests
 // with a body (for example PUT or POST methods),
 // use DoWithBody instead.
-//
-// If the client.Jar field is non-nil, the macaroons will be
-// stored there and made available to subsequent requests.
 //
 // If interaction is required by the user, the visitWebPage
 // function is called with a URL to be opened in a
@@ -148,10 +152,6 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	return c.DoWithBody(req, nil)
 }
 
-func noBody() (io.ReadCloser, error) {
-	return nil, nil
-}
-
 // DischargeAll attempts to acquire discharge macaroons for all the
 // third party caveats in m, and returns a slice containing all
 // of them bound to m.
@@ -164,7 +164,7 @@ func noBody() (io.ReadCloser, error) {
 // The returned macaroon slice will not be stored in the client
 // cookie jar (see SetCookie if you need to do that).
 func (c *Client) DischargeAll(m *macaroon.Macaroon) (macaroon.Slice, error) {
-	return bakery.DischargeAll(m, c.obtainThirdPartyDischarge)
+	return bakery.DischargeAll(m, c.obtainThirdPartyDischarge, c.Key)
 }
 
 // PublicKeyForLocation returns the public key from a macaroon
@@ -254,7 +254,7 @@ func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker) (*http.Respon
 		return nil, errgo.New("no macaroon found in response")
 	}
 	mac := resp.Info.Macaroon
-	macaroons, err := bakery.DischargeAll(mac, c.obtainThirdPartyDischarge)
+	macaroons, err := bakery.DischargeAll(mac, c.obtainThirdPartyDischarge, c.Key)
 	if err != nil {
 		return nil, errgo.Mask(err, errgo.Any)
 	}

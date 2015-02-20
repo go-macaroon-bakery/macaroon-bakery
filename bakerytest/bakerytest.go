@@ -30,7 +30,7 @@ type Discharger struct {
 // for any third party caveats returned by the checker.
 func NewDischarger(
 	locator bakery.PublicKeyLocator,
-	checker func(req *http.Request, cond, arg string) ([]checkers.Caveat, error),
+	checker func(req *http.Request, cond, arg string) ([]checkers.Caveat, *bakery.PublicKey, error),
 ) *Discharger {
 	mux := http.NewServeMux()
 	server := httptest.NewServer(mux)
@@ -41,10 +41,10 @@ func NewDischarger(
 	if err != nil {
 		panic(err)
 	}
-	checker1 := func(req *http.Request, cavId, cav string) ([]checkers.Caveat, error) {
+	checker1 := func(req *http.Request, cavId, cav string) ([]checkers.Caveat, *bakery.PublicKey, error) {
 		cond, arg, err := checkers.ParseCaveat(cav)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		return checker(req, cond, arg)
 	}
