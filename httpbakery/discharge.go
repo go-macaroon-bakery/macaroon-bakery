@@ -2,8 +2,6 @@ package httpbakery
 
 import (
 	"crypto/rand"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"path"
@@ -52,15 +50,6 @@ type dischargeHandler struct {
 //			Macaroon *macaroon.Macaroon
 //		}
 //
-// POST /create
-//	params:
-//		condition: caveat condition to discharge
-//		rootkey: root key of discharge caveat
-//	result:
-//		{
-//			CaveatID: string
-//		}
-//
 // GET /publickey
 //	result:
 //		public key of service
@@ -71,7 +60,6 @@ func AddDischargeHandler(mux *http.ServeMux, rootPath string, svc *bakery.Servic
 		checker: checker,
 	}
 	mux.Handle(path.Join(rootPath, "discharge"), handleJSON(d.serveDischarge))
-	mux.Handle(path.Join(rootPath, "create"), handleJSON(d.serveCreate))
 	// TODO(rog) is there a case for making public key caveat signing
 	// optional?
 	mux.Handle(path.Join(rootPath, "publickey"), handleJSON(d.servePublicKey))
@@ -117,53 +105,6 @@ func (d *dischargeHandler) serveDischarge1(h http.Header, req *http.Request) (in
 	}
 	resp.Macaroon = m
 	return &resp, nil
-}
-
-type thirdPartyCaveatIdRecord struct {
-	RootKey   []byte
-	Condition string
-}
-
-type caveatIdResponse struct {
-	CaveatId string
-	Error    string
-}
-
-func (d *dischargeHandler) serveCreate(h http.Header, req *http.Request) (interface{}, error) {
-	req.ParseForm()
-	condition := req.Form.Get("condition")
-	rootKeyStr := req.Form.Get("root-key")
-
-	if len(condition) == 0 {
-		return nil, badRequestErrorf("empty value for condition")
-	}
-	if len(rootKeyStr) == 0 {
-		return nil, badRequestErrorf("empty value for root key")
-	}
-	rootKey, err := base64.StdEncoding.DecodeString(rootKeyStr)
-	if err != nil {
-		return nil, badRequestErrorf("cannot base64-decode root key: %v", err)
-	}
-	// TODO(rog) what about expiry times?
-	idBytes, err := randomBytes(24)
-	if err != nil {
-		return nil, fmt.Errorf("cannot generate random key: %v", err)
-	}
-	id := fmt.Sprintf("%x", idBytes)
-	recordBytes, err := json.Marshal(thirdPartyCaveatIdRecord{
-		Condition: condition,
-		RootKey:   rootKey,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("cannot marshal caveat id record: %v", err)
-	}
-	err = d.svc.Store().Put(id, string(recordBytes))
-	if err != nil {
-		return nil, fmt.Errorf("cannot store caveat id record: %v", err)
-	}
-	return caveatIdResponse{
-		CaveatId: id,
-	}, nil
 }
 
 type publicKeyResponse struct {

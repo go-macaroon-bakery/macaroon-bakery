@@ -7,7 +7,6 @@ package bakery
 import (
 	"crypto/rand"
 	"fmt"
-	"log"
 	"strings"
 
 	"github.com/juju/loggo"
@@ -27,6 +26,7 @@ type Service struct {
 	checker  FirstPartyChecker
 	encoder  *boxEncoder
 	key      *KeyPair
+	locator  PublicKeyLocator
 }
 
 // NewServiceParams holds the parameters for a NewService call.
@@ -61,6 +61,7 @@ func NewService(p NewServiceParams) (*Service, error) {
 	svc := &Service{
 		location: p.Location,
 		store:    storage{p.Store},
+		locator:  p.Locator,
 	}
 
 	var err error
@@ -70,11 +71,11 @@ func NewService(p NewServiceParams) (*Service, error) {
 			return nil, err
 		}
 	}
-	if p.Locator == nil {
-		p.Locator = PublicKeyLocatorMap(nil)
+	if svc.locator == nil {
+		svc.locator = PublicKeyLocatorMap(nil)
 	}
 	svc.key = p.Key
-	svc.encoder = newBoxEncoder(p.Locator, p.Key)
+	svc.encoder = newBoxEncoder(p.Key)
 	return svc, nil
 }
 
@@ -170,6 +171,8 @@ func isVerificationError(err error) bool {
 // If the id is empty, a random id will be used.
 // If rootKey is nil, a random root key will be used.
 // The macaroon will be stored in the service's storage.
+// TODO swap the first two arguments so that they're
+// in the same order as macaroon.New.
 func (svc *Service) NewMacaroon(id string, rootKey []byte, caveats []checkers.Caveat) (*macaroon.Macaroon, error) {
 	if rootKey == nil {
 		newRootKey, err := randomBytes(24)
@@ -189,7 +192,11 @@ func (svc *Service) NewMacaroon(id string, rootKey []byte, caveats []checkers.Ca
 	if err != nil {
 		return nil, fmt.Errorf("cannot bake macaroon: %v", err)
 	}
-
+	for _, cav := range caveats {
+		if err := svc.AddCaveat(m, cav); err != nil {
+			return nil, errgo.Notef(err, "cannot add caveat")
+		}
+	}
 	// TODO look at the caveats for expiry time and associate
 	// that with the storage item so that the storage can
 	// garbage collect it at an appropriate time.
@@ -198,53 +205,82 @@ func (svc *Service) NewMacaroon(id string, rootKey []byte, caveats []checkers.Ca
 	}); err != nil {
 		return nil, fmt.Errorf("cannot save macaroon to store: %v", err)
 	}
-	for _, cav := range caveats {
-		if err := svc.AddCaveat(m, cav); err != nil {
-			if err := svc.store.store.Del(m.Id()); err != nil {
-				log.Printf("failed to remove macaroon from storage: %v", err)
-			}
-			return nil, err
-		}
-	}
 	return m, nil
+}
+
+// LocalThirdPartyCaveat returns a third-party caveat that, when added
+// to a macaroon with AddCaveat, results in a caveat
+// with the location "local", encrypted with the given public key.
+// This can be automatically discharged by DischargeAllWithKey.
+func LocalThirdPartyCaveat(key *PublicKey) checkers.Caveat {
+	return checkers.Caveat{
+		Location: "local " + key.String(),
+	}
 }
 
 // AddCaveat adds a caveat to the given macaroon.
 //
 // If it's a third-party caveat, it uses the service's caveat-id encoder
 // to create the id of the new caveat.
+//
+// As a special case, if the caveat's Location field has the prefix
+// "local " the caveat is added as a client self-discharge caveat
+// using the public key base64-encoded in the rest of the location.
+// In this case, the Condition field must be empty. The
+// resulting third-party caveat will encode the condition "true"
+// encrypted with that public key. See LocalThirdPartyCaveat
+// for a way of creating such caveats.
 func (svc *Service) AddCaveat(m *macaroon.Macaroon, cav checkers.Caveat) error {
 	logger.Infof("Service.AddCaveat id %q; cav %#v", m.Id(), cav)
 	if cav.Location == "" {
 		m.AddFirstPartyCaveat(cav.Condition)
 		return nil
 	}
+	var thirdPartyPub *PublicKey
+	if strings.HasPrefix(cav.Location, "local ") {
+		var key PublicKey
+		if err := key.UnmarshalText([]byte(cav.Location[len("local "):])); err != nil {
+			return errgo.Notef(err, "cannot unmarshal client's public key in local third-party caveat")
+		}
+		thirdPartyPub = &key
+		cav.Location = "local"
+		if cav.Condition != "" {
+			return errgo.New("cannot specify caveat condition in local third-party caveat")
+		}
+		cav.Condition = "true"
+	} else {
+		var err error
+		thirdPartyPub, err = svc.locator.PublicKeyForLocation(cav.Location)
+		if err != nil {
+			return errgo.Notef(err, "cannot find public key for location %q", cav.Location)
+		}
+	}
 	rootKey, err := randomBytes(24)
 	if err != nil {
-		return fmt.Errorf("cannot generate third party secret: %v", err)
+		return errgo.Notef(err, "cannot generate third party secret")
 	}
-	id, err := svc.encoder.encodeCaveatId(cav, rootKey)
+	id, err := svc.encoder.encodeCaveatId(cav.Condition, rootKey, thirdPartyPub)
 	if err != nil {
-		return fmt.Errorf("cannot create third party caveat id at %q: %v", cav.Location, err)
+		return errgo.Notef(err, "cannot create third party caveat id at %q", cav.Location)
 	}
 	if err := m.AddThirdPartyCaveat(rootKey, id, cav.Location); err != nil {
-		return fmt.Errorf("cannot add third party caveat: %v", err)
+		return errgo.Notef(err, "cannot add third party caveat")
 	}
 	return nil
 }
 
 // Discharge creates a macaroon that discharges the third party caveat with the
-// given id. The id should have been created earlier by a Service.  The
-// condition implicit in the id is checked for validity using checker, and
-// then if valid, a new macaroon is minted which discharges the caveat, and can
-// eventually be associated with a client request using AddClientMacaroon.
-func (svc *Service) Discharge(checker ThirdPartyChecker, id string) (*macaroon.Macaroon, error) {
-	decoder := newBoxDecoder(svc.encoder.key)
+// given id that should have been created earlier using key.Public. The
+// condition implicit in the id is checked for validity using checker. If
+// it is valid, a new macaroon is returned which discharges the caveat
+// along with any caveats returned from the checker.
+func Discharge(key *KeyPair, checker ThirdPartyChecker, id string) (*macaroon.Macaroon, []checkers.Caveat, error) {
+	decoder := newBoxDecoder(key)
 
 	logger.Infof("server attempting to discharge %q", id)
 	rootKey, condition, err := decoder.decodeCaveatId(id)
 	if err != nil {
-		return nil, fmt.Errorf("discharger cannot decode caveat id: %v", err)
+		return nil, nil, errgo.Notef(err, "discharger cannot decode caveat id")
 	}
 	// Note that we don't check the error - we allow the
 	// third party checker to see even caveats that we can't
@@ -257,9 +293,30 @@ func (svc *Service) Discharge(checker ThirdPartyChecker, id string) (*macaroon.M
 		caveats, err = checker.CheckThirdPartyCaveat(id, condition)
 	}
 	if err != nil {
+		return nil, nil, errgo.Mask(err, errgo.Any)
+	}
+	// Note that the discharge macaroon does not need to
+	// be stored persistently.
+	m, err := macaroon.New(rootKey, id, "")
+	if err != nil {
+		return nil, nil, errgo.Mask(err)
+	}
+	return m, caveats, nil
+}
+
+// Discharge calls Discharge with the service's key and uses the service
+// to add any returned caveats to the discharge macaroon.
+func (svc *Service) Discharge(checker ThirdPartyChecker, id string) (*macaroon.Macaroon, error) {
+	m, caveats, err := Discharge(svc.encoder.key, checker, id)
+	if err != nil {
 		return nil, errgo.Mask(err, errgo.Any)
 	}
-	return svc.NewMacaroon(id, rootKey, caveats)
+	for _, cav := range caveats {
+		if err := svc.AddCaveat(m, cav); err != nil {
+			return nil, errgo.Notef(err, "cannot add caveat")
+		}
+	}
+	return m, nil
 }
 
 func checkNeedDeclared(caveatId, arg string, checker ThirdPartyChecker) ([]checkers.Caveat, error) {

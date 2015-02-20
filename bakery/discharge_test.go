@@ -7,6 +7,7 @@ import (
 	"gopkg.in/macaroon.v1"
 
 	"gopkg.in/macaroon-bakery.v1/bakery"
+	"gopkg.in/macaroon-bakery.v1/bakery/checkers"
 )
 
 type DischargeSuite struct{}
@@ -21,11 +22,7 @@ func (*DischargeSuite) TestDischargeAllNoDischarges(c *gc.C) {
 	rootKey := []byte("root key")
 	m, err := macaroon.New(rootKey, "id0", "loc0")
 	c.Assert(err, gc.IsNil)
-	getDischarge := func(string, macaroon.Caveat) (*macaroon.Macaroon, error) {
-		c.Errorf("getDischarge called unexpectedly")
-		return nil, fmt.Errorf("nothing")
-	}
-	ms, err := bakery.DischargeAll(m, getDischarge)
+	ms, err := bakery.DischargeAll(m, noDischarge(c))
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 1)
 	c.Assert(ms[0], gc.Equals, m)
@@ -66,4 +63,30 @@ func (*DischargeSuite) TestDischargeAllManyDischarges(c *gc.C) {
 
 	err = ms[0].Verify(rootKey, alwaysOK, ms[1:])
 	c.Assert(err, gc.IsNil)
+}
+
+func (*DischargeSuite) TestDischargeAllLocalDischarge(c *gc.C) {
+	svc, err := bakery.NewService(bakery.NewServiceParams{})
+	c.Assert(err, gc.IsNil)
+
+	clientKey, err := bakery.GenerateKey()
+	c.Assert(err, gc.IsNil)
+
+	m, err := svc.NewMacaroon("", nil, []checkers.Caveat{
+		bakery.LocalThirdPartyCaveat(&clientKey.Public),
+	})
+	c.Assert(err, gc.IsNil)
+
+	ms, err := bakery.DischargeAllWithKey(m, noDischarge(c), clientKey)
+	c.Assert(err, gc.IsNil)
+
+	err = svc.Check(ms, checkers.New())
+	c.Assert(err, gc.IsNil)
+}
+
+func noDischarge(c *gc.C) func(string, macaroon.Caveat) (*macaroon.Macaroon, error) {
+	return func(string, macaroon.Caveat) (*macaroon.Macaroon, error) {
+		c.Errorf("getDischarge called unexpectedly")
+		return nil, fmt.Errorf("nothing")
+	}
 }

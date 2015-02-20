@@ -75,6 +75,7 @@ func (s *ServiceSuite) TestMacaroonPaperFig6(c *gc.C) {
 		c.Assert(err, gc.IsNil)
 		return mac, nil
 	})
+
 	c.Assert(err, gc.IsNil)
 
 	err = ts.Check(d, strcmpChecker(""))
@@ -134,6 +135,7 @@ func (s *ServiceSuite) TestMacaroonPaperFig6FailsWithBindingOnTamperedSignature(
 		c.Assert(err, gc.IsNil)
 		return mac, nil
 	})
+
 	c.Assert(err, gc.IsNil)
 
 	// client has all the discharge macaroons. For each discharge macaroon bind it to our tsMacaroon
@@ -166,6 +168,7 @@ func (s *ServiceSuite) TestNeedDeclared(c *gc.C) {
 	d, err := bakery.DischargeAll(m, func(_ string, cav macaroon.Caveat) (*macaroon.Macaroon, error) {
 		return thirdParty.Discharge(strcmpChecker("something"), cav.Id)
 	})
+
 	c.Assert(err, gc.IsNil)
 
 	// The required declared attributes should have been added
@@ -191,6 +194,7 @@ func (s *ServiceSuite) TestNeedDeclared(c *gc.C) {
 		}
 		return thirdParty.Discharge(checker, cav.Id)
 	})
+
 	c.Assert(err, gc.IsNil)
 
 	// One attribute should have been added, the other was already there.
@@ -214,10 +218,10 @@ func (s *ServiceSuite) TestNeedDeclared(c *gc.C) {
 		m, err := thirdParty.Discharge(checker, cav.Id)
 		c.Assert(err, gc.IsNil)
 
-		// Sneaky client adds a first party caveat.
 		m.AddFirstPartyCaveat(checkers.DeclaredCaveat("foo", "c").Condition)
 		return m, nil
 	})
+
 	c.Assert(err, gc.IsNil)
 
 	declared = checkers.InferDeclared(d)
@@ -256,6 +260,7 @@ func (s *ServiceSuite) TestDischargeTwoNeedDeclared(c *gc.C) {
 			return nil, nil
 		}), cav.Id)
 	})
+
 	c.Assert(err, gc.IsNil)
 	declared := checkers.InferDeclared(d)
 	c.Assert(declared, gc.DeepEquals, checkers.Declared{
@@ -282,9 +287,10 @@ func (s *ServiceSuite) TestDischargeTwoNeedDeclared(c *gc.C) {
 					checkers.DeclaredCaveat("baz", "bazval"),
 				}, nil
 			}
-			return nil, fmt.Errorf("no matched")
+			return nil, fmt.Errorf("not matched")
 		}), cav.Id)
 	})
+
 	c.Assert(err, gc.IsNil)
 	declared = checkers.InferDeclared(d)
 	c.Assert(declared, gc.DeepEquals, checkers.Declared{

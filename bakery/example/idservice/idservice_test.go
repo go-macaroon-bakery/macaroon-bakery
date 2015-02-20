@@ -89,10 +89,6 @@ func (s *suite) TestIdService(c *gc.C) {
 	c.Assert(resp, gc.Equals, "every cloud has a silver lining")
 }
 
-func noVisit(*url.URL) error {
-	return errgo.New("should not be visiting")
-}
-
 func serve(c *gc.C, newHandler func(string) (http.Handler, error)) (endpointURL string) {
 	listener, err := net.Listen("tcp", "localhost:0")
 	c.Assert(err, gc.IsNil)
