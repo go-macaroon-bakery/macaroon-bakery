@@ -2,7 +2,6 @@ package bakerytest_test
 
 import (
 	"fmt"
-	"net/http"
 	"net/url"
 
 	gc "gopkg.in/check.v1"
@@ -14,17 +13,17 @@ import (
 )
 
 type suite struct {
-	httpClient *http.Client
+	client *httpbakery.Client
 }
 
 func (s *suite) SetUpTest(c *gc.C) {
-	s.httpClient = httpbakery.NewHTTPClient()
+	s.client = httpbakery.NewClient()
 }
 
 var _ = gc.Suite(&suite{})
 
-func noCaveatChecker(cond, arg string) ([]checkers.Caveat, error) {
-	return nil, nil
+func noCaveatChecker(cond, arg string) ([]checkers.Caveat, *bakery.PublicKey, error) {
+	return nil, nil, nil
 }
 
 func (s *suite) TestDischargerSimple(c *gc.C) {
@@ -41,7 +40,7 @@ func (s *suite) TestDischargerSimple(c *gc.C) {
 		Condition: "something",
 	}})
 	c.Assert(err, gc.IsNil)
-	ms, err := httpbakery.DischargeAll(m, s.httpClient, noInteraction)
+	ms, err := s.client.DischargeAll(m)
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 2)
 
@@ -54,19 +53,19 @@ var failChecker = bakery.FirstPartyCheckerFunc(func(s string) error {
 })
 
 func (s *suite) TestDischargerTwoLevels(c *gc.C) {
-	d1checker := func(cond, arg string) ([]checkers.Caveat, error) {
+	d1checker := func(cond, arg string) ([]checkers.Caveat, *bakery.PublicKey, error) {
 		if cond != "xtrue" {
-			return nil, fmt.Errorf("caveat refused")
+			return nil, nil, fmt.Errorf("caveat refused")
 		}
-		return nil, nil
+		return nil, nil, nil
 	}
 	d1 := bakerytest.NewDischarger(nil, d1checker)
 	defer d1.Close()
-	d2checker := func(cond, arg string) ([]checkers.Caveat, error) {
+	d2checker := func(cond, arg string) ([]checkers.Caveat, *bakery.PublicKey, error) {
 		return []checkers.Caveat{{
 			Location:  d1.Location(),
 			Condition: "x" + cond,
-		}}, nil
+		}}, nil, nil
 	}
 	d2 := bakerytest.NewDischarger(d1, d2checker)
 	defer d2.Close()
@@ -86,7 +85,7 @@ func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 	}})
 	c.Assert(err, gc.IsNil)
 
-	ms, err := httpbakery.DischargeAll(m, s.httpClient, noInteraction)
+	ms, err := s.client.DischargeAll(m)
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 3)
 
@@ -99,7 +98,7 @@ func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 	})
 	c.Assert(err, gc.IsNil)
 
-	ms, err = httpbakery.DischargeAll(m, s.httpClient, noInteraction)
+	ms, err = s.client.DischargeAll(m)
 	c.Assert(err, gc.ErrorMatches, `cannot get discharge from "http://[^"]*": cannot discharge: caveat refused`)
 	c.Assert(ms, gc.HasLen, 0)
 }

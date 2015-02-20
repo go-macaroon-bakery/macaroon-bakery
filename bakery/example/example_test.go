@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
+	"net/url"
 	"testing"
 
 	gc "gopkg.in/check.v1"
@@ -32,32 +34,43 @@ func (s *exampleSuite) SetUpSuite(c *gc.C) {
 }
 
 func (s *exampleSuite) TestExample(c *gc.C) {
-	httpClient := httpbakery.NewHTTPClient()
+	client := newClient()
 	serverEndpoint, err := serve(func(endpoint string) (http.Handler, error) {
 		return targetService(endpoint, s.authEndpoint, s.authPublicKey)
 	})
 	c.Assert(err, gc.IsNil)
 	c.Logf("gold request")
-	resp, err := clientRequest(httpClient, serverEndpoint+"/gold")
+	resp, err := clientRequest(client, serverEndpoint+"/gold")
 	c.Assert(err, gc.IsNil)
 	c.Assert(resp, gc.Equals, "all is golden")
 
 	c.Logf("silver request")
-	resp, err = clientRequest(httpClient, serverEndpoint+"/silver")
+	resp, err = clientRequest(client, serverEndpoint+"/silver")
 	c.Assert(err, gc.IsNil)
 	c.Assert(resp, gc.Equals, "every cloud has a silver lining")
 }
 
 func (s *exampleSuite) BenchmarkExample(c *gc.C) {
-	httpClient := httpbakery.NewHTTPClient()
+	client := newClient()
 	serverEndpoint, err := serve(func(endpoint string) (http.Handler, error) {
 		return targetService(endpoint, s.authEndpoint, s.authPublicKey)
 	})
 	c.Assert(err, gc.IsNil)
 	c.ResetTimer()
 	for i := 0; i < c.N; i++ {
-		resp, err := clientRequest(httpClient, serverEndpoint)
+		resp, err := clientRequest(client, serverEndpoint)
 		c.Assert(err, gc.IsNil)
 		c.Assert(resp, gc.Equals, "hello, world\n")
+	}
+}
+
+func newClient() *httpbakery.Client {
+	return &httpbakery.Client{
+		Client: httpbakery.NewHTTPClient(),
+		VisitWebPage: func(url *url.URL) error {
+			fmt.Printf("please visit this web page:\n")
+			fmt.Printf("\t%s\n", url)
+			return nil
+		},
 	}
 }
