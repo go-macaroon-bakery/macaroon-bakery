@@ -80,7 +80,7 @@ func (s *ClientSuite) TestRepeatedRequestWithBody(c *gc.C) {
 	// First try with a body in the request, which should be denied
 	// because we must use DoWithBody.
 	req.Body = ioutil.NopCloser(strings.NewReader("postbody"))
-	resp, err := httpbakery.Do(httpbakery.NewHTTPClient(), req, noVisit)
+	resp, err := httpbakery.NewClient().Do(req)
 	c.Assert(err, gc.ErrorMatches, "body unexpectedly provided in request - use DoWithBody")
 	c.Assert(resp, gc.IsNil)
 
@@ -92,7 +92,7 @@ func (s *ClientSuite) TestRepeatedRequestWithBody(c *gc.C) {
 	bodyText := "postbody"
 	bodyReader := &readCounter{ReadSeeker: strings.NewReader(bodyText)}
 
-	resp, err = httpbakery.DoWithBody(httpbakery.NewHTTPClient(), req, httpbakery.SeekerBody(bodyReader), noVisit)
+	resp, err = httpbakery.NewClient().DoWithBody(req, bodyReader)
 	c.Assert(err, gc.IsNil)
 	defer resp.Body.Close()
 	assertResponse(c, resp, "done postbody")
@@ -110,25 +110,25 @@ func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
 	// create the services from leaf discharger to primary
 	// service so that each one can know the location
 	// to discharge at.
-	key2, h2 := newHTTPDischarger(locator, func(svc *bakery.Service, req *http.Request, cavId, cav string) ([]checkers.Caveat, error) {
+	key2, h2 := newHTTPDischarger(locator, func(svc *bakery.Service, req *http.Request, cavId, cav string) ([]checkers.Caveat, *bakery.PublicKey, error) {
 		called[2]++
 		if cav != "is-ok" {
-			return nil, fmt.Errorf("unrecognized caveat at srv2")
+			return nil, nil, fmt.Errorf("unrecognized caveat at srv2")
 		}
-		return nil, nil
+		return nil, nil, nil
 	})
 	srv2 := httptest.NewServer(h2)
 	locator.AddPublicKeyForLocation(srv2.URL, true, key2)
 
-	key1, h1 := newHTTPDischarger(locator, func(svc *bakery.Service, req *http.Request, cavId, cav string) ([]checkers.Caveat, error) {
+	key1, h1 := newHTTPDischarger(locator, func(svc *bakery.Service, req *http.Request, cavId, cav string) ([]checkers.Caveat, *bakery.PublicKey, error) {
 		called[1]++
 		if _, err := httpbakery.CheckRequest(svc, req, nil, checkers.New()); err != nil {
-			return nil, newDischargeRequiredError(svc, srv2.URL, nil, err)
+			return nil, nil, newDischargeRequiredError(svc, srv2.URL, nil, err)
 		}
 		if cav != "is-ok" {
-			return nil, fmt.Errorf("unrecognized caveat at srv1")
+			return nil, nil, fmt.Errorf("unrecognized caveat at srv1")
 		}
-		return nil, nil
+		return nil, nil, nil
 	})
 	srv1 := httptest.NewServer(h1)
 	locator.AddPublicKeyForLocation(srv1.URL, true, key1)
@@ -137,10 +137,10 @@ func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
 	srv0 := httptest.NewServer(serverHandler(svc0, srv1.URL, nil))
 
 	// Make a client request.
-	client := httpbakery.NewHTTPClient()
+	client := httpbakery.NewClient()
 	req, err := http.NewRequest("GET", srv0.URL, nil)
 	c.Assert(err, gc.IsNil)
-	resp, err := httpbakery.Do(client, req, noVisit)
+	resp, err := client.Do(req)
 	c.Assert(err, gc.IsNil)
 	defer resp.Body.Close()
 	assertResponse(c, resp, "done")
@@ -148,10 +148,10 @@ func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
 	c.Assert(called, gc.DeepEquals, [3]int{0, 2, 1})
 }
 
-func newHTTPDischarger(locator bakery.PublicKeyLocator, checker func(svc *bakery.Service, req *http.Request, cavId, cav string) ([]checkers.Caveat, error)) (*bakery.PublicKey, http.Handler) {
+func newHTTPDischarger(locator bakery.PublicKeyLocator, checker func(svc *bakery.Service, req *http.Request, cavId, cav string) ([]checkers.Caveat, *bakery.PublicKey, error)) (*bakery.PublicKey, http.Handler) {
 	svc := newService("loc", locator)
 	mux := http.NewServeMux()
-	httpbakery.AddDischargeHandler(mux, "/", svc, func(req *http.Request, cavId, cav string) ([]checkers.Caveat, error) {
+	httpbakery.AddDischargeHandler(mux, "/", svc, func(req *http.Request, cavId, cav string) ([]checkers.Caveat, *bakery.PublicKey, error) {
 		return checker(svc, req, cavId, cav)
 	})
 	return svc.PublicKey(), mux
@@ -166,12 +166,12 @@ func (s *ClientSuite) TestMacaroonCookiePath(c *gc.C) {
 	}))
 	defer ts.Close()
 
-	var client *http.Client
+	var client *httpbakery.Client
 	doRequest := func() {
 		req, err := http.NewRequest("GET", ts.URL+"/foo/bar/", nil)
 		c.Assert(err, gc.IsNil)
-		client = httpbakery.NewHTTPClient()
-		resp, err := httpbakery.Do(client, req, noVisit)
+		client = httpbakery.NewClient()
+		resp, err := client.Do(req)
 		c.Assert(err, gc.IsNil)
 		defer resp.Body.Close()
 		assertResponse(c, resp, "done")
@@ -354,6 +354,6 @@ func (c isChecker) Check(_, arg string) error {
 	return nil
 }
 
-func noCaveatChecker(cond, arg string) ([]checkers.Caveat, error) {
-	return nil, nil
+func noCaveatChecker(cond, arg string) ([]checkers.Caveat, *bakery.PublicKey, error) {
+	return nil, nil, nil
 }

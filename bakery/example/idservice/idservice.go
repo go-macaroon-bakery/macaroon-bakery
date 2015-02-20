@@ -191,7 +191,7 @@ func (h *handler) loginAttemptHandler(w http.ResponseWriter, req *http.Request) 
 }
 
 // checkThirdPartyCaveat is called by the httpbakery discharge handler.
-func (h *handler) checkThirdPartyCaveat(req *http.Request, cavId, cav string) ([]checkers.Caveat, error) {
+func (h *handler) checkThirdPartyCaveat(req *http.Request, cavId, cav string) ([]checkers.Caveat, *bakery.PublicKey, error) {
 	return h.newContext(req, "").CheckThirdPartyCaveat(cavId, cav)
 }
 
@@ -372,12 +372,12 @@ func (ctxt *context) Check(cond, arg string) error {
 	}
 }
 
-func (ctxt *context) CheckThirdPartyCaveat(cavId, cav string) ([]checkers.Caveat, error) {
+func (ctxt *context) CheckThirdPartyCaveat(cavId, cav string) ([]checkers.Caveat, *bakery.PublicKey, error) {
 	h := ctxt.handler
 	log.Printf("checking third party caveat %q", cav)
 	op, rest, err := checkers.ParseCaveat(cav)
 	if err != nil {
-		return nil, fmt.Errorf("cannot parse caveat %q: %v", cav, err)
+		return nil, nil, fmt.Errorf("cannot parse caveat %q: %v", cav, err)
 	}
 	switch op {
 	case "can-speak-for":
@@ -387,9 +387,9 @@ func (ctxt *context) CheckThirdPartyCaveat(cavId, cav string) ([]checkers.Caveat
 		// getting privileges of users we currently have macaroons for.
 		checkErr := ctxt.canSpeakFor(rest)
 		if checkErr == nil {
-			return ctxt.firstPartyCaveats(), nil
+			return ctxt.firstPartyCaveats(), nil, nil
 		}
-		return nil, h.needLogin(cavId, cav, checkErr.Error())
+		return nil, nil, h.needLogin(cavId, cav, checkErr.Error())
 	case "member-of-group":
 		// The third-party caveat is asking if the currently logged in
 		// user is a member of a particular group.
@@ -397,22 +397,22 @@ func (ctxt *context) CheckThirdPartyCaveat(cavId, cav string) ([]checkers.Caveat
 		// the username cookie (which doesn't provide any power, but
 		// indicates which user name to check)
 		if ctxt.declaredUser == "" {
-			return nil, h.needLogin(cavId, cav, "not logged in")
+			return nil, nil, h.needLogin(cavId, cav, "not logged in")
 		}
 		if err := ctxt.canSpeakFor(ctxt.declaredUser); err != nil {
-			return nil, errgo.Notef(err, "cannot speak for declared user %q", ctxt.declaredUser)
+			return nil, nil, errgo.Notef(err, "cannot speak for declared user %q", ctxt.declaredUser)
 		}
 		info, ok := h.users[ctxt.declaredUser]
 		if !ok {
-			return nil, errgo.Newf("user %q not found", ctxt.declaredUser)
+			return nil, nil, errgo.Newf("user %q not found", ctxt.declaredUser)
 		}
 		group := rest
 		if !info.Groups[group] {
-			return nil, errgo.Newf("not privileged enough")
+			return nil, nil, errgo.Newf("not privileged enough")
 		}
-		return ctxt.firstPartyCaveats(), nil
+		return ctxt.firstPartyCaveats(), nil, nil
 	default:
-		return nil, checkers.ErrCaveatNotRecognized
+		return nil, nil, checkers.ErrCaveatNotRecognized
 	}
 }
 
