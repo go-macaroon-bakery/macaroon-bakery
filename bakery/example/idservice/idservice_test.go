@@ -134,7 +134,7 @@ func (s *suite) clientRequest(serverEndpoint string, visitWebPage func(*url.URL)
 // Alternatives to this might be (in likely ascending order of complexity):
 // - use the template itself as the pattern.
 // - parse the html with encoding/xml
-// - parse the html with code.google.com/p/go.net/html
+// - parse the html with golang.org/x/net/html
 var (
 	actionPat = regexp.MustCompile(`<form action="([^"]+)"`)
 	waitIdPat = regexp.MustCompile(`name="waitid" value="([^"]+)"`)

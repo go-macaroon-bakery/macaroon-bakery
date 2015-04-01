@@ -11,8 +11,8 @@ import (
 	"net/url"
 	"strings"
 
-	"code.google.com/p/go.net/publicsuffix"
 	"github.com/juju/loggo"
+	"golang.org/x/net/publicsuffix"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v1"
 
