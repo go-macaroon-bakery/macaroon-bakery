@@ -156,6 +156,24 @@ func DoWithBody(client *http.Client, req *http.Request, getBody BodyGetter, visi
 	return ctxt.do(req, getBody)
 }
 
+// OponBrowser opens a web browser if interaction with user is required. It may be used as an argument to the Do or DoWithBody
+// function where we expect user interaction to be required.
+func OpenBrowser(url *url.URL) error {
+	fmt.Printf("if a Web browser doesn't open please visit this webpage: %s\n", url)
+	switch runtime.GOOS {
+	case "linux":
+		cmd := exec.Command("sensible-browser", url.String())
+		return cmd.Run()
+	case "windows":
+		cmd := exec.Command("start", url.String())
+		return cmd.Run()
+	case "darwin":
+		cmd := exec.Command("open", url.String())
+		return cmd.Run()
+	}
+	return nil
+}
+
 // DischargeAll attempts to acquire discharge macaroons for all the
 // third party caveats in m, and returns a slice containing all of them
 // bound to m.
