@@ -100,7 +100,7 @@ func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 
 	ms, err = httpbakery.DischargeAll(m, s.httpClient, noInteraction)
-	c.Assert(err, gc.ErrorMatches, `cannot get discharge from "http://[^"]*": cannot discharge: caveat refused`)
+	c.Assert(err, gc.ErrorMatches, `cannot get discharge from "http://[^"]*": third party refused discharge: cannot discharge: caveat refused`)
 	c.Assert(ms, gc.HasLen, 0)
 }
 
