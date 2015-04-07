@@ -1,6 +1,7 @@
 package httpbakery
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -9,10 +10,12 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"os/exec"
+	"runtime"
 	"strings"
 
-	"code.google.com/p/go.net/publicsuffix"
 	"github.com/juju/loggo"
+	"golang.org/x/net/publicsuffix"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v1"
 
@@ -116,6 +119,8 @@ type WaitResponse struct {
 // function is called with a URL to be opened in a
 // web browser. If visitWebPage returns an error,
 // an error with a *InteractionError cause will be returned.
+// See OpenWebBrowser for a possible implementation
+// of visitWebPage.
 func Do(client *http.Client, req *http.Request, visitWebPage func(url *url.URL) error) (*http.Response, error) {
 	if req.Body != nil {
 		return nil, fmt.Errorf("body unexpectedly provided in request - use DoWithBody")
@@ -560,4 +565,31 @@ func (j *cookieLogger) SetCookies(u *url.URL, cookies []*http.Cookie) {
 		logger.Debugf("\t%d. path %s; name %s", i, c.Path, c.Name)
 	}
 	j.CookieJar.SetCookies(u, cookies)
+}
+
+var browser = map[string]string{
+	"linux":   "sensible-browser",
+	"windows": "start",
+	"darwin":  "open",
+}
+
+// OpenWebBrowser opens a web browser at the
+// given URL. If the OS is not recognised, the URL
+// is just printed to standard output.
+func OpenWebBrowser(url *url.URL) error {
+	if b := browser[runtime.GOOS]; b != "" {
+		cmd := exec.Command(b, url.String())
+		data, err := cmd.CombinedOutput()
+		if err == nil {
+			return nil
+		}
+		if err != exec.ErrNotFound {
+			if _, ok := err.(*exec.ExitError); ok {
+				return errgo.Newf("cannot open web browser: %s", bytes.TrimSpace(data))
+			}
+			return errgo.Notef(err, "cannot open web browser")
+		}
+	}
+	fmt.Printf("Please visit this web page:\n%s\n", url)
+	return nil
 }
