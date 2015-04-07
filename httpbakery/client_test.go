@@ -12,6 +12,7 @@ import (
 	jujutesting "github.com/juju/testing"
 	"github.com/juju/utils/jsonhttp"
 	gc "gopkg.in/check.v1"
+	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v1"
 
 	"gopkg.in/macaroon-bakery.v0/bakery"
@@ -251,6 +252,69 @@ func (s *ClientSuite) TestPublicKeyReturnsStatusInternalServerError(c *gc.C) {
 		fmt.Sprintf(`cannot get public key from "%s/publickey": got status 500 Internal Server Error`, ts.URL))
 }
 
+func (s *ClientSuite) TestThirdPartyDischargeRefused(c *gc.C) {
+	d := bakerytest.NewDischarger(nil, func(cond, arg string) ([]checkers.Caveat, error) {
+		return nil, errgo.New("boo! cond " + cond)
+	})
+	defer d.Close()
+
+	// Create a target service.
+	svc := newService("loc", d)
+
+	ts := httptest.NewServer(serverHandler(svc, d.Location(), nil))
+	defer ts.Close()
+
+	// Create a client request.
+	req, err := http.NewRequest("GET", ts.URL, nil)
+	c.Assert(err, gc.IsNil)
+
+	client := httpbakery.NewHTTPClient()
+
+	// Make the request to the server.
+	resp, err := httpbakery.Do(client, req, noVisit)
+	c.Assert(errgo.Cause(err), gc.FitsTypeOf, (*httpbakery.DischargeError)(nil))
+	c.Assert(err, gc.ErrorMatches, `cannot get discharge from ".*": third party refused discharge: cannot discharge: boo! cond is-ok`)
+	c.Assert(resp, gc.IsNil)
+}
+
+func (s *ClientSuite) TestDischargeWithInteractionRequiredError(c *gc.C) {
+	d := bakerytest.NewDischarger(nil, func(cond, arg string) ([]checkers.Caveat, error) {
+		return nil, &httpbakery.Error{
+			Code:    httpbakery.ErrInteractionRequired,
+			Message: "interaction required",
+			Info: &httpbakery.ErrorInfo{
+				VisitURL: "http://0.1.2.3/",
+				WaitURL:  "http://0.1.2.3/",
+			},
+		}
+	})
+	defer d.Close()
+
+	// Create a target service.
+	svc := newService("loc", d)
+
+	ts := httptest.NewServer(serverHandler(svc, d.Location(), nil))
+	defer ts.Close()
+
+	// Create a client request.
+	req, err := http.NewRequest("GET", ts.URL, nil)
+	c.Assert(err, gc.IsNil)
+
+	client := httpbakery.NewHTTPClient()
+
+	errCannotVisit := errgo.New("cannot visit")
+	// Make the request to the server.
+	resp, err := httpbakery.Do(client, req, func(*url.URL) error {
+		return errCannotVisit
+	})
+	c.Assert(err, gc.ErrorMatches, `cannot get discharge from ".*": cannot start interactive session: cannot visit`)
+	c.Assert(httpbakery.IsInteractionError(errgo.Cause(err)), gc.Equals, true)
+	ierr, ok := errgo.Cause(err).(*httpbakery.InteractionError)
+	c.Assert(ok, gc.Equals, true)
+	c.Assert(ierr.Reason, gc.Equals, errCannotVisit)
+	c.Assert(resp, gc.IsNil)
+}
+
 // assertResponse asserts that the given response is OK and contains
 // the expected body text.
 func assertResponse(c *gc.C, resp *http.Response, expectBody string) {
@@ -295,9 +359,12 @@ func clientRequestWithCookies(c *gc.C, u string, macaroons macaroon.Slice) *http
 	return client
 }
 
+// serverHandler returns an HTTP handler that checks macaroon authorization
+// and, if that succeeds, writes the string "done" and echos anything in the
+// request body.
+// It recognises the single first party caveat "is something".
 func serverHandler(service *bakery.Service, authLocation string, cookiePath func() string) http.Handler {
 	handleErrors := jsonhttp.HandleErrors(httpbakery.ErrorToResponse)
-
 	return handleErrors(func(w http.ResponseWriter, req *http.Request) error {
 		if _, checkErr := httpbakery.CheckRequest(service, req, nil, isChecker("something")); checkErr != nil {
 			return newDischargeRequiredError(service, authLocation, cookiePath, checkErr)

@@ -22,6 +22,40 @@ import (
 
 var logger = loggo.GetLogger("httpbakery")
 
+// DischargeError represents the error when a third party discharge
+// is refused by a server.
+type DischargeError struct {
+	// Reason holds the underlying remote error that caused the
+	// discharge to fail.
+	Reason *Error
+}
+
+func (e *DischargeError) Error() string {
+	return fmt.Sprintf("third party refused discharge: %v", e.Reason)
+}
+
+// IsDischargeError reports whether err is a *DischargeError.
+func IsDischargeError(err error) bool {
+	_, ok := err.(*DischargeError)
+	return ok
+}
+
+// InteractionError wraps an error returned by a call to visitWebPage.
+type InteractionError struct {
+	// Reason holds the actual error returned from visitWebPage.
+	Reason error
+}
+
+func (e *InteractionError) Error() string {
+	return fmt.Sprintf("cannot start interactive session: %v", e.Reason)
+}
+
+// IsInteractionError reports whether err is a *DischargeError.
+func IsInteractionError(err error) bool {
+	_, ok := err.(*InteractionError)
+	return ok
+}
+
 // NewHTTPClient returns an http.Client that ensures
 // that headers are sent to the server even when the
 // server redirects a GET request. The returned client
@@ -66,6 +100,9 @@ type WaitResponse struct {
 // any required discharge macaroons will be acquired,
 // and the request will be repeated with those attached.
 //
+// If the required discharges were refused by a third
+// party, an error with a *DischargeError cause will be returned.
+//
 // Note that because the request may be retried, no
 // body may be provided in the http request (otherwise
 // the contents will be lost when retrying). For requests
@@ -77,7 +114,8 @@ type WaitResponse struct {
 //
 // If interaction is required by the user, the visitWebPage
 // function is called with a URL to be opened in a
-// web browser.
+// web browser. If visitWebPage returns an error,
+// an error with a *InteractionError cause will be returned.
 func Do(client *http.Client, req *http.Request, visitWebPage func(url *url.URL) error) (*http.Response, error) {
 	if req.Body != nil {
 		return nil, fmt.Errorf("body unexpectedly provided in request - use DoWithBody")
@@ -114,11 +152,16 @@ func DoWithBody(client *http.Client, req *http.Request, getBody BodyGetter, visi
 }
 
 // DischargeAll attempts to acquire discharge macaroons for all the
-// third party caveats in m, and returns a slice containing all
-// of them bound to m.
+// third party caveats in m, and returns a slice containing all of them
+// bound to m.
 //
-// The returned macaroon slice will not be stored in the client
-// cookie jar (see SetCookie if you need to do that).
+// If the discharge fails because a third party refuses to discharge a
+// caveat, the returned error will have a cause of type *DischargeError.
+// If the discharge fails because visitWebPage returns an error,
+// the returned error will have a cause of *InteractionError.
+//
+// The returned macaroon slice will not be stored in the client cookie
+// jar (see SetCookie if you need to do that).
 func DischargeAll(m *macaroon.Macaroon, client *http.Client, visitWebPage func(url *url.URL) error) (macaroon.Slice, error) {
 	ctxt := &clientContext{
 		client:       client,
@@ -333,12 +376,18 @@ func (ctxt *clientContext) obtainThirdPartyDischarge(originalLocation string, ca
 		return nil, errgo.Notef(err, "cannot acquire discharge")
 	}
 	if cause.Code != ErrInteractionRequired {
-		return nil, errgo.Mask(err)
+		return nil, &DischargeError{
+			Reason: cause,
+		}
 	}
 	if cause.Info == nil {
 		return nil, errgo.Notef(err, "interaction-required response with no info")
 	}
-	return ctxt.interact(loc, cause.Info.VisitURL, cause.Info.WaitURL)
+	m, err := ctxt.interact(loc, cause.Info.VisitURL, cause.Info.WaitURL)
+	if err != nil {
+		return nil, errgo.Mask(err, IsDischargeError, IsInteractionError)
+	}
+	return m, nil
 }
 
 // interact gathers a macaroon by directing the user to interact
@@ -353,7 +402,9 @@ func (ctxt *clientContext) interact(location, visitURLStr, waitURLStr string) (*
 		return nil, errgo.Notef(err, "cannot make relative wait URL")
 	}
 	if err := ctxt.visitWebPage(visitURL); err != nil {
-		return nil, errgo.Notef(err, "cannot start interactive session")
+		return nil, &InteractionError{
+			Reason: err,
+		}
 	}
 	waitResp, err := ctxt.client.Get(waitURL.String())
 	if err != nil {
@@ -365,7 +416,9 @@ func (ctxt *clientContext) interact(location, visitURLStr, waitURLStr string) (*
 		if err := json.NewDecoder(waitResp.Body).Decode(&resp); err != nil {
 			return nil, errgo.Notef(err, "cannot unmarshal wait error response")
 		}
-		return nil, errgo.NoteMask(&resp, "failed to acquire macaroon after waiting", errgo.Any)
+		return nil, errgo.WithCausef(nil, &DischargeError{
+			Reason: &resp,
+		}, "failed to acquire macaroon after waiting")
 	}
 	var resp WaitResponse
 	if err := json.NewDecoder(waitResp.Body).Decode(&resp); err != nil {
