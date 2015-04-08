@@ -253,7 +253,7 @@ func (s *ClientSuite) TestPublicKeyReturnsStatusInternalServerError(c *gc.C) {
 }
 
 func (s *ClientSuite) TestThirdPartyDischargeRefused(c *gc.C) {
-	d := bakerytest.NewDischarger(nil, func(cond, arg string) ([]checkers.Caveat, error) {
+	d := bakerytest.NewDischarger(nil, func(_ *http.Request, cond, arg string) ([]checkers.Caveat, error) {
 		return nil, errgo.New("boo! cond " + cond)
 	})
 	defer d.Close()
@@ -278,7 +278,7 @@ func (s *ClientSuite) TestThirdPartyDischargeRefused(c *gc.C) {
 }
 
 func (s *ClientSuite) TestDischargeWithInteractionRequiredError(c *gc.C) {
-	d := bakerytest.NewDischarger(nil, func(cond, arg string) ([]checkers.Caveat, error) {
+	d := bakerytest.NewDischarger(nil, func(_ *http.Request, cond, arg string) ([]checkers.Caveat, error) {
 		return nil, &httpbakery.Error{
 			Code:    httpbakery.ErrInteractionRequired,
 			Message: "interaction required",
@@ -421,6 +421,6 @@ func (c isChecker) Check(_, arg string) error {
 	return nil
 }
 
-func noCaveatChecker(cond, arg string) ([]checkers.Caveat, error) {
+func noCaveatChecker(_ *http.Request, cond, arg string) ([]checkers.Caveat, error) {
 	return nil, nil
 }
