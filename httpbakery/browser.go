@@ -1,15 +1,12 @@
 package httpbakery
 
 import (
-	"bytes"
 	"fmt"
 	"net/url"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
-
-	"gopkg.in/errgo.v1"
 )
 
 var browser = map[string]string{
@@ -34,20 +31,16 @@ func OpenWebBrowser(url *url.URL) error {
 		args = []string{b, url.String()}
 	}
 	if args != nil {
+		fmt.Fprintf(os.Stderr, "Opening an authorization web page in your browser.\n")
+		fmt.Fprintf(os.Stderr, "If it does not open, please open this URL:\n%s\n", url)
 		cmd := exec.Command(args[0], args[1:]...)
-		data, err := cmd.CombinedOutput()
-		if err == nil {
-			fmt.Fprintf(os.Stderr, "A page has been opened in your web browser. Please authorize there.\n")
-			return nil
-		}
-		if err != exec.ErrNotFound {
-			if _, ok := err.(*exec.ExitError); ok {
-				return errgo.Newf("cannot open web browser: %s", bytes.TrimSpace(data))
-			}
-			return errgo.Notef(err, "cannot open web browser")
-		}
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Start()
+		go cmd.Wait()
+	} else {
+		fmt.Fprintf(os.Stderr, "Please open this URL in your browser to authorize:\n%s\n", url)
 	}
-	fmt.Fprintf(os.Stderr, "Please visit this web page:\n%s\n", url)
 	return nil
 }
 
