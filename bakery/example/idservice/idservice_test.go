@@ -21,7 +21,7 @@ import (
 type suite struct {
 	authEndpoint  string
 	authPublicKey *bakery.PublicKey
-	httpClient    *http.Client
+	client        *httpbakery.Client
 }
 
 var _ = gc.Suite(&suite{})
@@ -55,7 +55,7 @@ func (s *suite) SetUpSuite(c *gc.C) {
 }
 
 func (s *suite) SetUpTest(c *gc.C) {
-	s.httpClient = httpbakery.NewHTTPClient()
+	s.client = httpbakery.NewClient()
 }
 
 func (s *suite) TestIdService(c *gc.C) {
@@ -64,7 +64,7 @@ func (s *suite) TestIdService(c *gc.C) {
 	})
 	c.Logf("target service endpoint at %s", serverEndpoint)
 	visitDone := make(chan struct{})
-	visitWebPage := func(u *url.URL) error {
+	s.client.VisitWebPage = func(u *url.URL) error {
 		go func() {
 			err := s.scrapeLoginPage(u)
 			c.Logf("scrape returned %v", err)
@@ -73,7 +73,7 @@ func (s *suite) TestIdService(c *gc.C) {
 		}()
 		return nil
 	}
-	resp, err := s.clientRequest(serverEndpoint+"/gold", visitWebPage)
+	resp, err := s.clientRequest(serverEndpoint + "/gold")
 	c.Assert(err, gc.IsNil)
 	c.Assert(resp, gc.Equals, "all is golden")
 	select {
@@ -83,7 +83,8 @@ func (s *suite) TestIdService(c *gc.C) {
 	}
 
 	// Try again. We shouldn't need to interact this time.
-	resp, err = s.clientRequest(serverEndpoint+"/silver", noVisit)
+	s.client.VisitWebPage = nil
+	resp, err = s.clientRequest(serverEndpoint + "/silver")
 	c.Assert(err, gc.IsNil)
 	c.Assert(resp, gc.Equals, "every cloud has a silver lining")
 }
@@ -107,7 +108,7 @@ func serve(c *gc.C, newHandler func(string) (http.Handler, error)) (endpointURL 
 // client represents a client of the target service. In this simple
 // example, it just tries a GET request, which will fail unless the
 // client has the required authorization.
-func (s *suite) clientRequest(serverEndpoint string, visitWebPage func(*url.URL) error) (string, error) {
+func (s *suite) clientRequest(serverEndpoint string) (string, error) {
 	req, err := http.NewRequest("GET", serverEndpoint, nil)
 	if err != nil {
 		return "", errgo.Notef(err, "cannot make new HTTP request")
@@ -117,7 +118,7 @@ func (s *suite) clientRequest(serverEndpoint string, visitWebPage func(*url.URL)
 	// of actually gathering discharge macaroons
 	// when required, and retrying the request
 	// when necessary.
-	resp, err := httpbakery.Do(s.httpClient, req, visitWebPage)
+	resp, err := s.client.Do(req)
 	if err != nil {
 		return "", errgo.NoteMask(err, "GET failed", errgo.Any)
 	}
@@ -147,7 +148,7 @@ func (s *suite) scrapeLoginPage(loginURL *url.URL) error {
 	log.Printf("scraping login page")
 	// Get the page.
 	log.Printf("scrape: getting %s", loginURL)
-	resp, err := s.httpClient.Get(loginURL.String())
+	resp, err := s.client.Client.Get(loginURL.String())
 	if err != nil {
 		return errgo.Mask(err)
 	}
@@ -175,7 +176,7 @@ func (s *suite) scrapeLoginPage(loginURL *url.URL) error {
 	// Now simulate the user clicking on "Log in".
 	postURL := loginURL.ResolveReference(actionURL)
 	log.Printf("posting to %s (waitId %s)", postURL, waitId)
-	postResp, err := s.httpClient.PostForm(postURL.String(), url.Values{
+	postResp, err := s.client.Client.PostForm(postURL.String(), url.Values{
 		"user":     {"root"},
 		"password": {"superman"},
 		"waitid":   {waitId},

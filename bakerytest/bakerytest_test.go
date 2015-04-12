@@ -3,7 +3,6 @@ package bakerytest_test
 import (
 	"fmt"
 	"net/http"
-	"net/url"
 
 	gc "gopkg.in/check.v1"
 
@@ -14,11 +13,11 @@ import (
 )
 
 type suite struct {
-	httpClient *http.Client
+	client *httpbakery.Client
 }
 
 func (s *suite) SetUpTest(c *gc.C) {
-	s.httpClient = httpbakery.NewHTTPClient()
+	s.client = httpbakery.NewClient()
 }
 
 var _ = gc.Suite(&suite{})
@@ -41,7 +40,7 @@ func (s *suite) TestDischargerSimple(c *gc.C) {
 		Condition: "something",
 	}})
 	c.Assert(err, gc.IsNil)
-	ms, err := httpbakery.DischargeAll(m, s.httpClient, noInteraction)
+	ms, err := s.client.DischargeAll(m)
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 2)
 
@@ -86,7 +85,7 @@ func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 	}})
 	c.Assert(err, gc.IsNil)
 
-	ms, err := httpbakery.DischargeAll(m, s.httpClient, noInteraction)
+	ms, err := s.client.DischargeAll(m)
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 3)
 
@@ -99,11 +98,7 @@ func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 	})
 	c.Assert(err, gc.IsNil)
 
-	ms, err = httpbakery.DischargeAll(m, s.httpClient, noInteraction)
+	ms, err = s.client.DischargeAll(m)
 	c.Assert(err, gc.ErrorMatches, `cannot get discharge from "http://[^"]*": third party refused discharge: cannot discharge: caveat refused`)
 	c.Assert(ms, gc.HasLen, 0)
-}
-
-func noInteraction(*url.URL) error {
-	return fmt.Errorf("unexpected interaction required")
 }
