@@ -81,7 +81,7 @@ func (s *ClientSuite) TestRepeatedRequestWithBody(c *gc.C) {
 	// First try with a body in the request, which should be denied
 	// because we must use DoWithBody.
 	req.Body = ioutil.NopCloser(strings.NewReader("postbody"))
-	resp, err := httpbakery.Do(httpbakery.NewHTTPClient(), req, noVisit)
+	resp, err := httpbakery.NewClient().Do(req)
 	c.Assert(err, gc.ErrorMatches, "body unexpectedly provided in request - use DoWithBody")
 	c.Assert(resp, gc.IsNil)
 
@@ -93,7 +93,7 @@ func (s *ClientSuite) TestRepeatedRequestWithBody(c *gc.C) {
 	bodyText := "postbody"
 	bodyReader := &readCounter{ReadSeeker: strings.NewReader(bodyText)}
 
-	resp, err = httpbakery.DoWithBody(httpbakery.NewHTTPClient(), req, httpbakery.SeekerBody(bodyReader), noVisit)
+	resp, err = httpbakery.NewClient().DoWithBody(req, bodyReader)
 	c.Assert(err, gc.IsNil)
 	defer resp.Body.Close()
 	assertResponse(c, resp, "done postbody")
@@ -138,10 +138,10 @@ func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
 	srv0 := httptest.NewServer(serverHandler(svc0, srv1.URL, nil))
 
 	// Make a client request.
-	client := httpbakery.NewHTTPClient()
+	client := httpbakery.NewClient()
 	req, err := http.NewRequest("GET", srv0.URL, nil)
 	c.Assert(err, gc.IsNil)
-	resp, err := httpbakery.Do(client, req, noVisit)
+	resp, err := client.Do(req)
 	c.Assert(err, gc.IsNil)
 	defer resp.Body.Close()
 	assertResponse(c, resp, "done")
@@ -167,12 +167,12 @@ func (s *ClientSuite) TestMacaroonCookiePath(c *gc.C) {
 	}))
 	defer ts.Close()
 
-	var client *http.Client
+	var client *httpbakery.Client
 	doRequest := func() {
 		req, err := http.NewRequest("GET", ts.URL+"/foo/bar/", nil)
 		c.Assert(err, gc.IsNil)
-		client = httpbakery.NewHTTPClient()
-		resp, err := httpbakery.Do(client, req, noVisit)
+		client = httpbakery.NewClient()
+		resp, err := client.Do(req)
 		c.Assert(err, gc.IsNil)
 		defer resp.Body.Close()
 		assertResponse(c, resp, "done")
@@ -268,10 +268,10 @@ func (s *ClientSuite) TestThirdPartyDischargeRefused(c *gc.C) {
 	req, err := http.NewRequest("GET", ts.URL, nil)
 	c.Assert(err, gc.IsNil)
 
-	client := httpbakery.NewHTTPClient()
+	client := httpbakery.NewClient()
 
 	// Make the request to the server.
-	resp, err := httpbakery.Do(client, req, noVisit)
+	resp, err := client.Do(req)
 	c.Assert(errgo.Cause(err), gc.FitsTypeOf, (*httpbakery.DischargeError)(nil))
 	c.Assert(err, gc.ErrorMatches, `cannot get discharge from ".*": third party refused discharge: cannot discharge: boo! cond is-ok`)
 	c.Assert(resp, gc.IsNil)
@@ -300,13 +300,14 @@ func (s *ClientSuite) TestDischargeWithInteractionRequiredError(c *gc.C) {
 	req, err := http.NewRequest("GET", ts.URL, nil)
 	c.Assert(err, gc.IsNil)
 
-	client := httpbakery.NewHTTPClient()
-
 	errCannotVisit := errgo.New("cannot visit")
-	// Make the request to the server.
-	resp, err := httpbakery.Do(client, req, func(*url.URL) error {
+	client := httpbakery.NewClient()
+	client.VisitWebPage = func(*url.URL) error {
 		return errCannotVisit
-	})
+	}
+
+	// Make the request to the server.
+	resp, err := client.Do(req)
 	c.Assert(err, gc.ErrorMatches, `cannot get discharge from ".*": cannot start interactive session: cannot visit`)
 	c.Assert(httpbakery.IsInteractionError(errgo.Cause(err)), gc.Equals, true)
 	ierr, ok := errgo.Cause(err).(*httpbakery.InteractionError)
