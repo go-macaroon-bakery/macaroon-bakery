@@ -555,3 +555,21 @@ func (j *cookieLogger) SetCookies(u *url.URL, cookies []*http.Cookie) {
 	}
 	j.CookieJar.SetCookies(u, cookies)
 }
+
+// BodyGetter is only present for backwards compatibility,
+// if you don't know what this is you don't want to use it.
+//
+// DEPRECATED: This will be removed in v1.
+type BodyGetter struct {
+	Val io.ReadSeeker
+}
+
+// SeekerBody is only present for backwards compatibility,
+// if you don't know what this is you don't want to use it.
+//
+// DEPRECATED: This will be removed in v1.
+func SeekerBody(r io.ReadSeeker) BodyGetter {
+	return BodyGetter {
+		Val: r,
+	}
+}
