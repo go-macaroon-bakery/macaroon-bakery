@@ -25,13 +25,12 @@ func clientRequest(httpClient *http.Client, serverEndpoint string) (string, erro
 	// when required, and retrying the request
 	// when necessary.
 
-	client := httpbakery.NewClient()
-	client.VisitWebPage = func(url *url.URL) error {
+	visitWebPage := func(url *url.URL) error {
 		fmt.Printf("please visit this web page:\n")
 		fmt.Printf("\t%s\n", url)
 		return nil
 	}
-	resp, err := client.Do(req)
+	resp, err := httpbakery.Do(httpClient, req, visitWebPage)
 	if err != nil {
 		return "", errgo.NoteMask(err, "GET failed", errgo.Any)
 	}
