@@ -56,13 +56,6 @@ func IsInteractionError(err error) bool {
 	return ok
 }
 
-// WaitResponse holds the type that should be returned
-// by an HTTP response made to a WaitURL
-// (See the ErrorInfo type).
-type WaitResponse struct {
-	Macaroon *macaroon.Macaroon
-}
-
 // NewHTTPClient returns an http.Client that ensures
 // that headers are sent to the server even when the
 // server redirects a GET request. The returned client
@@ -95,27 +88,11 @@ func NewHTTPClient() *http.Client {
 	return &c
 }
 
-// Client holds the context for making HTTP requests
-// that automatically acquire and discharge macaroons.
-type Client struct {
-	*http.Client
-	// Client holds the HTTP client to use. It should have
-	// a cookie jar configured, and when redirecting
-	// it should preserve the headers (see NewHTTPClient).
-
-	// VisitWebPage is called when the authorization process
-	// requires user interaction, and should cause the
-	// given URL to be opened in a web browser.
-	// If this is nil, no interaction will be allowed.
-	VisitWebPage func(*url.URL) error
-}
-
-// NewClient returns a new Client containing an HTTP client
-// created with NewHTTPClient and leaves all other fields zero.
-func NewClient() *Client {
-	return &Client{
-		Client: NewHTTPClient(),
-	}
+// WaitResponse holds the type that should be returned
+// by an HTTP response made to a WaitURL
+// (See the ErrorInfo type).
+type WaitResponse struct {
+	Macaroon *macaroon.Macaroon
 }
 
 // Do makes an http request to the given client.
@@ -141,30 +118,58 @@ func NewClient() *Client {
 // an error with a *InteractionError cause will be returned.
 // See OpenWebBrowser for a possible implementation
 // of visitWebPage.
-func (c *Client) Do(req *http.Request) (*http.Response, error) {
+func Do(client *http.Client, req *http.Request, visitWebPage func(url *url.URL) error) (*http.Response, error) {
 	if req.Body != nil {
 		return nil, fmt.Errorf("body unexpectedly provided in request - use DoWithBody")
 	}
-	return c.DoWithBody(req, nil)
+	return DoWithBody(client, req, noBody, visitWebPage)
 }
 
 func noBody() (io.ReadCloser, error) {
 	return nil, nil
 }
 
+// DoWithBody is like Do except that the given getBody function is
+// called to obtain the body for the HTTP request. Any returned body
+// will be closed after each request is made.
+func DoWithBody(client *http.Client, req *http.Request, getBody BodyGetter, visitWebPage func(url *url.URL) error) (*http.Response, error) {
+	// Add a temporary cookie jar (without mutating the original
+	// client) if there isn't one available.
+	if client.Jar == nil {
+		client1 := *client
+		jar, err := cookiejar.New(&cookiejar.Options{
+			PublicSuffixList: publicsuffix.List,
+		})
+		if err != nil {
+			return nil, errgo.Notef(err, "cannot make cookie jar")
+		}
+		client1.Jar = jar
+		client = &client1
+	}
+	ctxt := &clientContext{
+		client:       client,
+		visitWebPage: visitWebPage,
+	}
+	return ctxt.do(req, getBody)
+}
+
 // DischargeAll attempts to acquire discharge macaroons for all the
-// third party caveats in m, and returns a slice containing all
-// of them bound to m.
+// third party caveats in m, and returns a slice containing all of them
+// bound to m.
 //
 // If the discharge fails because a third party refuses to discharge a
 // caveat, the returned error will have a cause of type *DischargeError.
 // If the discharge fails because visitWebPage returns an error,
 // the returned error will have a cause of *InteractionError.
 //
-// The returned macaroon slice will not be stored in the client
-// cookie jar (see SetCookie if you need to do that).
-func (c *Client) DischargeAll(m *macaroon.Macaroon) (macaroon.Slice, error) {
-	return bakery.DischargeAll(m, c.obtainThirdPartyDischarge)
+// The returned macaroon slice will not be stored in the client cookie
+// jar (see SetCookie if you need to do that).
+func DischargeAll(m *macaroon.Macaroon, client *http.Client, visitWebPage func(url *url.URL) error) (macaroon.Slice, error) {
+	ctxt := &clientContext{
+		client:       client,
+		visitWebPage: visitWebPage,
+	}
+	return bakery.DischargeAll(m, ctxt.obtainThirdPartyDischarge)
 }
 
 // PublicKeyForLocation returns the public key from a macaroon
@@ -194,6 +199,11 @@ func PublicKeyForLocation(client *http.Client, url string) (*bakery.PublicKey, e
 	return pubkey.PublicKey, nil
 }
 
+type clientContext struct {
+	client       *http.Client
+	visitWebPage func(*url.URL) error
+}
+
 // relativeURL returns newPath relative to an original URL.
 func relativeURL(base, new string) (*url.URL, error) {
 	if new == "" {
@@ -210,27 +220,20 @@ func relativeURL(base, new string) (*url.URL, error) {
 	return baseURL.ResolveReference(newURL), nil
 }
 
-// DoWithBody is like Do except that the given body
-// is used for the body of the HTTP request,
-// and reset to its start by seeking if the request is
-// retried.
-func (c *Client) DoWithBody(req *http.Request, body io.ReadSeeker) (*http.Response, error) {
+func (ctxt *clientContext) do(req *http.Request, getBody BodyGetter) (*http.Response, error) {
 	logger.Debugf("client do %s %s {", req.Method, req.URL)
-	resp, err := c.doWithBody(req, body)
+	resp, err := ctxt.do1(req, getBody)
 	logger.Debugf("} -> error %#v", err)
 	return resp, err
 }
 
-func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker) (*http.Response, error) {
-	if c.Client.Jar == nil {
-		return nil, errgo.New("no cookie jar supplied in HTTP client")
-	}
-	if err := c.setRequestBody(req, body); err != nil {
+func (ctxt *clientContext) do1(req *http.Request, getBody BodyGetter) (*http.Response, error) {
+	if err := ctxt.setRequestBody(req, getBody); err != nil {
 		return nil, errgo.Mask(err)
 	}
-	httpResp, err := c.Client.Do(req)
+	httpResp, err := ctxt.client.Do(req)
 	if err != nil {
-		return nil, errgo.Mask(err, errgo.Any)
+		return nil, err
 	}
 	if httpResp.StatusCode != http.StatusProxyAuthRequired {
 		return httpResp, nil
@@ -251,7 +254,7 @@ func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker) (*http.Respon
 		return nil, errgo.New("no macaroon found in response")
 	}
 	mac := resp.Info.Macaroon
-	macaroons, err := bakery.DischargeAll(mac, c.obtainThirdPartyDischarge)
+	macaroons, err := bakery.DischargeAll(mac, ctxt.obtainThirdPartyDischarge)
 	if err != nil {
 		return nil, errgo.Mask(err, errgo.Any)
 	}
@@ -264,14 +267,14 @@ func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker) (*http.Respon
 			cookieURL = req.URL.ResolveReference(relURL)
 		}
 	}
-	if err := SetCookie(c.Jar, cookieURL, macaroons); err != nil {
+	if err := SetCookie(ctxt.client.Jar, cookieURL, macaroons); err != nil {
 		return nil, errgo.Notef(err, "cannot set cookie")
 	}
-	if err := c.setRequestBody(req, body); err != nil {
+	if err := ctxt.setRequestBody(req, getBody); err != nil {
 		return nil, errgo.Mask(err)
 	}
 	// Try again with our newly acquired discharge macaroons
-	hresp, err := c.Client.Do(req)
+	hresp, err := ctxt.client.Do(req)
 	if err != nil {
 		return nil, errgo.Mask(err, errgo.Any)
 	}
@@ -294,18 +297,12 @@ func parseURLPath(path string) (*url.URL, error) {
 	return u, nil
 }
 
-func (c *Client) setRequestBody(req *http.Request, body io.ReadSeeker) error {
-	if body == nil {
-		return nil
+func (ctxt *clientContext) setRequestBody(req *http.Request, getBody BodyGetter) error {
+	body, err := getBody()
+	if err != nil {
+		return errgo.Notef(err, "cannot get request body")
 	}
-	if req.Body == nil {
-		req.Body = ioutil.NopCloser(body)
-	} else {
-		_, err := body.Seek(0, 0)
-		if err != nil {
-			return errgo.Notef(err, "cannot seek to start of request body")
-		}
-	}
+	req.Body = body
 	return nil
 }
 
@@ -342,7 +339,7 @@ func SetCookie(jar http.CookieJar, url *url.URL, ms macaroon.Slice) error {
 	return nil
 }
 
-func (c *Client) addCookie(req *http.Request, ms macaroon.Slice) error {
+func (ctxt *clientContext) addCookie(req *http.Request, ms macaroon.Slice) error {
 	cookies, err := NewCookie(ms)
 	if err != nil {
 		return errgo.Mask(err)
@@ -350,7 +347,7 @@ func (c *Client) addCookie(req *http.Request, ms macaroon.Slice) error {
 	// TODO should we set it for the URL only, or the host.
 	// Can we set cookies such that they'll always get sent to any
 	// URL on the given host?
-	c.Jar.SetCookies(req.URL, []*http.Cookie{cookies})
+	ctxt.client.Jar.SetCookies(req.URL, []*http.Cookie{cookies})
 	return nil
 }
 
@@ -361,7 +358,7 @@ func appendURLElem(u, elem string) string {
 	return u + "/" + elem
 }
 
-func (c *Client) obtainThirdPartyDischarge(originalLocation string, cav macaroon.Caveat) (*macaroon.Macaroon, error) {
+func (ctxt *clientContext) obtainThirdPartyDischarge(originalLocation string, cav macaroon.Caveat) (*macaroon.Macaroon, error) {
 	var resp dischargeResponse
 	loc := appendURLElem(cav.Location, "discharge")
 	err := postFormJSON(
@@ -371,7 +368,7 @@ func (c *Client) obtainThirdPartyDischarge(originalLocation string, cav macaroon
 			"location": {originalLocation},
 		},
 		&resp,
-		c.postForm,
+		ctxt.postForm,
 	)
 	if err == nil {
 		return resp.Macaroon, nil
@@ -388,7 +385,7 @@ func (c *Client) obtainThirdPartyDischarge(originalLocation string, cav macaroon
 	if cause.Info == nil {
 		return nil, errgo.Notef(err, "interaction-required response with no info")
 	}
-	m, err := c.interact(loc, cause.Info.VisitURL, cause.Info.WaitURL)
+	m, err := ctxt.interact(loc, cause.Info.VisitURL, cause.Info.WaitURL)
 	if err != nil {
 		return nil, errgo.Mask(err, IsDischargeError, IsInteractionError)
 	}
@@ -397,7 +394,7 @@ func (c *Client) obtainThirdPartyDischarge(originalLocation string, cav macaroon
 
 // interact gathers a macaroon by directing the user to interact
 // with a web page.
-func (c *Client) interact(location, visitURLStr, waitURLStr string) (*macaroon.Macaroon, error) {
+func (ctxt *clientContext) interact(location, visitURLStr, waitURLStr string) (*macaroon.Macaroon, error) {
 	visitURL, err := relativeURL(location, visitURLStr)
 	if err != nil {
 		return nil, errgo.Notef(err, "cannot make relative visit URL")
@@ -406,17 +403,12 @@ func (c *Client) interact(location, visitURLStr, waitURLStr string) (*macaroon.M
 	if err != nil {
 		return nil, errgo.Notef(err, "cannot make relative wait URL")
 	}
-	if c.VisitWebPage == nil {
-		return nil, &InteractionError{
-			Reason: errgo.New("interaction required but not possible"),
-		}
-	}
-	if err := c.VisitWebPage(visitURL); err != nil {
+	if err := ctxt.visitWebPage(visitURL); err != nil {
 		return nil, &InteractionError{
 			Reason: err,
 		}
 	}
-	waitResp, err := c.Client.Get(waitURL.String())
+	waitResp, err := ctxt.client.Get(waitURL.String())
 	if err != nil {
 		return nil, errgo.Notef(err, "cannot get %q", waitURL)
 	}
@@ -440,18 +432,34 @@ func (c *Client) interact(location, visitURLStr, waitURLStr string) (*macaroon.M
 	return resp.Macaroon, nil
 }
 
-func (c *Client) postForm(url string, data url.Values) (*http.Response, error) {
-	return c.post(url, "application/x-www-form-urlencoded", strings.NewReader(data.Encode()))
+func (ctxt *clientContext) postForm(url string, data url.Values) (*http.Response, error) {
+	getBody := SeekerBody(strings.NewReader(data.Encode()))
+	return ctxt.post(url, "application/x-www-form-urlencoded", getBody)
 }
 
-func (c *Client) post(url string, bodyType string, body io.ReadSeeker) (resp *http.Response, err error) {
+// SeekerBody returns a body getter function suitable for
+// passing to DoWithBody that always returns the given reader,
+// first seeking to its start.
+func SeekerBody(r io.ReadSeeker) BodyGetter {
+	rc := ioutil.NopCloser(r)
+	return func() (io.ReadCloser, error) {
+		if _, err := r.Seek(0, 0); err != nil {
+			return nil, errgo.Notef(err, "cannot seek")
+		}
+		return rc, nil
+	}
+}
+
+type BodyGetter func() (io.ReadCloser, error)
+
+func (ctxt *clientContext) post(url string, bodyType string, getBody BodyGetter) (resp *http.Response, err error) {
 	req, err := http.NewRequest("POST", url, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("Content-Type", bodyType)
 	// TODO(rog) see http.shouldRedirectPost
-	return c.DoWithBody(req, body)
+	return ctxt.do(req, getBody)
 }
 
 // postFormJSON does an HTTP POST request to the given url with the given
