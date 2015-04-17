@@ -8,7 +8,7 @@ import (
 
 	"gopkg.in/errgo.v1"
 
-	"gopkg.in/macaroon-bakery.v0/httpbakery"
+	"gopkg.in/macaroon-bakery.v1/httpbakery"
 )
 
 // client represents a client of the target service.

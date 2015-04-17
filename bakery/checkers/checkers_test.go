@@ -10,8 +10,8 @@ import (
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v1"
 
-	"gopkg.in/macaroon-bakery.v0/bakery"
-	"gopkg.in/macaroon-bakery.v0/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v1/bakery"
+	"gopkg.in/macaroon-bakery.v1/bakery/checkers"
 )
 
 type CheckersSuite struct{}

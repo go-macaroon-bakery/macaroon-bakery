@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/crypto/nacl/box"
 
-	"gopkg.in/macaroon-bakery.v0/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v1/bakery/checkers"
 )
 
 type caveatIdRecord struct {
