@@ -103,6 +103,15 @@ func (s *ClientSuite) TestRepeatedRequestWithBody(c *gc.C) {
 	c.Assert(bodyReader.byteCount, gc.Equals, len(bodyText)*2)
 }
 
+func (s *ClientSuite) TestDoWithBodyFailsWithBodyInRequest(c *gc.C) {
+	body := strings.NewReader("foo")
+	// Create a client request.
+	req, err := http.NewRequest("POST", "http://0.1.2.3/", body)
+	c.Assert(err, gc.IsNil)
+	_, err = httpbakery.NewClient().DoWithBody(req, body)
+	c.Assert(err, gc.ErrorMatches, "body unexpectedly supplied in Request struct")
+}
+
 func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
 	locator := bakery.NewPublicKeyRing()
 

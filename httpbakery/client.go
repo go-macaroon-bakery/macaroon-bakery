@@ -213,7 +213,7 @@ func relativeURL(base, new string) (*url.URL, error) {
 // DoWithBody is like Do except that the given body
 // is used for the body of the HTTP request,
 // and reset to its start by seeking if the request is
-// retried.
+// retried. It is an error if req.Body is non-zero.
 func (c *Client) DoWithBody(req *http.Request, body io.ReadSeeker) (*http.Response, error) {
 	logger.Debugf("client do %s %s {", req.Method, req.URL)
 	resp, err := c.doWithBody(req, body)
@@ -222,6 +222,9 @@ func (c *Client) DoWithBody(req *http.Request, body io.ReadSeeker) (*http.Respon
 }
 
 func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker) (*http.Response, error) {
+	if req.Body != nil {
+		return nil, errgo.New("body unexpectedly supplied in Request struct")
+	}
 	if c.Client.Jar == nil {
 		return nil, errgo.New("no cookie jar supplied in HTTP client")
 	}
