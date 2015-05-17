@@ -8,8 +8,6 @@ import (
 	"fmt"
 
 	"golang.org/x/crypto/nacl/box"
-
-	"gopkg.in/macaroon-bakery.v1/bakery/checkers"
 )
 
 type caveatIdRecord struct {
@@ -28,28 +26,18 @@ type caveatId struct {
 // boxEncoder encodes caveat ids confidentially to a third-party service using
 // authenticated public key encryption compatible with NaCl box.
 type boxEncoder struct {
-	locator PublicKeyLocator
-	key     *KeyPair
+	key *KeyPair
 }
 
-// newBoxEncoder creates a new boxEncoder with the given public key pair and
-// third-party public key locator function.
-func newBoxEncoder(locator PublicKeyLocator, key *KeyPair) *boxEncoder {
+// newBoxEncoder creates a new boxEncoder that uses the given public key pair.
+func newBoxEncoder(key *KeyPair) *boxEncoder {
 	return &boxEncoder{
-		key:     key,
-		locator: locator,
+		key: key,
 	}
 }
 
-func (enc *boxEncoder) encodeCaveatId(cav checkers.Caveat, rootKey []byte) (string, error) {
-	if cav.Location == "" {
-		return "", fmt.Errorf("cannot make caveat id for first party caveat")
-	}
-	thirdPartyPub, err := enc.locator.PublicKeyForLocation(cav.Location)
-	if err != nil {
-		return "", err
-	}
-	id, err := enc.newCaveatId(cav, rootKey, thirdPartyPub)
+func (enc *boxEncoder) encodeCaveatId(condition string, rootKey []byte, thirdPartyPub *PublicKey) (string, error) {
+	id, err := enc.newCaveatId(condition, rootKey, thirdPartyPub)
 	if err != nil {
 		return "", err
 	}
@@ -60,14 +48,14 @@ func (enc *boxEncoder) encodeCaveatId(cav checkers.Caveat, rootKey []byte) (stri
 	return base64.StdEncoding.EncodeToString(data), nil
 }
 
-func (enc *boxEncoder) newCaveatId(cav checkers.Caveat, rootKey []byte, thirdPartyPub *PublicKey) (*caveatId, error) {
+func (enc *boxEncoder) newCaveatId(condition string, rootKey []byte, thirdPartyPub *PublicKey) (*caveatId, error) {
 	var nonce [NonceLen]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return nil, fmt.Errorf("cannot generate random number for nonce: %v", err)
 	}
 	plain := caveatIdRecord{
 		RootKey:   rootKey,
-		Condition: cav.Condition,
+		Condition: condition,
 	}
 	plainData, err := json.Marshal(&plain)
 	if err != nil {

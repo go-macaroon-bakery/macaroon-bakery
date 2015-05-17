@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"net/url"
 
 	"gopkg.in/errgo.v1"
 
@@ -15,21 +14,14 @@ import (
 // In this simple example, it just tries a GET
 // request, which will fail unless the client
 // has the required authorization.
-func clientRequest(httpClient *http.Client, serverEndpoint string) (string, error) {
-	req, err := http.NewRequest("GET", serverEndpoint, nil)
-	if err != nil {
-		return "", errgo.Notef(err, "cannot make new HTTP request")
-	}
+func clientRequest(client *httpbakery.Client, serverEndpoint string) (string, error) {
 	// The Do function implements the mechanics
 	// of actually gathering discharge macaroons
 	// when required, and retrying the request
 	// when necessary.
-
-	client := httpbakery.NewClient()
-	client.VisitWebPage = func(url *url.URL) error {
-		fmt.Printf("please visit this web page:\n")
-		fmt.Printf("\t%s\n", url)
-		return nil
+	req, err := http.NewRequest("GET", serverEndpoint, nil)
+	if err != nil {
+		return "", errgo.Notef(err, "cannot make new HTTP request")
 	}
 	resp, err := client.Do(req)
 	if err != nil {
