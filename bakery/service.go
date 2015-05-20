@@ -296,7 +296,9 @@ func Discharge(key *KeyPair, checker ThirdPartyChecker, id string) (*macaroon.Ma
 		return nil, nil, errgo.Mask(err, errgo.Any)
 	}
 	// Note that the discharge macaroon does not need to
-	// be stored persistently.
+	// be stored persistently. Indeed, it would be a problem if
+	// we did, because then the macaroon could potentially be used
+	// for normal authorization with the third party.
 	m, err := macaroon.New(rootKey, id, "")
 	if err != nil {
 		return nil, nil, errgo.Mask(err)
