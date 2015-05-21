@@ -19,6 +19,8 @@ const (
 	CondClientIPAddr = "client-ip-addr"
 	CondError        = "error"
 	CondNeedDeclared = "need-declared"
+	CondAllow        = "allow"
+	CondDeny         = "deny"
 )
 
 // ErrCaveatNotRecognized is the cause of errors returned
@@ -235,3 +237,66 @@ func ClientIPAddrCaveat(addr net.IP) Caveat {
 func ErrorCaveatf(f string, a ...interface{}) Caveat {
 	return firstParty(CondError, fmt.Sprintf(f, a...))
 }
+
+// AllowCaveat returns a caveat that will deny attempts to use the
+// macaroon to perform any operation other than those listed. Operations
+// must not contain a space.
+func AllowCaveat(op ...string) Caveat {
+	if len(op) == 0 {
+		return ErrorCaveatf("no operations allowed")
+	}
+	return operationCaveat(CondAllow, op)
+}
+
+// DenyCaveat returns a caveat that will deny attempts to use the
+// macaroon to perform any of the listed operations. Operations
+// must not contain a space.
+func DenyCaveat(op ...string) Caveat {
+	return operationCaveat(CondDeny, op)
+}
+
+// operationCaveat is a helper for AllowCaveat and DenyCaveat. It checks
+// that all operation names are valid before createing the caveat.
+func operationCaveat(cond string, op []string) Caveat {
+	for _, o := range op {
+		if strings.IndexByte(o, ' ') != -1 {
+			return ErrorCaveatf("invalid operation name %q", o)
+		}
+	}
+	return firstParty(cond, strings.Join(op, " "))
+}
+
+// OperationChecker checks any allow or deny caveats ensuring they do not
+// prohibit the named operation.
+type OperationChecker string
+
+// Condition implements Checker.Condition.
+func (OperationChecker) Condition() string {
+	return ""
+}
+
+// Check implements Checker.Check.
+func (o OperationChecker) Check(cond, arg string) error {
+	var expect bool
+	switch cond {
+	case CondAllow:
+		expect = true
+		fallthrough
+	case CondDeny:
+		var found bool
+		for _, op := range strings.Fields(arg) {
+			if string(o) == op {
+				found = true
+				break
+			}
+		}
+		if found == expect {
+			return nil
+		}
+		return fmt.Errorf("%s not allowed", o)
+	default:
+		return ErrCaveatNotRecognized
+	}
+}
+
+var _ Checker = OperationChecker("")

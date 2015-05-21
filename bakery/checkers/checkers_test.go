@@ -418,3 +418,77 @@ func (*CheckersSuite) TestInferDeclared(c *gc.C) {
 		c.Assert(checkers.InferDeclared(ms), jc.DeepEquals, test.expect)
 	}
 }
+
+var operationCheckerTests = []struct {
+	about       string
+	caveat      checkers.Caveat
+	oc          checkers.OperationChecker
+	expectError string
+}{{
+	about:  "allowed operation",
+	caveat: checkers.AllowCaveat("op1", "op2", "op3"),
+	oc:     checkers.OperationChecker("op1"),
+}, {
+	about:  "not denied oc",
+	caveat: checkers.DenyCaveat("op1", "op2", "op3"),
+	oc:     checkers.OperationChecker("op4"),
+}, {
+	about:       "not allowed oc",
+	caveat:      checkers.AllowCaveat("op1", "op2", "op3"),
+	oc:          checkers.OperationChecker("op4"),
+	expectError: "op4 not allowed",
+}, {
+	about:       "denied oc",
+	caveat:      checkers.DenyCaveat("op1", "op2", "op3"),
+	oc:          checkers.OperationChecker("op1"),
+	expectError: "op1 not allowed",
+}, {
+	about:       "unrecognised caveat",
+	caveat:      checkers.ErrorCaveatf("unrecognized"),
+	oc:          checkers.OperationChecker("op1"),
+	expectError: "caveat not recognized",
+}, {
+	about:  "empty deny caveat",
+	caveat: checkers.DenyCaveat(),
+	oc:     checkers.OperationChecker("op1"),
+}}
+
+func (*CheckersSuite) TestOperationChecker(c *gc.C) {
+	for i, test := range operationCheckerTests {
+		c.Logf("%d: %s", i, test.about)
+		cond, arg, err := checkers.ParseCaveat(test.caveat.Condition)
+		c.Assert(err, gc.IsNil)
+		c.Assert(test.oc.Condition(), gc.Equals, "")
+		err = test.oc.Check(cond, arg)
+		if test.expectError == "" {
+			c.Assert(err, gc.IsNil)
+			continue
+		}
+		c.Assert(err, gc.ErrorMatches, test.expectError)
+	}
+}
+
+var operationErrorCaveatTests = []struct {
+	about           string
+	caveat          checkers.Caveat
+	expectCondition string
+}{{
+	about:           "empty allow",
+	caveat:          checkers.AllowCaveat(),
+	expectCondition: "error no operations allowed",
+}, {
+	about:           "allow: invalid operation name",
+	caveat:          checkers.AllowCaveat("op1", "operation number 2"),
+	expectCondition: `error invalid operation name "operation number 2"`,
+}, {
+	about:           "deny: invalid operation name",
+	caveat:          checkers.DenyCaveat("op1", "operation number 2"),
+	expectCondition: `error invalid operation name "operation number 2"`,
+}}
+
+func (*CheckersSuite) TestOperationErrorCaveatTest(c *gc.C) {
+	for i, test := range operationErrorCaveatTests {
+		c.Logf("%d: %s", i, test.about)
+		c.Assert(test.caveat.Condition, gc.Matches, test.expectCondition)
+	}
+}
