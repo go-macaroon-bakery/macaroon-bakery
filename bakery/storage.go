@@ -40,7 +40,6 @@ type memStorage struct {
 }
 
 func (s *memStorage) Put(location, item string) error {
-	logger.Infof("storage.Put[%q] %q", location, item)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.values[location] = item
@@ -52,10 +51,8 @@ func (s *memStorage) Get(location string) (string, error) {
 	defer s.mu.Unlock()
 	item, ok := s.values[location]
 	if !ok {
-		logger.Infof("storage.Get[%q] -> not found", location)
 		return "", ErrNotFound
 	}
-	logger.Infof("storage.Get[%q] -> %q", location, item)
 	return item, nil
 }
 
