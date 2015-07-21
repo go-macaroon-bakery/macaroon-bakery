@@ -236,7 +236,7 @@ func (s *ClientSuite) TestPublicKeyWrongURL(c *gc.C) {
 	client := httpbakery.NewHTTPClient()
 	_, err := httpbakery.PublicKeyForLocation(client, "http://localhost:0")
 	c.Assert(err, gc.ErrorMatches,
-		`cannot get public key from "http://localhost:0/publickey": Get http://localhost:0/publickey: dial tcp 127.0.0.1:0: connection refused`)
+		`cannot get public key from "http://localhost:0/publickey": Get http://localhost:0/publickey: dial tcp 127.0.0.1:0: .*connection refused`)
 }
 
 func (s *ClientSuite) TestPublicKeyReturnsInvalidJson(c *gc.C) {

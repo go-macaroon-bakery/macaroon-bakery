@@ -1,6 +1,7 @@
 package agent_test
 
 import (
+	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -131,9 +132,100 @@ func (s *agentSuite) TestNoCookieError(c *gc.C) {
 	}})
 	c.Assert(err, gc.IsNil)
 	_, err = client.DischargeAll(m)
-	c.Assert(err, gc.ErrorMatches, "cannot get discharge from .*: cannot start interactive session: cannot perform agent login: http: named cookie not present")
+	c.Assert(err, gc.ErrorMatches, "cannot get discharge from .*: cannot start interactive session: cannot perform agent login: no agent-login cookie found")
 	ierr := errgo.Cause(err).(*httpbakery.InteractionError)
 	c.Assert(errgo.Cause(ierr.Reason), gc.Equals, http.ErrNoCookie)
+}
+
+func (s *agentSuite) TestLoginCookie(c *gc.C) {
+	key, err := bakery.GenerateKey()
+	c.Assert(err, gc.IsNil)
+
+	tests := []struct {
+		about       string
+		setCookie   func(*httpbakery.Client, *url.URL)
+		expectUser  string
+		expectKey   *bakery.PublicKey
+		expectError string
+		expectCause error
+	}{{
+		about: "success",
+		setCookie: func(client *httpbakery.Client, u *url.URL) {
+			agent.SetUpAuth(client, u, "bob")
+		},
+		expectUser: "bob",
+		expectKey:  &key.Public,
+	}, {
+		about:       "no cookie",
+		setCookie:   func(client *httpbakery.Client, u *url.URL) {},
+		expectError: "no agent-login cookie found",
+		expectCause: agent.ErrNoAgentLoginCookie,
+	}, {
+		about: "invalid base64 encoding",
+		setCookie: func(client *httpbakery.Client, u *url.URL) {
+			client.Jar.SetCookies(u, []*http.Cookie{{
+				Name:  "agent-login",
+				Value: "x",
+			}})
+		},
+		expectError: "cannot decode cookie value: illegal base64 data at input byte 0",
+	}, {
+		about: "invalid JSON",
+		setCookie: func(client *httpbakery.Client, u *url.URL) {
+			client.Jar.SetCookies(u, []*http.Cookie{{
+				Name:  "agent-login",
+				Value: base64.StdEncoding.EncodeToString([]byte("}")),
+			}})
+		},
+		expectError: "cannot unmarshal agent login: invalid character '}' looking for beginning of value",
+	}, {
+		about: "no username",
+		setCookie: func(client *httpbakery.Client, u *url.URL) {
+			agent.SetCookie(client.Jar, u, "", &key.Public)
+		},
+		expectError: "agent login has no user name",
+	}, {
+		about: "no public key",
+		setCookie: func(client *httpbakery.Client, u *url.URL) {
+			agent.SetCookie(client.Jar, u, "hello", nil)
+		},
+		expectError: "agent login has no public key",
+	}}
+	var (
+		foundUser string
+		foundKey  *bakery.PublicKey
+		foundErr  error
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		foundUser, foundKey, foundErr = agent.LoginCookie(req)
+	}))
+	defer srv.Close()
+
+	srvURL, err := url.Parse(srv.URL)
+	c.Assert(err, gc.IsNil)
+
+	for i, test := range tests {
+		c.Logf("test %d: %s", i, test.about)
+
+		client := httpbakery.NewClient()
+		client.Key = key
+		test.setCookie(client, srvURL)
+
+		req, err := http.NewRequest("GET", srv.URL, nil)
+		c.Assert(err, gc.IsNil)
+		resp, err := client.Do(req)
+		c.Assert(err, gc.IsNil)
+		c.Assert(resp.StatusCode, gc.Equals, http.StatusOK)
+		if test.expectError != "" {
+			c.Assert(foundErr, gc.ErrorMatches, test.expectError)
+			if test.expectCause != nil {
+				c.Assert(errgo.Cause(foundErr), gc.Equals, test.expectCause)
+			}
+			continue
+		}
+		c.Assert(foundUser, gc.Equals, test.expectUser)
+		c.Assert(foundKey, gc.DeepEquals, test.expectKey)
+	}
 }
 
 func ExampleVisitWebPage() {
