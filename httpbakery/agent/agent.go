@@ -48,27 +48,21 @@ An agent login works as follows:
 	      |                                    |
 
 The agent cookie is a cookie named "agent-login" holding a base64
-encoded JSON object of the form:
-
-	{
-		"username": <username>,
-		"public_key": <public key>
-	}
+encoded JSON object described by the agentLogin struct.
 
 A local third-party caveat is a third party caveat with the location
 set to "local" and the caveat encrypted with the public key declared
 in the agent cookie. The httpbakery.Client automatically discharges
 the local third-party caveat.
 
-On success the response is a JSON object of the form:
-
-	{
-		"agent_login": true
-	}
+On success the response is a JSON object described by agentResponse
+with the AgentLogin field set to true.
 
 If an error occurs then the response should be a JSON object that
-unmarshalls to an httpbakery.Error.
+unmarshals to an httpbakery.Error.
 */
+
+const cookieName = "agent-login"
 
 // agentLogin defines the structure of an agent login cookie. It is also
 // returned in a successful agent login attempt to help indicate that an
@@ -78,9 +72,38 @@ type agentLogin struct {
 	PublicKey *bakery.PublicKey `json:"public_key"`
 }
 
-// agentResponse defines the structure of an agent login response.
+// agentResponse contains the response to an agent login attempt.
 type agentResponse struct {
 	AgentLogin bool `json:"agent_login"`
+}
+
+// ErrNoAgentLoginCookie is the error returned when the expected
+// agent login cookie has not been found.
+var ErrNoAgentLoginCookie = errgo.New("no agent-login cookie found")
+
+// LoginCookie returns details of the agent login cookie
+// from the given request. If no agent-login cookie is found,
+// it returns an ErrNoAgentLoginCookie error.
+func LoginCookie(req *http.Request) (username string, key *bakery.PublicKey, err error) {
+	c, err := req.Cookie(cookieName)
+	if err != nil {
+		return "", nil, ErrNoAgentLoginCookie
+	}
+	b, err := base64.StdEncoding.DecodeString(c.Value)
+	if err != nil {
+		return "", nil, errgo.Notef(err, "cannot decode cookie value")
+	}
+	var al agentLogin
+	if err := json.Unmarshal(b, &al); err != nil {
+		return "", nil, errgo.Notef(err, "cannot unmarshal agent login")
+	}
+	if al.Username == "" {
+		return "", nil, errgo.Newf("agent login has no user name")
+	}
+	if al.PublicKey == nil {
+		return "", nil, errgo.Newf("agent login has no public key")
+	}
+	return al.Username, al.PublicKey, nil
 }
 
 // SetUpAuth configures agent authentication on c. A cookie is created in
@@ -98,6 +121,9 @@ func SetUpAuth(c *httpbakery.Client, u *url.URL, username string) error {
 
 // SetCookie creates a cookie in jar which is suitable for performing agent
 // logins to u.
+//
+// If using SetUpAuth, it should not be necessary to use
+// this function.
 func SetCookie(jar http.CookieJar, u *url.URL, username string, pk *bakery.PublicKey) {
 	al := agentLogin{
 		Username:  username,
@@ -110,7 +136,7 @@ func SetCookie(jar http.CookieJar, u *url.URL, username string, pk *bakery.Publi
 	}
 	v := base64.StdEncoding.EncodeToString(b)
 	jar.SetCookies(u, []*http.Cookie{{
-		Name:  "agent-login",
+		Name:  cookieName,
 		Value: v,
 	}})
 }
@@ -118,15 +144,18 @@ func SetCookie(jar http.CookieJar, u *url.URL, username string, pk *bakery.Publi
 // VisitWebPage creates a function that can be used with
 // httpbakery.Client.VisitWebPage. The function uses c to access the
 // visit URL. If no agent-login cookie has been configured for u an error
-// with the cause of http.ErrNoCookie will be returned. If the login
+// with the cause of ErrNoAgentLoginCookie will be returned. If the login
 // fails the returned error will be of type *httpbakery.Error. If the
 // response from the visitURL cannot be interpreted the error will be of
 // type *UnexpectedResponseError.
+//
+// If using SetUpAuth, it should not be necessary to use
+// this function.
 func VisitWebPage(c *httpbakery.Client) func(u *url.URL) error {
 	return func(u *url.URL) error {
-		err := http.ErrNoCookie
+		err := ErrNoAgentLoginCookie
 		for _, c := range c.Jar.Cookies(u) {
-			if c.Name == "agent-login" {
+			if c.Name == cookieName {
 				err = nil
 				break
 			}
