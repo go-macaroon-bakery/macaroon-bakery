@@ -325,6 +325,101 @@ func (s *ClientSuite) TestDischargeWithInteractionRequiredError(c *gc.C) {
 	c.Assert(resp, gc.IsNil)
 }
 
+var dischargeWithVisitURLErrorTests = []struct {
+	about       string
+	respond     func(http.ResponseWriter)
+	expectError string
+}{{
+	about: "error message",
+	respond: func(w http.ResponseWriter) {
+		jsonhttp.WriteError(httpbakery.ErrorToResponse)(w, fmt.Errorf("an error"))
+	},
+	expectError: `cannot get discharge from ".*": failed to acquire macaroon after waiting: third party refused discharge: an error`,
+}, {
+	about: "non-JSON error",
+	respond: func(w http.ResponseWriter) {
+		w.Write([]byte("bad response"))
+	},
+	// TODO fix this unhelpful error message
+	expectError: `cannot get discharge from ".*": cannot unmarshal wait response: invalid character 'b' looking for beginning of value`,
+}}
+
+func (s *ClientSuite) TestDischargeWithVisitURLError(c *gc.C) {
+	visitor := newVisitHandler(nil)
+	visitSrv := httptest.NewServer(visitor)
+	defer visitSrv.Close()
+
+	d := bakerytest.NewDischarger(nil, func(_ *http.Request, cond, arg string) ([]checkers.Caveat, error) {
+		return nil, &httpbakery.Error{
+			Code:    httpbakery.ErrInteractionRequired,
+			Message: "interaction required",
+			Info: &httpbakery.ErrorInfo{
+				VisitURL: visitSrv.URL + "/visit",
+				WaitURL:  visitSrv.URL + "/wait",
+			},
+		}
+	})
+	defer d.Close()
+
+	// Create a target service.
+	svc := newService("loc", d)
+	ts := httptest.NewServer(serverHandler(svc, d.Location(), nil))
+	defer ts.Close()
+
+	for i, test := range dischargeWithVisitURLErrorTests {
+		c.Logf("test %d: %s", i, test.about)
+		visitor.respond = test.respond
+
+		client := httpbakery.NewClient()
+		client.VisitWebPage = func(u *url.URL) error {
+			resp, err := http.Get(u.String())
+			if err != nil {
+				return err
+			}
+			resp.Body.Close()
+			return nil
+		}
+
+		// Create a client request.
+		req, err := http.NewRequest("GET", ts.URL, nil)
+		c.Assert(err, gc.IsNil)
+
+		// Make the request to the server.
+		_, err = client.Do(req)
+		c.Assert(err, gc.ErrorMatches, test.expectError)
+	}
+}
+
+type visitHandler struct {
+	mux     *http.ServeMux
+	rendez  chan struct{}
+	respond func(w http.ResponseWriter)
+}
+
+func newVisitHandler(respond func(http.ResponseWriter)) *visitHandler {
+	h := &visitHandler{
+		rendez:  make(chan struct{}, 1),
+		respond: respond,
+		mux:     http.NewServeMux(),
+	}
+	h.mux.HandleFunc("/visit", h.serveVisit)
+	h.mux.HandleFunc("/wait", h.serveWait)
+	return h
+}
+
+func (h *visitHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	h.mux.ServeHTTP(w, req)
+}
+
+func (h *visitHandler) serveVisit(w http.ResponseWriter, req *http.Request) {
+	h.rendez <- struct{}{}
+}
+
+func (h *visitHandler) serveWait(w http.ResponseWriter, req *http.Request) {
+	<-h.rendez
+	h.respond(w)
+}
+
 // assertResponse asserts that the given response is OK and contains
 // the expected body text.
 func assertResponse(c *gc.C, resp *http.Response, expectBody string) {
