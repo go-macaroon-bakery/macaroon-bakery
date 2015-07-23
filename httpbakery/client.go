@@ -428,9 +428,10 @@ func (c *Client) interact(location, visitURLStr, waitURLStr string) (*macaroon.M
 		if err := json.NewDecoder(waitResp.Body).Decode(&resp); err != nil {
 			return nil, errgo.Notef(err, "cannot unmarshal wait error response")
 		}
-		return nil, errgo.WithCausef(nil, &DischargeError{
+		dischargeErr := &DischargeError{
 			Reason: &resp,
-		}, "failed to acquire macaroon after waiting")
+		}
+		return nil, errgo.NoteMask(dischargeErr, "failed to acquire macaroon after waiting", errgo.Any)
 	}
 	var resp WaitResponse
 	if err := json.NewDecoder(waitResp.Body).Decode(&resp); err != nil {
