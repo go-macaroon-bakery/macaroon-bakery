@@ -3,8 +3,10 @@
 package bakerytest
 
 import (
+	"crypto/tls"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 
 	"gopkg.in/macaroon-bakery.v1/bakery"
 	"gopkg.in/macaroon-bakery.v1/bakery/checkers"
@@ -21,6 +23,51 @@ type Discharger struct {
 	server *httptest.Server
 }
 
+var skipVerify struct {
+	mu            sync.Mutex
+	refCount      int
+	oldSkipVerify bool
+}
+
+func startSkipVerify() {
+	v := &skipVerify
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.refCount++; v.refCount > 1 {
+		return
+	}
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return
+	}
+	if transport.TLSClientConfig != nil {
+		v.oldSkipVerify = transport.TLSClientConfig.InsecureSkipVerify
+		transport.TLSClientConfig.InsecureSkipVerify = true
+	} else {
+		v.oldSkipVerify = false
+		transport.TLSClientConfig = &tls.Config{
+			InsecureSkipVerify: true,
+		}
+	}
+}
+
+func stopSkipVerify() {
+	v := &skipVerify
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.refCount--; v.refCount > 0 {
+		return
+	}
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return
+	}
+	// technically this doesn't return us to the original state,
+	// as TLSClientConfig may have been nil before but won't
+	// be now, but that should be equivalent.
+	transport.TLSClientConfig.InsecureSkipVerify = v.oldSkipVerify
+}
+
 // NewDischarger returns a new third party caveat discharger
 // which uses the given function to check caveats.
 // The cond and arg arguments to the function are as returned
@@ -28,12 +75,16 @@ type Discharger struct {
 //
 // If locator is non-nil, it will be used to find public keys
 // for any third party caveats returned by the checker.
+//
+// Calling this function has the side-effect of setting
+// InsecureSkipVerify in http.DefaultTransport.TLSClientConfig
+// until all the dischargers are closed.
 func NewDischarger(
 	locator bakery.PublicKeyLocator,
 	checker func(req *http.Request, cond, arg string) ([]checkers.Caveat, error),
 ) *Discharger {
 	mux := http.NewServeMux()
-	server := httptest.NewServer(mux)
+	server := httptest.NewTLSServer(mux)
 	svc, err := bakery.NewService(bakery.NewServiceParams{
 		Location: server.URL,
 		Locator:  locator,
@@ -49,6 +100,7 @@ func NewDischarger(
 		return checker(req, cond, arg)
 	}
 	httpbakery.AddDischargeHandler(mux, "/", svc, checker1)
+	startSkipVerify()
 	return &Discharger{
 		Service: svc,
 		server:  server,
@@ -58,6 +110,7 @@ func NewDischarger(
 // Close shuts down the server.
 func (d *Discharger) Close() {
 	d.server.Close()
+	stopSkipVerify()
 }
 
 // Location returns the location of the discharger, suitable
