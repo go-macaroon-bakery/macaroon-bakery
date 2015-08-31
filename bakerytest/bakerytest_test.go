@@ -3,6 +3,7 @@ package bakerytest_test
 import (
 	"fmt"
 	"net/http"
+	"sync"
 
 	gc "gopkg.in/check.v1"
 
@@ -99,6 +100,37 @@ func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 
 	ms, err = s.client.DischargeAll(m)
-	c.Assert(err, gc.ErrorMatches, `cannot get discharge from "http://[^"]*": third party refused discharge: cannot discharge: caveat refused`)
+	c.Assert(err, gc.ErrorMatches, `cannot get discharge from "https://[^"]*": third party refused discharge: cannot discharge: caveat refused`)
 	c.Assert(ms, gc.HasLen, 0)
+}
+
+func (s *suite) TestInsecureSkipVerifyRestoration(c *gc.C) {
+	d1 := bakerytest.NewDischarger(nil, noCaveatChecker)
+	d2 := bakerytest.NewDischarger(nil, noCaveatChecker)
+	d2.Close()
+	c.Assert(http.DefaultTransport.(*http.Transport).TLSClientConfig.InsecureSkipVerify, gc.Equals, true)
+	d1.Close()
+	c.Assert(http.DefaultTransport.(*http.Transport).TLSClientConfig.InsecureSkipVerify, gc.Equals, false)
+
+	// When InsecureSkipVerify is already true, it should not
+	// be restored to false.
+	http.DefaultTransport.(*http.Transport).TLSClientConfig.InsecureSkipVerify = true
+	d3 := bakerytest.NewDischarger(nil, noCaveatChecker)
+	d3.Close()
+
+	c.Assert(http.DefaultTransport.(*http.Transport).TLSClientConfig.InsecureSkipVerify, gc.Equals, true)
+}
+
+func (s *suite) TestConcurrentDischargers(c *gc.C) {
+	var wg sync.WaitGroup
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			d := bakerytest.NewDischarger(nil, noCaveatChecker)
+			d.Close()
+			wg.Done()
+		}()
+	}
+	wg.Wait()
+	c.Assert(http.DefaultTransport.(*http.Transport).TLSClientConfig.InsecureSkipVerify, gc.Equals, false)
 }
