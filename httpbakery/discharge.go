@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"path"
 
+	"github.com/juju/httprequest"
+	"github.com/julienschmidt/httprouter"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v1"
 
@@ -59,18 +61,18 @@ func AddDischargeHandler(mux *http.ServeMux, rootPath string, svc *bakery.Servic
 		svc:     svc,
 		checker: checker,
 	}
-	mux.Handle(path.Join(rootPath, "discharge"), handleJSON(d.serveDischarge))
+	mux.Handle(path.Join(rootPath, "discharge"), mkHandler(handleJSON(d.serveDischarge)))
 	// TODO(rog) is there a case for making public key caveat signing
 	// optional?
-	mux.Handle(path.Join(rootPath, "publickey"), handleJSON(d.servePublicKey))
+	mux.Handle(path.Join(rootPath, "publickey"), mkHandler(handleJSON(d.servePublicKey)))
 }
 
 type dischargeResponse struct {
 	Macaroon *macaroon.Macaroon `json:",omitempty"`
 }
 
-func (d *dischargeHandler) serveDischarge(h http.Header, req *http.Request) (interface{}, error) {
-	r, err := d.serveDischarge1(h, req)
+func (d *dischargeHandler) serveDischarge(p httprequest.Params) (interface{}, error) {
+	r, err := d.serveDischarge1(p)
 	if err != nil {
 		logger.Debugf("serveDischarge -> error %#v", err)
 	} else {
@@ -79,24 +81,24 @@ func (d *dischargeHandler) serveDischarge(h http.Header, req *http.Request) (int
 	return r, err
 }
 
-func (d *dischargeHandler) serveDischarge1(h http.Header, req *http.Request) (interface{}, error) {
+func (d *dischargeHandler) serveDischarge1(p httprequest.Params) (interface{}, error) {
 	logger.Debugf("dischargeHandler.serveDischarge {")
 	defer logger.Debugf("}")
-	if req.Method != "POST" {
+	if p.Request.Method != "POST" {
 		// TODO http.StatusMethodNotAllowed)
 		return nil, badRequestErrorf("method not allowed")
 	}
-	req.ParseForm()
-	id := req.Form.Get("id")
+	p.Request.ParseForm()
+	id := p.Request.Form.Get("id")
 	if id == "" {
 		return nil, badRequestErrorf("id attribute is empty")
 	}
 	checker := func(cavId, cav string) ([]checkers.Caveat, error) {
-		return d.checker(req, cavId, cav)
+		return d.checker(p.Request, cavId, cav)
 	}
 
 	// TODO(rog) pass location into discharge
-	// location := req.Form.Get("location")
+	// location := p.Request.Form.Get("location")
 
 	var resp dischargeResponse
 	m, err := d.svc.Discharge(bakery.ThirdPartyCheckerFunc(checker), id)
@@ -111,7 +113,7 @@ type publicKeyResponse struct {
 	PublicKey *bakery.PublicKey
 }
 
-func (d *dischargeHandler) servePublicKey(h http.Header, r *http.Request) (interface{}, error) {
+func (d *dischargeHandler) servePublicKey(httprequest.Params) (interface{}, error) {
 	return publicKeyResponse{d.svc.PublicKey()}, nil
 }
 
@@ -122,4 +124,10 @@ func randomBytes(n int) ([]byte, error) {
 		return nil, fmt.Errorf("cannot generate %d random bytes: %v", n, err)
 	}
 	return b, nil
+}
+
+func mkHandler(h httprouter.Handle) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		h(w, req, nil)
+	})
 }

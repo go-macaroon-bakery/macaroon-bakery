@@ -11,8 +11,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/juju/httprequest"
 	jujutesting "github.com/juju/testing"
-	"github.com/juju/utils/jsonhttp"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v1"
@@ -370,7 +370,7 @@ var dischargeWithVisitURLErrorTests = []struct {
 }{{
 	about: "error message",
 	respond: func(w http.ResponseWriter) {
-		jsonhttp.WriteError(httpbakery.ErrorToResponse)(w, fmt.Errorf("an error"))
+		httprequest.ErrorMapper(httpbakery.ErrorToResponse).WriteError(w, fmt.Errorf("an error"))
 	},
 	expectError: `cannot get discharge from ".*": failed to acquire macaroon after waiting: third party refused discharge: an error`,
 }, {
@@ -507,20 +507,23 @@ func clientRequestWithCookies(c *gc.C, u string, macaroons macaroon.Slice) *http
 // request body.
 // It recognises the single first party caveat "is something".
 func serverHandler(service *bakery.Service, authLocation string, cookiePath func() string) http.Handler {
-	handleErrors := jsonhttp.HandleErrors(httpbakery.ErrorToResponse)
-	return handleErrors(func(w http.ResponseWriter, req *http.Request) error {
-		if _, checkErr := httpbakery.CheckRequest(service, req, nil, isChecker("something")); checkErr != nil {
+	handleErrors := httprequest.ErrorMapper(httpbakery.ErrorToResponse).HandleErrors
+	h := handleErrors(func(p httprequest.Params) error {
+		if _, checkErr := httpbakery.CheckRequest(service, p.Request, nil, isChecker("something")); checkErr != nil {
 			return newDischargeRequiredError(service, authLocation, cookiePath, checkErr)
 		}
-		fmt.Fprintf(w, "done")
-		data, err := ioutil.ReadAll(req.Body)
+		fmt.Fprintf(p.Response, "done")
+		data, err := ioutil.ReadAll(p.Request.Body)
 		if err != nil {
 			panic(fmt.Errorf("cannot read body: %v", err))
 		}
 		if len(data) > 0 {
-			fmt.Fprintf(w, " %s", data)
+			fmt.Fprintf(p.Response, " %s", data)
 		}
 		return nil
+	})
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		h(w, req, nil)
 	})
 }
 
