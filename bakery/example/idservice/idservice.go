@@ -6,7 +6,8 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/juju/utils/jsonhttp"
+	"github.com/juju/httprequest"
+	"github.com/julienschmidt/httprouter"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v1"
 
@@ -17,7 +18,7 @@ import (
 )
 
 var (
-	handleJSON = jsonhttp.HandleJSON(errorToResponse)
+	handleJSON = httprequest.ErrorMapper(errorToResponse).HandleJSON
 )
 
 const (
@@ -59,25 +60,25 @@ func New(p Params) (http.Handler, error) {
 	}
 	mux := http.NewServeMux()
 	httpbakery.AddDischargeHandler(mux, "/", svc, h.checkThirdPartyCaveat)
-	mux.Handle("/user/", handleJSON(h.userHandler))
+	mux.Handle("/user/", mkHandler(handleJSON(h.userHandler)))
 	mux.HandleFunc("/login", h.loginHandler)
-	mux.Handle("/question", handleJSON(h.questionHandler))
-	mux.Handle("/wait", handleJSON(h.waitHandler))
+	mux.Handle("/question", mkHandler(handleJSON(h.questionHandler)))
+	mux.Handle("/wait", mkHandler(handleJSON(h.waitHandler)))
 	mux.HandleFunc("/loginattempt", h.loginAttemptHandler)
 	return mux, nil
 }
 
 // userHandler handles requests to add new users, change user details, etc.
 // It is only accessible to users that are members of the admin group.
-func (h *handler) userHandler(_ http.Header, req *http.Request) (interface{}, error) {
-	ctxt := h.newContext(req, "change-user")
-	if _, err := httpbakery.CheckRequest(h.svc, req, nil, ctxt); err != nil {
+func (h *handler) userHandler(p httprequest.Params) (interface{}, error) {
+	ctxt := h.newContext(p.Request, "change-user")
+	if _, err := httpbakery.CheckRequest(h.svc, p.Request, nil, ctxt); err != nil {
 		// TODO do this only if the error cause is *bakery.VerificationError
 		// We issue a macaroon with a third-party caveat targetting
 		// the id service itself. This means that the flow for self-created
 		// macaroons is just the same as for any other service.
 		// Theoretically, we could just redirect the user to the
-		// login page, but that would require a different flow
+		// login page, but that would p.Requestuire a different flow
 		// and it's not clear that it would be an advantage.
 		m, err := h.svc.NewMacaroon("", nil, []checkers.Caveat{{
 			Location:  h.svc.Location(),
@@ -251,9 +252,9 @@ func (h *handler) needLogin(cavId string, caveat string, why string) error {
 
 // waitHandler serves an HTTP endpoint that waits until a macaroon
 // has been discharged, and returns the discharge macaroon.
-func (h *handler) waitHandler(_ http.Header, req *http.Request) (interface{}, error) {
-	req.ParseForm()
-	waitId := req.Form.Get("waitid")
+func (h *handler) waitHandler(p httprequest.Params) (interface{}, error) {
+	p.Request.ParseForm()
+	waitId := p.Request.Form.Get("waitid")
 	if waitId == "" {
 		return nil, fmt.Errorf("wait id parameter not found")
 	}
@@ -270,7 +271,7 @@ func (h *handler) waitHandler(_ http.Header, req *http.Request) (interface{}, er
 	// that it can be trusted, so we set verifiedUser to true.
 	ctxt := &context{
 		handler:      h,
-		req:          req,
+		req:          p.Request,
 		svc:          h.svc,
 		declaredUser: login.User,
 		verifiedUser: true,
@@ -286,7 +287,7 @@ func (h *handler) waitHandler(_ http.Header, req *http.Request) (interface{}, er
 	}, nil
 }
 
-func (h *handler) questionHandler(_ http.Header, req *http.Request) (interface{}, error) {
+func (h *handler) questionHandler(_ httprequest.Params) (interface{}, error) {
 	return nil, errgo.New("question unimplemented")
 	// TODO
 	//	req.ParseForm()
@@ -458,4 +459,10 @@ func errorToResponse(err error) (int, interface{}) {
 	return http.StatusInternalServerError, &httpbakery.Error{
 		Message: err.Error(),
 	}
+}
+
+func mkHandler(h httprouter.Handle) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		h(w, req, nil)
+	})
 }

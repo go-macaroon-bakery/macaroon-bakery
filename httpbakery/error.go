@@ -3,7 +3,7 @@ package httpbakery
 import (
 	"net/http"
 
-	"github.com/juju/utils/jsonhttp"
+	"github.com/juju/httprequest"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v1"
 )
@@ -27,9 +27,9 @@ const (
 )
 
 var (
-	handleJSON   = jsonhttp.HandleJSON(ErrorToResponse)
-	handleErrors = jsonhttp.HandleErrors(ErrorToResponse)
-	writeError   = jsonhttp.WriteError(ErrorToResponse)
+	errorMapper httprequest.ErrorMapper = ErrorToResponse
+	handleJSON                          = errorMapper.HandleJSON
+	writeError                          = errorMapper.WriteError
 )
 
 // Error holds the type of a response from an httpbakery HTTP request,
