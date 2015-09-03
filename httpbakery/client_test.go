@@ -1,6 +1,8 @@
 package httpbakery_test
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -54,6 +56,42 @@ func (s *ClientSuite) TestSingleServiceFirstParty(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	client := clientRequestWithCookies(c, ts.URL, macaroon.Slice{serverMacaroon})
 	// Somehow the client has accquired the macaroon. Add it to the cookiejar in our request.
+
+	// Make the request to the server.
+	resp, err := client.Do(req)
+	c.Assert(err, gc.IsNil)
+	defer resp.Body.Close()
+	assertResponse(c, resp, "done")
+}
+
+func (s *ClientSuite) TestSingleServiceFirstPartyWithHeader(c *gc.C) {
+	// Create a target service.
+	svc := newService("loc", nil)
+	// No discharge required, so pass "unknown" for the third party
+	// caveat discharger location so we know that we don't try
+	// to discharge the location.
+	ts := httptest.NewServer(serverHandler(svc, "unknown", nil))
+	defer ts.Close()
+
+	// Mint a macaroon for the target service.
+	serverMacaroon, err := svc.NewMacaroon("", nil, nil)
+	c.Assert(err, gc.IsNil)
+	c.Assert(serverMacaroon.Location(), gc.Equals, "loc")
+	err = svc.AddCaveat(serverMacaroon, checkers.Caveat{
+		Condition: "is something",
+	})
+	c.Assert(err, gc.IsNil)
+
+	// Serialize the macaroon slice.
+	data, err := json.Marshal(macaroon.Slice{serverMacaroon})
+	c.Assert(err, gc.IsNil)
+	value := base64.StdEncoding.EncodeToString(data)
+
+	// Create a client request.
+	req, err := http.NewRequest("GET", ts.URL, nil)
+	c.Assert(err, gc.IsNil)
+	req.Header.Set(httpbakery.MacaroonsHeader, value)
+	client := httpbakery.NewHTTPClient()
 
 	// Make the request to the server.
 	resp, err := client.Do(req)

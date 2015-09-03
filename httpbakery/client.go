@@ -485,28 +485,49 @@ func postFormJSON(url string, vals url.Values, resp interface{}, postForm func(u
 	return nil
 }
 
-// RequestMacaroons returns any collections of macaroons from the cookies
-// found in the request. By convention, each slice will contain a primary
-// macaroon followed by its discharges.
+// MacaroonsHeader is the key of the HTTP header that can be used to provide a
+// macaroon for request authorization.
+const MacaroonsHeader = "Macaroons"
+
+// RequestMacaroons returns any collections of macaroons from the header and
+// cookies found in the request. By convention, each slice will contain a
+// primary macaroon followed by its discharges.
 func RequestMacaroons(req *http.Request) []macaroon.Slice {
 	var mss []macaroon.Slice
+	for _, h := range req.Header[MacaroonsHeader] {
+		ms, err := decodeMacaroonSlice(h)
+		if err != nil {
+			logger.Errorf("cannot retrieve macaroons from header: %v", err)
+		} else {
+			mss = append(mss, ms)
+		}
+	}
 	for _, cookie := range req.Cookies() {
 		if !strings.HasPrefix(cookie.Name, "macaroon-") {
 			continue
 		}
-		data, err := base64.StdEncoding.DecodeString(cookie.Value)
+		ms, err := decodeMacaroonSlice(cookie.Value)
 		if err != nil {
-			logger.Errorf("cannot base64-decode cookie; ignoring: %v", err)
-			continue
-		}
-		var ms macaroon.Slice
-		if err := json.Unmarshal(data, &ms); err != nil {
-			logger.Errorf("cannot unmarshal macaroons from cookie; ignoring: %v", err)
+			logger.Errorf("cannot retrieve macaroons from cookie: %v", err)
 			continue
 		}
 		mss = append(mss, ms)
 	}
 	return mss
+}
+
+// decodeMacaroonSlice decodes a base64-JSON-encoded slice of macaroons from
+// the given string.
+func decodeMacaroonSlice(value string) (macaroon.Slice, error) {
+	data, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		return nil, errgo.NoteMask(err, "cannot base64-decode macaroons")
+	}
+	var ms macaroon.Slice
+	if err := json.Unmarshal(data, &ms); err != nil {
+		return nil, errgo.NoteMask(err, "cannot unmarshal macaroons")
+	}
+	return ms, nil
 }
 
 func isVerificationError(err error) bool {
