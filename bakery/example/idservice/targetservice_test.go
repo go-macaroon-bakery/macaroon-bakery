@@ -51,7 +51,7 @@ func targetService(endpoint, authEndpoint string, authPK *bakery.PublicKey) (htt
 func (srv *targetServiceHandler) serveGold(w http.ResponseWriter, req *http.Request) {
 	checker := srv.checkers(req, "gold")
 	if _, err := httpbakery.CheckRequest(srv.svc, req, nil, checker); err != nil {
-		srv.writeError(w, "gold", err)
+		srv.writeError(w, req, "gold", err)
 		return
 	}
 	fmt.Fprintf(w, "all is golden")
@@ -60,7 +60,7 @@ func (srv *targetServiceHandler) serveGold(w http.ResponseWriter, req *http.Requ
 func (srv *targetServiceHandler) serveSilver(w http.ResponseWriter, req *http.Request) {
 	checker := srv.checkers(req, "silver")
 	if _, err := httpbakery.CheckRequest(srv.svc, req, nil, checker); err != nil {
-		srv.writeError(w, "silver", err)
+		srv.writeError(w, req, "silver", err)
 		return
 	}
 	fmt.Fprintf(w, "every cloud has a silver lining")
@@ -79,14 +79,14 @@ func (svc *targetServiceHandler) checkers(req *http.Request, operation string) c
 	}
 }
 
-// writeError writes an error to w. If the error was generated because
-// of a required macaroon that the client does not have, we mint a
-// macaroon that, when discharged, will grant the client the
-// right to execute the given operation.
+// writeError writes an error to w in response to req. If the error was
+// generated because of a required macaroon that the client does not
+// have, we mint a macaroon that, when discharged, will grant the client
+// the right to execute the given operation.
 //
 // The logic in this function is crucial to the security of the service
 // - it must determine for a given operation what caveats to attach.
-func (srv *targetServiceHandler) writeError(w http.ResponseWriter, operation string, verr error) {
+func (srv *targetServiceHandler) writeError(w http.ResponseWriter, req *http.Request, operation string, verr error) {
 	fail := func(code int, msg string, args ...interface{}) {
 		if code == http.StatusInternalServerError {
 			msg = "internal error: " + msg
@@ -113,5 +113,5 @@ func (srv *targetServiceHandler) writeError(w http.ResponseWriter, operation str
 		fail(http.StatusInternalServerError, "cannot mint macaroon: %v", err)
 		return
 	}
-	httpbakery.WriteDischargeRequiredError(w, m, "", verr)
+	httpbakery.WriteDischargeRequiredErrorForRequest(w, m, "", verr, req)
 }

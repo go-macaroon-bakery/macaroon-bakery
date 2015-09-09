@@ -2,6 +2,7 @@ package httpbakery
 
 import (
 	"net/http"
+	"strconv"
 
 	"github.com/juju/httprequest"
 	"gopkg.in/errgo.v1"
@@ -38,7 +39,22 @@ type Error struct {
 	Code    ErrorCode  `json:",omitempty"`
 	Message string     `json:",omitempty"`
 	Info    *ErrorInfo `json:",omitempty"`
+
+	// version holds the protocol version that was used
+	// to create the error (see NewDischargeRequiredErrorWithVersion).
+	version version
 }
+
+// version represents a version of the bakery protocol. It is jused
+// to determine the kind of response to send when there is a
+// discharge-required error.
+type version int
+
+const (
+	version0      version = 0
+	version1      version = 1
+	latestVersion         = version1
+)
 
 // ErrorInfo holds additional information provided
 // by an error.
@@ -91,14 +107,30 @@ func (e *Error) ErrorInfo() *ErrorInfo {
 // they encounter an error with a *bakery.Error cause.
 func ErrorToResponse(err error) (int, interface{}) {
 	errorBody := errorResponseBody(err)
+	var body interface{} = errorBody
 	status := http.StatusInternalServerError
 	switch errorBody.Code {
 	case ErrBadRequest:
 		status = http.StatusBadRequest
 	case ErrDischargeRequired, ErrInteractionRequired:
-		status = http.StatusProxyAuthRequired
+		switch errorBody.version {
+		case version0:
+			status = http.StatusProxyAuthRequired
+		case version1:
+			status = http.StatusUnauthorized
+			body = httprequest.CustomHeader{
+				Body:          body,
+				SetHeaderFunc: setAuthenticateHeader,
+			}
+		default:
+			panic("out of range version number")
+		}
 	}
-	return status, errorBody
+	return status, body
+}
+
+func setAuthenticateHeader(h http.Header) {
+	h.Set("WWW-Authenticate", "Macaroon")
 }
 
 type errorInfoer interface {
@@ -112,17 +144,25 @@ type errorCoder interface {
 // errorResponse returns an appropriate error
 // response for the provided error.
 func errorResponseBody(err error) *Error {
-	errResp := &Error{
-		Message: err.Error(),
-	}
+	var errResp Error
 	cause := errgo.Cause(err)
+	if cause, ok := cause.(*Error); ok {
+		// It's an Error already. Preserve the wrapped
+		// error message but copy everything else.
+		errResp = *cause
+		errResp.Message = err.Error()
+		return &errResp
+	}
+	// It's not an error. Preserve as much info as
+	// we can find.
+	errResp.Message = err.Error()
 	if coder, ok := cause.(errorCoder); ok {
 		errResp.Code = coder.ErrorCode()
 	}
 	if infoer, ok := cause.(errorInfoer); ok {
 		errResp.Info = infoer.ErrorInfo()
 	}
-	return errResp
+	return &errResp
 }
 
 func badRequestErrorf(f string, a ...interface{}) error {
@@ -137,26 +177,76 @@ func WriteDischargeRequiredError(w http.ResponseWriter, m *macaroon.Macaroon, pa
 	writeError(w, NewDischargeRequiredError(m, path, originalErr))
 }
 
-// NewDischargeRequiredError returns an error of type *Error
-// that reports the given original error and includes the
-// given macaroon.
+// WriteDischargeRequiredErrorForRequest is like NewDischargeRequiredError
+// but uses the given request to determine the protocol version appropriate
+// for the client.
 //
-// The returned macaroon will be
-// declared as valid for the given URL path and may
-// be relative. When the client stores the discharged
-// macaroon as a cookie this will be the path associated
-// with the cookie. See ErrorInfo.MacaroonPath for
-// more information.
+// This function should always be used in preference to
+// WriteDischargeRequiredError, because it enables
+// in-browser macaroon discharge.
+func WriteDischargeRequiredErrorForRequest(w http.ResponseWriter, m *macaroon.Macaroon, path string, originalErr error, req *http.Request) {
+	writeError(w, NewDischargeRequiredErrorForRequest(m, path, originalErr, req))
+}
+
+// NewDischargeRequiredError returns an error of type *Error that
+// reports the given original error and includes the given macaroon.
+//
+// The returned macaroon will be declared as valid for the given URL
+// path and may be relative. When the client stores the discharged
+// macaroon as a cookie this will be the path associated with the
+// cookie. See ErrorInfo.MacaroonPath for more information.
 func NewDischargeRequiredError(m *macaroon.Macaroon, path string, originalErr error) error {
+	return newDischargeRequiredErrorWithVersion(m, path, originalErr, version0)
+}
+
+// NewDischargeRequiredErrorForRequest is like NewDischargeRequiredError
+// except that it determines the client's bakery protocol version from
+// the request and returns an error response appropriate for that.
+//
+// This function should always be used in preference to
+// NewDischargeRequiredError, because it enables in-browser macaroon
+// discharge.
+func NewDischargeRequiredErrorForRequest(m *macaroon.Macaroon, path string, originalErr error, req *http.Request) error {
+	v := versionFromRequest(req)
+	return newDischargeRequiredErrorWithVersion(m, path, originalErr, v)
+}
+
+// newDischargeRequiredErrorWithVersion is the internal version of NewDischargeRequiredErrorForRequest.
+func newDischargeRequiredErrorWithVersion(m *macaroon.Macaroon, path string, originalErr error, v version) error {
 	if originalErr == nil {
 		originalErr = ErrDischargeRequired
 	}
 	return &Error{
 		Message: originalErr.Error(),
+		version: v,
 		Code:    ErrDischargeRequired,
 		Info: &ErrorInfo{
 			Macaroon:     m,
 			MacaroonPath: path,
 		},
 	}
+}
+
+// BakeryProtocolHeader is the header that HTTP clients should set
+// to determine the bakery protocol version. If it is 0 or missing,
+// a discharge-required error response will be returned with HTTP status 407;
+// if it is 1, the response will have status 401 with the WWW-Authenticate
+// header set to "Macaroon".
+const BakeryProtocolHeader = "Bakery-Protocol-Version"
+
+// versionFromRequest determines the bakery protocol version from a client
+// request. If the protocol cannot be determined, or is invalid,
+// the original version of the protocol is used.
+func versionFromRequest(req *http.Request) version {
+	vs := req.Header.Get(BakeryProtocolHeader)
+	if vs == "" {
+		// No header - use backward compatibility mode.
+		return version0
+	}
+	v, err := strconv.Atoi(vs)
+	if err != nil || version(v) < 0 || version(v) > latestVersion {
+		// Badly formed header - use backward compatibility mode.
+		return version0
+	}
+	return version(v)
 }

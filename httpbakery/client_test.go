@@ -171,7 +171,7 @@ func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
 	key1, h1 := newHTTPDischarger(locator, func(svc *bakery.Service, req *http.Request, cavId, cav string) ([]checkers.Caveat, error) {
 		called[1]++
 		if _, err := httpbakery.CheckRequest(svc, req, nil, checkers.New()); err != nil {
-			return nil, newDischargeRequiredError(svc, srv2.URL, nil, err)
+			return nil, newDischargeRequiredError(svc, srv2.URL, nil, err, req)
 		}
 		if cav != "is-ok" {
 			return nil, fmt.Errorf("unrecognized caveat at srv1")
@@ -194,6 +194,35 @@ func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
 	assertResponse(c, resp, "done")
 
 	c.Assert(called, gc.DeepEquals, [3]int{0, 2, 1})
+}
+
+func (s *ClientSuite) TestVersion0Generates407Status(c *gc.C) {
+	m, err := macaroon.New([]byte("root key"), "id", "location")
+	c.Assert(err, gc.IsNil)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		httpbakery.WriteDischargeRequiredErrorForRequest(w, m, "", errgo.New("foo"), req)
+	}))
+	defer srv.Close()
+	resp, err := http.Get(srv.URL)
+	c.Assert(err, gc.IsNil)
+	c.Assert(resp.StatusCode, gc.Equals, http.StatusProxyAuthRequired)
+}
+
+func (s *ClientSuite) TestVersion1Generates401Status(c *gc.C) {
+	m, err := macaroon.New([]byte("root key"), "id", "location")
+	c.Assert(err, gc.IsNil)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		httpbakery.WriteDischargeRequiredErrorForRequest(w, m, "", errgo.New("foo"), req)
+	}))
+	defer srv.Close()
+
+	req, err := http.NewRequest("GET", srv.URL, nil)
+	c.Assert(err, gc.IsNil)
+	req.Header.Set(httpbakery.BakeryProtocolHeader, "1")
+	resp, err := http.DefaultClient.Do(req)
+	c.Assert(err, gc.IsNil)
+	c.Assert(resp.StatusCode, gc.Equals, http.StatusUnauthorized)
+	c.Assert(resp.Header.Get("WWW-Authenticate"), gc.Equals, "Macaroon")
 }
 
 func newHTTPDischarger(locator bakery.PublicKeyLocator, checker func(svc *bakery.Service, req *http.Request, cavId, cav string) ([]checkers.Caveat, error)) (*bakery.PublicKey, http.Handler) {
@@ -510,7 +539,7 @@ func serverHandler(service *bakery.Service, authLocation string, cookiePath func
 	handleErrors := httprequest.ErrorMapper(httpbakery.ErrorToResponse).HandleErrors
 	h := handleErrors(func(p httprequest.Params) error {
 		if _, checkErr := httpbakery.CheckRequest(service, p.Request, nil, isChecker("something")); checkErr != nil {
-			return newDischargeRequiredError(service, authLocation, cookiePath, checkErr)
+			return newDischargeRequiredError(service, authLocation, cookiePath, checkErr, p.Request)
 		}
 		fmt.Fprintf(p.Response, "done")
 		data, err := ioutil.ReadAll(p.Request.Body)
@@ -527,15 +556,17 @@ func serverHandler(service *bakery.Service, authLocation string, cookiePath func
 	})
 }
 
-// newDischargeRequiredError returns a discharge-required error
-// holding a newly minted macaroon
-// referencing the original check error checkErr.
-// If authLocation is non-empty, the issued macaroon
-// will contain an "is-ok" third party caveat addressed to that location.
+// newDischargeRequiredError returns a discharge-required error holding
+// a newly minted macaroon referencing the original check error
+// checkErr. If authLocation is non-empty, the issued macaroon will
+// contain an "is-ok" third party caveat addressed to that location.
 //
-// If cookiePath is not nil, it will be called to find the cookie path to
-// put in the response.
-func newDischargeRequiredError(svc *bakery.Service, authLocation string, cookiePath func() string, checkErr error) error {
+// If cookiePath is not nil, it will be called to find the cookie path
+// to put in the response.
+//
+// If req is non-nil, it will be used to pass to NewDischargeRequiredErrorForRequest,
+// otherwise the old protocol (triggered by NewDischargeRequiredError) will be used.
+func newDischargeRequiredError(svc *bakery.Service, authLocation string, cookiePath func() string, checkErr error, req *http.Request) error {
 	var caveats []checkers.Caveat
 	if authLocation != "" {
 		caveats = []checkers.Caveat{{
@@ -550,6 +581,9 @@ func newDischargeRequiredError(svc *bakery.Service, authLocation string, cookieP
 	path := ""
 	if cookiePath != nil {
 		path = cookiePath()
+	}
+	if req != nil {
+		return httpbakery.NewDischargeRequiredErrorForRequest(m, path, checkErr, req)
 	}
 	return httpbakery.NewDischargeRequiredError(m, path, checkErr)
 }

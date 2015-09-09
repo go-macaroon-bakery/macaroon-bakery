@@ -124,26 +124,24 @@ func NewClient() *Client {
 	}
 }
 
-// Do sends the given HTTP request and returns its response.
-// If the request fails with a discharge-required error,
-// any required discharge macaroons will be acquired,
-// and the request will be repeated with those attached.
+// Do sends the given HTTP request and returns its response. If the
+// request fails with a discharge-required error, any required discharge
+// macaroons will be acquired, and the request will be repeated with
+// those attached. Do may add headers to req.Header.
 //
-// If the required discharges were refused by a third
-// party, an error with a *DischargeError cause will be returned.
+// If the required discharges were refused by a third party, an error
+// with a *DischargeError cause will be returned.
 //
-// Note that because the request may be retried, no
-// body may be provided in the request, otherwise
-// the contents will be lost when retrying. For requests
-// with a body (for example PUT or POST methods),
-// use DoWithBody instead.
+// Note that because the request may be retried, no body may be provided
+// in the request, otherwise the contents will be lost when retrying.
+// For requests with a body (for example PUT or POST methods), use
+// DoWithBody instead.
 //
-// If interaction is required by the user, the visitWebPage
-// function is called with a URL to be opened in a
-// web browser. If visitWebPage returns an error,
-// an error with a *InteractionError cause will be returned.
-// See OpenWebBrowser for a possible implementation
-// of visitWebPage.
+// If interaction is required by the user, the visitWebPage function is
+// called with a URL to be opened in a web browser. If visitWebPage
+// returns an error, an error with a *InteractionError cause will be
+// returned. See OpenWebBrowser for a possible implementation of
+// visitWebPage.
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	if req.Body != nil {
 		return nil, fmt.Errorf("body unexpectedly provided in request - use DoWithBody")
@@ -209,10 +207,11 @@ func relativeURL(base, new string) (*url.URL, error) {
 	return baseURL.ResolveReference(newURL), nil
 }
 
-// DoWithBody is like Do except that the given body
-// is used for the body of the HTTP request,
-// and reset to its start by seeking if the request is
-// retried. It is an error if req.Body is non-zero.
+// DoWithBody is like Do except that the given body is used for the body
+// of the HTTP request, and reset to its start by seeking if the request
+// is retried. It is an error if req.Body is non-zero.
+//
+// Do may add headers to req.Header.
 func (c *Client) DoWithBody(req *http.Request, body io.ReadSeeker) (*http.Response, error) {
 	logger.Debugf("client do %s %s {", req.Method, req.URL)
 	resp, err := c.doWithBody(req, body)
@@ -230,11 +229,16 @@ func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker) (*http.Respon
 	if err := c.setRequestBody(req, body); err != nil {
 		return nil, errgo.Mask(err)
 	}
+	req.Header.Set(BakeryProtocolHeader, fmt.Sprint(latestVersion))
 	httpResp, err := c.Client.Do(req)
 	if err != nil {
 		return nil, errgo.Mask(err, errgo.Any)
 	}
-	if httpResp.StatusCode != http.StatusProxyAuthRequired {
+	if httpResp.StatusCode != http.StatusProxyAuthRequired && httpResp.StatusCode != http.StatusUnauthorized {
+		return httpResp, nil
+	}
+	// Check for the new protocol discharge error.
+	if httpResp.StatusCode == http.StatusUnauthorized && httpResp.Header.Get("WWW-Authenticate") != "Macaroon" {
 		return httpResp, nil
 	}
 	if httpResp.Header.Get("Content-Type") != "application/json" {
