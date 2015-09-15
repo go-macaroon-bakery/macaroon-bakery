@@ -35,6 +35,11 @@ var (
 
 // Error holds the type of a response from an httpbakery HTTP request,
 // marshaled as JSON.
+//
+// Note: Do not construct Error values with ErrDischargeRequired or
+// ErrInteractionRequired codes directly - use the
+// NewDischargeRequiredErrorForRequest or NewInteractionRequiredError
+// functions instead.
 type Error struct {
 	Code    ErrorCode  `json:",omitempty"`
 	Message string     `json:",omitempty"`
@@ -197,6 +202,30 @@ func WriteDischargeRequiredErrorForRequest(w http.ResponseWriter, m *macaroon.Ma
 // cookie. See ErrorInfo.MacaroonPath for more information.
 func NewDischargeRequiredError(m *macaroon.Macaroon, path string, originalErr error) error {
 	return newDischargeRequiredErrorWithVersion(m, path, originalErr, version0)
+}
+
+// NewInteractionRequiredError returns an error of type *Error
+// that requests an interaction from the client in response
+// to the given request. The originalErr value describes the original
+// error - if it is nil, a default message will be provided.
+//
+// See Error.ErrorInfo for more details of visitURL and waitURL.
+//
+// This function should be used in preference to creating the Error value
+// directly, as it sets the bakery protocol version correctly in the error.
+func NewInteractionRequiredError(visitURL, waitURL string, originalErr error, req *http.Request) error {
+	if originalErr == nil {
+		originalErr = ErrInteractionRequired
+	}
+	return &Error{
+		Message: originalErr.Error(),
+		version: versionFromRequest(req),
+		Code:    ErrInteractionRequired,
+		Info: &ErrorInfo{
+			VisitURL: visitURL,
+			WaitURL:  waitURL,
+		},
+	}
 }
 
 // NewDischargeRequiredErrorForRequest is like NewDischargeRequiredError
