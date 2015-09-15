@@ -228,7 +228,7 @@ func (h *handler) newContext(req *http.Request, operation string) *context {
 // needLogin returns an error suitable for returning
 // from a discharge request that can only be satisfied
 // if the user logs in.
-func (h *handler) needLogin(cavId string, caveat string, why string) error {
+func (h *handler) needLogin(cavId string, caveat string, why error, req *http.Request) error {
 	// TODO(rog) If the user is already logged in (username != ""),
 	// we should perhaps just return an error here.
 	log.Printf("login required")
@@ -240,14 +240,9 @@ func (h *handler) needLogin(cavId string, caveat string, why string) error {
 		return fmt.Errorf("cannot make rendezvous: %v", err)
 	}
 	log.Printf("returning redirect error")
-	return &httpbakery.Error{
-		Message: why,
-		Code:    httpbakery.ErrInteractionRequired,
-		Info: &httpbakery.ErrorInfo{
-			VisitURL: "/login?waitid=" + waitId,
-			WaitURL:  "/wait?waitid=" + waitId,
-		},
-	}
+	visitURL := "/login?waitid=" + waitId
+	waitURL := "/wait?waitid=" + waitId
+	return httpbakery.NewInteractionRequiredError(visitURL, waitURL, why, req)
 }
 
 // waitHandler serves an HTTP endpoint that waits until a macaroon
@@ -390,7 +385,7 @@ func (ctxt *context) CheckThirdPartyCaveat(cavId, cav string) ([]checkers.Caveat
 		if checkErr == nil {
 			return ctxt.firstPartyCaveats(), nil
 		}
-		return nil, h.needLogin(cavId, cav, checkErr.Error())
+		return nil, h.needLogin(cavId, cav, checkErr, ctxt.req)
 	case "member-of-group":
 		// The third-party caveat is asking if the currently logged in
 		// user is a member of a particular group.
@@ -398,7 +393,7 @@ func (ctxt *context) CheckThirdPartyCaveat(cavId, cav string) ([]checkers.Caveat
 		// the username cookie (which doesn't provide any power, but
 		// indicates which user name to check)
 		if ctxt.declaredUser == "" {
-			return nil, h.needLogin(cavId, cav, "not logged in")
+			return nil, h.needLogin(cavId, cav, errgo.New("not logged in"), ctxt.req)
 		}
 		if err := ctxt.canSpeakFor(ctxt.declaredUser); err != nil {
 			return nil, errgo.Notef(err, "cannot speak for declared user %q", ctxt.declaredUser)
