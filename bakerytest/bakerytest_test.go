@@ -1,10 +1,13 @@
 package bakerytest_test
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sync"
 
+	"github.com/juju/httprequest"
 	gc "gopkg.in/check.v1"
 
 	"gopkg.in/macaroon-bakery.v1/bakery"
@@ -133,4 +136,101 @@ func (s *suite) TestConcurrentDischargers(c *gc.C) {
 	}
 	wg.Wait()
 	c.Assert(http.DefaultTransport.(*http.Transport).TLSClientConfig.InsecureSkipVerify, gc.Equals, false)
+}
+
+func (s *suite) TestInteractiveDischarger(c *gc.C) {
+	var d *bakerytest.InteractiveDischarger
+	d = bakerytest.NewInteractiveDischarger(nil, http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			d.FinishInteraction(w, r, nil)
+		},
+	))
+	defer d.Close()
+
+	svc, err := bakery.NewService(bakery.NewServiceParams{
+		Location: "here",
+		Locator:  d,
+	})
+	c.Assert(err, gc.IsNil)
+	m, err := svc.NewMacaroon("", nil, []checkers.Caveat{{
+		Location:  d.Location(),
+		Condition: "something",
+	}})
+	c.Assert(err, gc.IsNil)
+	client := httpbakery.NewClient()
+	client.VisitWebPage = func(u *url.URL) error {
+		var c httprequest.Client
+		return c.Get(u.String(), nil)
+	}
+	ms, err := client.DischargeAll(m)
+	c.Assert(err, gc.IsNil)
+	c.Assert(ms, gc.HasLen, 2)
+
+	err = svc.Check(ms, failChecker)
+	c.Assert(err, gc.IsNil)
+}
+
+func (s *suite) TestLoginDischargerError(c *gc.C) {
+	var d *bakerytest.InteractiveDischarger
+	d = bakerytest.NewInteractiveDischarger(nil, http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			d.FinishInteraction(w, r, errors.New("test error"))
+		},
+	))
+	defer d.Close()
+
+	svc, err := bakery.NewService(bakery.NewServiceParams{
+		Location: "here",
+		Locator:  d,
+	})
+	c.Assert(err, gc.IsNil)
+	m, err := svc.NewMacaroon("", nil, []checkers.Caveat{{
+		Location:  d.Location(),
+		Condition: "something",
+	}})
+	c.Assert(err, gc.IsNil)
+	client := httpbakery.NewClient()
+	client.VisitWebPage = func(u *url.URL) error {
+		c.Logf("visiting %s", u)
+		var c httprequest.Client
+		return c.Get(u.String(), nil)
+	}
+	_, err = client.DischargeAll(m)
+	c.Assert(err, gc.ErrorMatches, `cannot get discharge from ".*": failed to acquire macaroon after waiting: third party refused discharge: test error`)
+}
+
+func (s *suite) TestInteractiveDischargerURL(c *gc.C) {
+	var d *bakerytest.InteractiveDischarger
+	d = bakerytest.NewInteractiveDischarger(nil, http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, d.URL("/redirect", r), http.StatusFound)
+		},
+	))
+	defer d.Close()
+	d.Mux.Handle("/redirect", http.HandlerFunc(
+		func(w http.ResponseWriter, r *http.Request) {
+			d.FinishInteraction(w, r, nil)
+		},
+	))
+	svc, err := bakery.NewService(bakery.NewServiceParams{
+		Location: "here",
+		Locator:  d,
+	})
+	c.Assert(err, gc.IsNil)
+	m, err := svc.NewMacaroon("", nil, []checkers.Caveat{{
+		Location:  d.Location(),
+		Condition: "something",
+	}})
+	c.Assert(err, gc.IsNil)
+	client := httpbakery.NewClient()
+	client.VisitWebPage = func(u *url.URL) error {
+		var c httprequest.Client
+		return c.Get(u.String(), nil)
+	}
+	ms, err := client.DischargeAll(m)
+	c.Assert(err, gc.IsNil)
+	c.Assert(ms, gc.HasLen, 2)
+
+	err = svc.Check(ms, failChecker)
+	c.Assert(err, gc.IsNil)
 }

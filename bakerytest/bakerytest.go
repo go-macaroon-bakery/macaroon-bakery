@@ -4,10 +4,14 @@ package bakerytest
 
 import (
 	"crypto/tls"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"time"
 
+	"github.com/juju/httprequest"
+	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon-bakery.v1/bakery"
 	"gopkg.in/macaroon-bakery.v1/bakery/checkers"
 	"gopkg.in/macaroon-bakery.v1/httpbakery"
@@ -126,4 +130,175 @@ func (d *Discharger) PublicKeyForLocation(loc string) (*bakery.PublicKey, error)
 		return d.Service.PublicKey(), nil
 	}
 	return nil, bakery.ErrNotFound
+}
+
+type discharge struct {
+	cavId string
+	c     chan error
+}
+
+// InteractiveDischarger is a Discharger that always requires interraction to
+// complete the discharge.
+type InteractiveDischarger struct {
+	Discharger
+	Mux *http.ServeMux
+
+	// mu protects the following fields.
+	mu      sync.Mutex
+	waiting map[string]discharge
+	id      int
+}
+
+// NewInteractiveDischarger returns a new InteractiveDischarger. The
+// InteractiveDischarger will serve the following endpoints by default:
+//
+//     /discharge - always causes interaction to be required.
+//     /publickey - gets the bakery public key.
+//     /visit - delegates to visitHandler.
+//     /wait - blocks waiting for the interaction to complete.
+//
+// Additional endpoints may be added to Mux as necessary.
+//
+// The /discharge endpoint generates a error with the code
+// httpbakery.ErrInterractionRequired. The visitURL and waitURL will
+// point to the /visit and /wait endpoints of the InteractiveDischarger
+// respectively. These URLs will also carry context information in query
+// parameters, any handlers should be careful to preserve this context
+// information between calls. The easiest way to do this is to always use
+// the URL method when generating new URLs.
+//
+// The /visit endpoint is handled by the provided visitHandler. This
+// handler performs the required interactions and should result in the
+// FinishInteraction method being called. This handler may process the
+// interaction in a number of steps, possibly using additional handlers,
+// so long as FinishInteraction is called when no further interaction is
+// required.
+//
+// The /wait endpoint blocks until FinishInteraction has been called by
+// the corresponding /visit endpoint, or another endpoint triggered by
+// visitHandler.
+//
+// If locator is non-nil, it will be used to find public keys
+// for any third party caveats returned by the checker.
+//
+// Calling this function has the side-effect of setting
+// InsecureSkipVerify in http.DefaultTransport.TLSClientConfig
+// until all the dischargers are closed.
+//
+// The returned InteractiveDischarger must be closed when finished with.
+func NewInteractiveDischarger(locator bakery.PublicKeyLocator, visitHandler http.Handler) *InteractiveDischarger {
+	d := &InteractiveDischarger{
+		Mux:     http.NewServeMux(),
+		waiting: map[string]discharge{},
+	}
+	d.Mux.Handle("/visit", visitHandler)
+	d.Mux.Handle("/wait", http.HandlerFunc(d.wait))
+	server := httptest.NewTLSServer(d.Mux)
+	svc, err := bakery.NewService(bakery.NewServiceParams{
+		Location: server.URL,
+		Locator:  locator,
+	})
+	if err != nil {
+		panic(err)
+	}
+	httpbakery.AddDischargeHandler(d.Mux, "/", svc, d.checker)
+	startSkipVerify()
+	d.Discharger = Discharger{
+		Service: svc,
+		server:  server,
+	}
+	return d
+}
+
+func (d *InteractiveDischarger) checker(req *http.Request, cavId, cav string) ([]checkers.Caveat, error) {
+	d.mu.Lock()
+	id := fmt.Sprintf("%d", d.id)
+	d.id++
+	d.waiting[id] = discharge{cavId, make(chan error, 1)}
+	d.mu.Unlock()
+	visitURL := fmt.Sprintf("%s/visit?waitid=%s", d.Discharger.server.URL, id)
+	waitURL := fmt.Sprintf("%s/wait?waitid=%s", d.Discharger.server.URL, id)
+	return nil, httpbakery.NewInteractionRequiredError(visitURL, waitURL, nil, req)
+}
+
+func (d *InteractiveDischarger) wait(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	d.mu.Lock()
+	discharge, ok := d.waiting[r.Form.Get("waitid")]
+	d.mu.Unlock()
+	if !ok {
+		code, body := httpbakery.ErrorToResponse(errgo.Newf("invalid waitid %q", r.Form.Get("waitid")))
+		httprequest.WriteJSON(w, code, body)
+		return
+	}
+	defer func() {
+		d.mu.Lock()
+		delete(d.waiting, r.Form.Get("waitid"))
+		d.mu.Unlock()
+	}()
+	var err error
+	select {
+	case e := <-discharge.c:
+		err = e
+	case <-time.After(5 * time.Minute):
+		code, body := httpbakery.ErrorToResponse(errgo.New("timeout waiting for interaction to complete"))
+		httprequest.WriteJSON(w, code, body)
+		return
+	}
+	if err != nil {
+		code, body := httpbakery.ErrorToResponse(err)
+		httprequest.WriteJSON(w, code, body)
+		return
+	}
+	m, err := d.Service.Discharge(
+		bakery.ThirdPartyCheckerFunc(
+			func(cavId, caveat string) ([]checkers.Caveat, error) {
+				return nil, nil
+			},
+		),
+		discharge.cavId,
+	)
+	if err != nil {
+		code, body := httpbakery.ErrorToResponse(err)
+		httprequest.WriteJSON(w, code, body)
+		return
+	}
+	httprequest.WriteJSON(
+		w,
+		http.StatusOK,
+		httpbakery.WaitResponse{
+			Macaroon: m,
+		},
+	)
+}
+
+// FinishInteraction signals to the InteractiveDischarger that a
+// particular interaction is complete. It causes any waiting requests to
+// return. If err is not nil then it will be returned by the
+// corresponding /wait request.
+func (d *InteractiveDischarger) FinishInteraction(w http.ResponseWriter, r *http.Request, err error) {
+	r.ParseForm()
+	d.mu.Lock()
+	discharge, ok := d.waiting[r.Form.Get("waitid")]
+	d.mu.Unlock()
+	if !ok {
+		code, body := httpbakery.ErrorToResponse(errgo.Newf("invalid waitid %q", r.Form.Get("waitid")))
+		httprequest.WriteJSON(w, code, body)
+		return
+	}
+	select {
+	case discharge.c <- err:
+	default:
+		panic("cannot finish interaction " + r.Form.Get("waitid"))
+	}
+	return
+}
+
+// URL returns a URL addressed to the given path in the discharger that
+// contains any discharger context information found in the given
+// request. Use this to generate intermediate URLs before calling
+// FinishInteraction.
+func (d *InteractiveDischarger) URL(path string, r *http.Request) string {
+	r.ParseForm()
+	return d.Location() + path + "?waitid=" + r.Form.Get("waitid")
 }
