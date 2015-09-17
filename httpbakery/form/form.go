@@ -99,15 +99,15 @@ type SchemaResponse struct {
 	Schema environschema.Fields `json:"schema"`
 }
 
-// LoginRequest is a request to perform a login using the provided details.
+// LoginRequest is a request to perform a login using the provided form.
 type LoginRequest struct {
 	httprequest.Route `httprequest:"POST"`
-	Login             LoginWrapper `httprequest:",body"`
+	Body              LoginBody `httprequest:",body"`
 }
 
-// Login holds the body of a login request.
-type LoginWrapper struct {
-	Login map[string]interface{} `json:"login"`
+// LoginBody holds the body of a form login request.
+type LoginBody struct {
+	Form map[string]interface{} `json:"form"`
 }
 
 // visitWebPage performs the actual visit request. It attempts to
@@ -140,8 +140,8 @@ func (v webPageVisitor) visitWebPage(u *url.URL) error {
 		return errgo.NoteMask(err, "cannot handle form", errgo.Any)
 	}
 	lr := LoginRequest{
-		Login: LoginWrapper{
-			Login: form,
+		Body: LoginBody{
+			Form: form,
 		},
 	}
 	if err := v.client.CallURL(lm.Form, &lr, nil); err != nil {
