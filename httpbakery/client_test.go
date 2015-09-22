@@ -256,7 +256,6 @@ func (s *ClientSuite) TestMacaroonCookiePath(c *gc.C) {
 	assertCookieCount := func(path string, n int) {
 		u, err := url.Parse(ts.URL + path)
 		c.Assert(err, gc.IsNil)
-		c.Logf("client jar %p", client.Jar)
 		c.Assert(client.Jar.Cookies(u), gc.HasLen, n)
 	}
 	cookiePath = ""
@@ -278,11 +277,44 @@ func (s *ClientSuite) TestMacaroonCookiePath(c *gc.C) {
 	assertCookieCount("/foo/bar/", 1)
 	assertCookieCount("/foo/bar/baz", 1)
 
+	cookiePath = "/foo"
+	c.Logf("- cookie path %q", cookiePath)
+	doRequest()
+	assertCookieCount("", 0)
+	assertCookieCount("/bar", 0)
+	assertCookieCount("/foo", 1)
+	assertCookieCount("/foo/", 1)
+	assertCookieCount("/foo/bar/", 1)
+	assertCookieCount("/foo/bar/baz", 1)
+
 	cookiePath = "../"
 	c.Logf("- cookie path %q", cookiePath)
 	doRequest()
 	assertCookieCount("", 0)
 	assertCookieCount("/bar", 0)
+	assertCookieCount("/foo", 1)
+	assertCookieCount("/foo/", 1)
+	assertCookieCount("/foo/bar/", 1)
+	assertCookieCount("/foo/bar/baz", 1)
+
+	cookiePath = "../bar"
+	c.Logf("- cookie path %q", cookiePath)
+	doRequest()
+	assertCookieCount("", 0)
+	assertCookieCount("/bar", 0)
+	assertCookieCount("/foo", 0)
+	assertCookieCount("/foo/", 0)
+	assertCookieCount("/foo/bar/", 1)
+	assertCookieCount("/foo/bar/baz", 1)
+	assertCookieCount("/foo/baz", 0)
+	assertCookieCount("/foo/baz/", 0)
+	assertCookieCount("/foo/baz/bar", 0)
+
+	cookiePath = "/"
+	c.Logf("- cookie path %q", cookiePath)
+	doRequest()
+	assertCookieCount("", 1)
+	assertCookieCount("/bar", 1)
 	assertCookieCount("/foo", 1)
 	assertCookieCount("/foo/", 1)
 	assertCookieCount("/foo/bar/", 1)

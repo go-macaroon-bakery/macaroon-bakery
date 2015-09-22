@@ -261,18 +261,25 @@ func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker) (*http.Respon
 	if err != nil {
 		return nil, errgo.Mask(err, errgo.Any)
 	}
-	cookieURL := req.URL
+	var cookiePath string
 	if path := resp.Info.MacaroonPath; path != "" {
 		relURL, err := parseURLPath(path)
 		if err != nil {
 			logger.Warningf("ignoring invalid path in discharge-required response: %v", err)
 		} else {
-			cookieURL = req.URL.ResolveReference(relURL)
+			cookiePath = req.URL.ResolveReference(relURL).Path
 		}
 	}
-	if err := SetCookie(c.Jar, cookieURL, macaroons); err != nil {
-		return nil, errgo.Notef(err, "cannot set cookie")
+	if cookiePath != "/" {
+		cookiePath = strings.TrimSuffix(cookiePath, "/")
 	}
+	cookie, err := NewCookie(macaroons)
+	if err != nil {
+		return nil, errgo.Notef(err, "cannot make cookie")
+	}
+	cookie.Path = cookiePath
+	c.Jar.SetCookies(req.URL, []*http.Cookie{cookie})
+
 	if err := c.setRequestBody(req, body); err != nil {
 		return nil, errgo.Mask(err)
 	}
