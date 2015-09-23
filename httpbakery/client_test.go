@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/juju/httprequest"
 	jujutesting "github.com/juju/testing"
@@ -635,4 +636,16 @@ func (c isChecker) Check(_, arg string) error {
 
 func noCaveatChecker(_ *http.Request, cond, arg string) ([]checkers.Caveat, error) {
 	return nil, nil
+}
+
+func (s *ClientSuite) TestNewCookieExpires(c *gc.C) {
+	t := time.Now().Add(24 * time.Hour)
+	svc := newService("loc", nil)
+	m, err := svc.NewMacaroon("", nil, []checkers.Caveat{
+		checkers.TimeBeforeCaveat(t),
+	})
+	c.Assert(err, gc.IsNil)
+	cookie, err := httpbakery.NewCookie(macaroon.Slice{m})
+	c.Assert(err, gc.IsNil)
+	c.Assert(cookie.Expires.Equal(t), gc.Equals, true, gc.Commentf("obtained: %s, expected: %s", cookie.Expires, t))
 }

@@ -333,11 +333,13 @@ func NewCookie(ms macaroon.Slice) (*http.Cookie, error) {
 	if err != nil {
 		return nil, errgo.Notef(err, "cannot marshal macaroons")
 	}
-	return &http.Cookie{
+	cookie := &http.Cookie{
 		Name:  fmt.Sprintf("macaroon-%x", ms[0].Signature()),
 		Value: base64.StdEncoding.EncodeToString(data),
-		// TODO(rog) other fields, particularly expiry time.
-	}, nil
+	}
+	cookie.Expires, _ = checkers.MacaroonsExpiryTime(ms)
+	// TODO(rog) other fields.
+	return cookie, nil
 }
 
 // SetCookie sets a cookie for the given URL on the given cookie jar
