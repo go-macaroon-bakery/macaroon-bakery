@@ -564,12 +564,13 @@ func clientRequestWithCookies(c *gc.C, u string, macaroons macaroon.Slice) *http
 	return client
 }
 
+var handleErrors = httprequest.ErrorMapper(httpbakery.ErrorToResponse).HandleErrors
+
 // serverHandler returns an HTTP handler that checks macaroon authorization
 // and, if that succeeds, writes the string "done" and echos anything in the
 // request body.
 // It recognises the single first party caveat "is something".
 func serverHandler(service *bakery.Service, authLocation string, cookiePath func() string) http.Handler {
-	handleErrors := httprequest.ErrorMapper(httpbakery.ErrorToResponse).HandleErrors
 	h := handleErrors(func(p httprequest.Params) error {
 		if _, checkErr := httpbakery.CheckRequest(service, p.Request, nil, isChecker("something")); checkErr != nil {
 			return newDischargeRequiredError(service, authLocation, cookiePath, checkErr, p.Request)
@@ -648,4 +649,64 @@ func (s *ClientSuite) TestNewCookieExpires(c *gc.C) {
 	cookie, err := httpbakery.NewCookie(macaroon.Slice{m})
 	c.Assert(err, gc.IsNil)
 	c.Assert(cookie.Expires.Equal(t), gc.Equals, true, gc.Commentf("obtained: %s, expected: %s", cookie.Expires, t))
+}
+
+func (s *ClientSuite) TestDoWithBodyAndCustomError(c *gc.C) {
+	d := bakerytest.NewDischarger(nil, noCaveatChecker)
+	defer d.Close()
+
+	// Create a target service.
+	svc := newService("loc", d)
+
+	type customError struct {
+		CustomError *httpbakery.Error
+	}
+	callCount := 0
+	handler := func(w http.ResponseWriter, req *http.Request) {
+		callCount++
+		if _, checkErr := httpbakery.CheckRequest(svc, req, nil, checkers.New()); checkErr != nil {
+			httprequest.WriteJSON(w, http.StatusTeapot, customError{
+				CustomError: newDischargeRequiredError(svc, d.Location(), nil, checkErr, req).(*httpbakery.Error),
+			})
+			return
+		}
+		fmt.Fprintf(w, "hello there")
+	}
+	srv := httptest.NewServer(http.HandlerFunc(handler))
+	defer srv.Close()
+
+	req, err := http.NewRequest("GET", srv.URL, nil)
+	c.Assert(err, gc.IsNil)
+
+	// First check that a normal request fails.
+	resp, err := httpbakery.NewClient().Do(req)
+	c.Assert(err, gc.IsNil)
+	defer resp.Body.Close()
+	c.Assert(resp.StatusCode, gc.Equals, http.StatusTeapot)
+	c.Assert(callCount, gc.Equals, 1)
+	callCount = 0
+
+	// Then check that a request with a custom error getter succeeds.
+	errorGetter := func(resp *http.Response) *httpbakery.Error {
+		if resp.StatusCode != http.StatusTeapot {
+			return nil
+		}
+		data, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			panic(err)
+		}
+		var respErr customError
+		if err := json.Unmarshal(data, &respErr); err != nil {
+			panic(err)
+		}
+		return respErr.CustomError
+	}
+
+	resp, err = httpbakery.NewClient().DoWithBodyAndCustomError(req, nil, errorGetter)
+	c.Assert(err, gc.IsNil)
+
+	data, err := ioutil.ReadAll(resp.Body)
+	c.Assert(err, gc.IsNil)
+	c.Assert(string(data), gc.Equals, "hello there")
+	c.Assert(callCount, gc.Equals, 2)
 }

@@ -213,13 +213,33 @@ func relativeURL(base, new string) (*url.URL, error) {
 //
 // Do may add headers to req.Header.
 func (c *Client) DoWithBody(req *http.Request, body io.ReadSeeker) (*http.Response, error) {
+	return c.DoWithBodyAndCustomError(req, body, nil)
+}
+
+// DoWithBodyAndCustomError is like DoWithBody except it
+// allows a client to specify a custom error function, getError,
+// which is called on the HTTP response and should return
+// a non-nil Error if the response holds an error that
+// can be converted to an Error value. The getError call must leave the
+// response body unchanged otherwise.
+//
+// If getError is nil, DefaultGetError will be used.
+//
+// This method can be useful when dealing with APIs that
+// return their errors in a format incompatible with Error, but the
+// need for it should be avoided when creating new APIs,
+// as it makes the endpoints less amenable to generic tools.
+func (c *Client) DoWithBodyAndCustomError(req *http.Request, body io.ReadSeeker, getError func(resp *http.Response) *Error) (*http.Response, error) {
 	logger.Debugf("client do %s %s {", req.Method, req.URL)
-	resp, err := c.doWithBody(req, body)
+	resp, err := c.doWithBody(req, body, getError)
 	logger.Debugf("} -> error %#v", err)
 	return resp, err
 }
 
-func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker) (*http.Response, error) {
+func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker, getError func(resp *http.Response) *Error) (*http.Response, error) {
+	if getError == nil {
+		getError = DefaultGetError
+	}
 	if req.Body != nil {
 		return nil, errgo.New("body unexpectedly supplied in Request struct")
 	}
@@ -234,35 +254,24 @@ func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker) (*http.Respon
 	if err != nil {
 		return nil, errgo.Mask(err, errgo.Any)
 	}
-	if httpResp.StatusCode != http.StatusProxyAuthRequired && httpResp.StatusCode != http.StatusUnauthorized {
+	respErr := getError(httpResp)
+	if respErr == nil {
 		return httpResp, nil
 	}
-	// Check for the new protocol discharge error.
-	if httpResp.StatusCode == http.StatusUnauthorized && httpResp.Header.Get("WWW-Authenticate") != "Macaroon" {
-		return httpResp, nil
+	httpResp.Body.Close()
+	if respErr.Code != ErrDischargeRequired {
+		return nil, errgo.NoteMask(respErr, fmt.Sprintf("%s %s failed", req.Method, req.URL), errgo.Any)
 	}
-	if httpResp.Header.Get("Content-Type") != "application/json" {
-		return httpResp, nil
+	if respErr.Info == nil || respErr.Info.Macaroon == nil {
+		return nil, errgo.New("no macaroon found in discharge-required response")
 	}
-	defer httpResp.Body.Close()
-
-	var resp Error
-	if err := json.NewDecoder(httpResp.Body).Decode(&resp); err != nil {
-		return nil, errgo.Notef(err, "cannot unmarshal error response")
-	}
-	if resp.Code != ErrDischargeRequired {
-		return nil, errgo.NoteMask(&resp, fmt.Sprintf("%s %s failed", req.Method, req.URL), errgo.Any)
-	}
-	if resp.Info == nil || resp.Info.Macaroon == nil {
-		return nil, errgo.New("no macaroon found in response")
-	}
-	mac := resp.Info.Macaroon
+	mac := respErr.Info.Macaroon
 	macaroons, err := bakery.DischargeAllWithKey(mac, c.obtainThirdPartyDischarge, c.Key)
 	if err != nil {
 		return nil, errgo.Mask(err, errgo.Any)
 	}
 	var cookiePath string
-	if path := resp.Info.MacaroonPath; path != "" {
+	if path := respErr.Info.MacaroonPath; path != "" {
 		relURL, err := parseURLPath(path)
 		if err != nil {
 			logger.Warningf("ignoring invalid path in discharge-required response: %v", err)
@@ -289,6 +298,27 @@ func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker) (*http.Respon
 		return nil, errgo.Mask(err, errgo.Any)
 	}
 	return hresp, nil
+}
+
+// DefaultGetError is the default error unmarshaler used by Client.DoWithBody.
+func DefaultGetError(httpResp *http.Response) *Error {
+	if httpResp.StatusCode != http.StatusProxyAuthRequired && httpResp.StatusCode != http.StatusUnauthorized {
+		return nil
+	}
+	// Check for the new protocol discharge error.
+	if httpResp.StatusCode == http.StatusUnauthorized && httpResp.Header.Get("WWW-Authenticate") != "Macaroon" {
+		return nil
+	}
+	if httpResp.Header.Get("Content-Type") != "application/json" {
+		return nil
+	}
+	var resp Error
+	if err := json.NewDecoder(httpResp.Body).Decode(&resp); err != nil {
+		return &Error{
+			Message: fmt.Sprintf("cannot unmarshal error response: %v", err),
+		}
+	}
+	return &resp
 }
 
 func parseURLPath(path string) (*url.URL, error) {
