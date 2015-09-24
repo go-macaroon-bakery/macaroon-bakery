@@ -7,6 +7,7 @@ import (
 	gc "gopkg.in/check.v1"
 	"gopkg.in/macaroon.v1"
 
+	jc "github.com/juju/testing/checkers"
 	"gopkg.in/macaroon-bakery.v1/bakery"
 	"gopkg.in/macaroon-bakery.v1/bakery/checkers"
 )
@@ -316,6 +317,104 @@ func (s *ServiceSuite) TestDischargeMacaroonCannotBeUsedAsNormalMacaroon(c *gc.C
 	// Make sure it cannot be used as a normal macaroon in the third party.
 	err = thirdParty.Check(macaroon.Slice{d}, checkers.New())
 	c.Assert(err, gc.ErrorMatches, `verification failed: macaroon not found in storage`)
+}
+
+func (*ServiceSuite) TestCheckAnyWithNoMacaroons(c *gc.C) {
+	svc := newService(c, "somewhere", nil)
+	newMacaroons := func(caveats ...checkers.Caveat) macaroon.Slice {
+		m, err := svc.NewMacaroon("", nil, caveats)
+		c.Assert(err, gc.IsNil)
+		return macaroon.Slice{m}
+	}
+	tests := []struct {
+		about          string
+		macaroons      []macaroon.Slice
+		assert         map[string]string
+		checker        checkers.Checker
+		expectDeclared map[string]string
+		expectError    string
+	}{{
+		about:       "no macaroons",
+		expectError: "verification failed: no macaroons",
+	}, {
+		about: "one macaroon, no caveats",
+		macaroons: []macaroon.Slice{
+			newMacaroons(),
+		},
+	}, {
+		about: "one macaroon, one unrecognized caveat",
+		macaroons: []macaroon.Slice{
+			newMacaroons(checkers.Caveat{
+				Condition: "bad",
+			}),
+		},
+		expectError: `verification failed: caveat "bad" not satisfied: caveat not recognized`,
+	}, {
+		about: "two macaroons, only one ok",
+		macaroons: []macaroon.Slice{
+			newMacaroons(checkers.Caveat{
+				Condition: "bad",
+			}),
+			newMacaroons(),
+		},
+	}, {
+		about: "macaroon with declared caveats",
+		macaroons: []macaroon.Slice{
+			newMacaroons(
+				checkers.DeclaredCaveat("key1", "value1"),
+				checkers.DeclaredCaveat("key2", "value2"),
+			),
+		},
+		expectDeclared: map[string]string{
+			"key1": "value1",
+			"key2": "value2",
+		},
+	}, {
+		about: "macaroon with declared values and asserted keys with wrong value",
+		macaroons: []macaroon.Slice{
+			newMacaroons(
+				checkers.DeclaredCaveat("key1", "value1"),
+				checkers.DeclaredCaveat("key2", "value2"),
+			),
+		},
+		assert: map[string]string{
+			"key1": "valuex",
+		},
+		expectError: `verification failed: caveat "declared key1 value1" not satisfied: got key1="valuex", expected "value1"`,
+	}, {
+		about: "macaroon with declared values and asserted keys with correct value",
+		macaroons: []macaroon.Slice{
+			newMacaroons(
+				checkers.DeclaredCaveat("key1", "value1"),
+				checkers.DeclaredCaveat("key2", "value2"),
+			),
+		},
+		assert: map[string]string{
+			"key1": "value1",
+		},
+		expectDeclared: map[string]string{
+			"key1": "value1",
+			"key2": "value2",
+		},
+	}}
+	for i, test := range tests {
+		c.Logf("test %d: %s", i, test.about)
+		if test.expectDeclared == nil {
+			test.expectDeclared = make(map[string]string)
+		}
+		if test.checker == nil {
+			test.checker = checkers.New()
+		}
+
+		decl, err := svc.CheckAny(test.macaroons, test.assert, test.checker)
+		if test.expectError != "" {
+			c.Assert(err, gc.ErrorMatches, test.expectError)
+			c.Assert(decl, gc.HasLen, 0)
+			continue
+		}
+		c.Assert(err, gc.IsNil)
+		c.Assert(decl, jc.DeepEquals, test.expectDeclared)
+	}
 }
 
 func newService(c *gc.C, location string, locator bakery.PublicKeyLocatorMap) *bakery.Service {

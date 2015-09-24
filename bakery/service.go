@@ -144,6 +144,11 @@ func (svc *Service) Check(ms macaroon.Slice, checker FirstPartyChecker) error {
 //
 // It returns any attributes declared in the successfully validated request.
 func (svc *Service) CheckAny(mss []macaroon.Slice, assert map[string]string, checker checkers.Checker) (map[string]string, error) {
+	if len(mss) == 0 {
+		return nil, &VerificationError{
+			Reason: errgo.Newf("no macaroons"),
+		}
+	}
 	// TODO perhaps return a slice of attribute maps, one
 	// for each successfully validated macaroon slice?
 	var err error
