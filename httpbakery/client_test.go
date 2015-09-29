@@ -687,7 +687,7 @@ func (s *ClientSuite) TestDoWithBodyAndCustomError(c *gc.C) {
 	callCount = 0
 
 	// Then check that a request with a custom error getter succeeds.
-	errorGetter := func(resp *http.Response) *httpbakery.Error {
+	errorGetter := func(resp *http.Response) error {
 		if resp.StatusCode != http.StatusTeapot {
 			return nil
 		}
