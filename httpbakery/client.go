@@ -286,9 +286,6 @@ func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker, getError func
 			cookiePath = req.URL.ResolveReference(relURL).Path
 		}
 	}
-	if cookiePath != "/" {
-		cookiePath = strings.TrimSuffix(cookiePath, "/")
-	}
 	cookie, err := NewCookie(macaroons)
 	if err != nil {
 		return nil, errgo.Notef(err, "cannot make cookie")
