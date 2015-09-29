@@ -216,12 +216,14 @@ func (c *Client) DoWithBody(req *http.Request, body io.ReadSeeker) (*http.Respon
 	return c.DoWithBodyAndCustomError(req, body, nil)
 }
 
-// DoWithBodyAndCustomError is like DoWithBody except it
-// allows a client to specify a custom error function, getError,
-// which is called on the HTTP response and should return
-// a non-nil Error if the response holds an error that
-// can be converted to an Error value. The getError call must leave the
-// response body unchanged otherwise.
+// DoWithBodyAndCustomError is like DoWithBody except it allows a client
+// to specify a custom error function, getError, which is called on the
+// HTTP response and may return a non-nil error if the response holds an
+// error. If the cause of the returned error is a *Error value and its
+// code is ErrDischargeRequired, the macaroon in its Info field will be
+// discharged and the request will be repeated with the discharged
+// macaroon. If getError returns nil, it should leave the response body
+// unchanged.
 //
 // If getError is nil, DefaultGetError will be used.
 //
@@ -229,14 +231,14 @@ func (c *Client) DoWithBody(req *http.Request, body io.ReadSeeker) (*http.Respon
 // return their errors in a format incompatible with Error, but the
 // need for it should be avoided when creating new APIs,
 // as it makes the endpoints less amenable to generic tools.
-func (c *Client) DoWithBodyAndCustomError(req *http.Request, body io.ReadSeeker, getError func(resp *http.Response) *Error) (*http.Response, error) {
+func (c *Client) DoWithBodyAndCustomError(req *http.Request, body io.ReadSeeker, getError func(resp *http.Response) error) (*http.Response, error) {
 	logger.Debugf("client do %s %s {", req.Method, req.URL)
 	resp, err := c.doWithBody(req, body, getError)
 	logger.Debugf("} -> error %#v", err)
 	return resp, err
 }
 
-func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker, getError func(resp *http.Response) *Error) (*http.Response, error) {
+func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker, getError func(resp *http.Response) error) (*http.Response, error) {
 	if getError == nil {
 		getError = DefaultGetError
 	}
@@ -254,13 +256,18 @@ func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker, getError func
 	if err != nil {
 		return nil, errgo.Mask(err, errgo.Any)
 	}
-	respErr := getError(httpResp)
-	if respErr == nil {
+	err = getError(httpResp)
+	if err == nil {
 		return httpResp, nil
 	}
 	httpResp.Body.Close()
+
+	respErr, ok := errgo.Cause(err).(*Error)
+	if !ok {
+		return nil, errgo.Mask(err, errgo.Any)
+	}
 	if respErr.Code != ErrDischargeRequired {
-		return nil, errgo.NoteMask(respErr, fmt.Sprintf("%s %s failed", req.Method, req.URL), errgo.Any)
+		return nil, errgo.NoteMask(err, fmt.Sprintf("%s %s failed", req.Method, req.URL), errgo.Any)
 	}
 	if respErr.Info == nil || respErr.Info.Macaroon == nil {
 		return nil, errgo.New("no macaroon found in discharge-required response")
@@ -301,7 +308,7 @@ func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker, getError func
 }
 
 // DefaultGetError is the default error unmarshaler used by Client.DoWithBody.
-func DefaultGetError(httpResp *http.Response) *Error {
+func DefaultGetError(httpResp *http.Response) error {
 	if httpResp.StatusCode != http.StatusProxyAuthRequired && httpResp.StatusCode != http.StatusUnauthorized {
 		return nil
 	}
@@ -314,9 +321,7 @@ func DefaultGetError(httpResp *http.Response) *Error {
 	}
 	var resp Error
 	if err := json.NewDecoder(httpResp.Body).Decode(&resp); err != nil {
-		return &Error{
-			Message: fmt.Sprintf("cannot unmarshal error response: %v", err),
-		}
+		return fmt.Errorf("cannot unmarshal error response: %v", err)
 	}
 	return &resp
 }
