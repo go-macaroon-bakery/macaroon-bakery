@@ -10,6 +10,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"strings"
+	"sync"
 
 	"github.com/juju/loggo"
 	"golang.org/x/net/publicsuffix"
@@ -343,14 +344,47 @@ func (c *Client) setRequestBody(req *http.Request, body io.ReadSeeker) error {
 	if body == nil {
 		return nil
 	}
-	if req.Body == nil {
-		req.Body = ioutil.NopCloser(body)
-	} else {
-		_, err := body.Seek(0, 0)
-		if err != nil {
+	if req.Body != nil {
+		req.Body.Close()
+		if _, err := body.Seek(0, 0); err != nil {
 			return errgo.Notef(err, "cannot seek to start of request body")
 		}
 	}
+	// Always replace the body with a new readStopper so that
+	// the old request cannot interfere with the new request's reader.
+	req.Body = &readStopper{
+		r: body,
+	}
+	return nil
+}
+
+var errClosed = errgo.New("reader has been closed")
+
+// readStopper works around an issue with the net/http
+// package (see http://golang.org/issue/12796).
+// Because the first HTTP request might not have finished
+// reading from its body when it returns, we need to
+// ensure that the second request does not race on Read,
+// so this type implements a Reader that prevents all Read
+// calls to the underlying Reader after Close has been called.
+type readStopper struct {
+	mu sync.Mutex
+	r  io.ReadSeeker
+}
+
+func (r *readStopper) Read(buf []byte) (int, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.r == nil {
+		return 0, errClosed
+	}
+	return r.r.Read(buf)
+}
+
+func (r *readStopper) Close() error {
+	r.mu.Lock()
+	r.r = nil
+	r.mu.Unlock()
 	return nil
 }
 
