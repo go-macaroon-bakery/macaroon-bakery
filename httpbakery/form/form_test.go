@@ -24,6 +24,7 @@ var formLoginTests = []struct {
 	about       string
 	opts        dischargeOptions
 	filler      fillerFunc
+	fallback    func(*url.URL) error
 	expectError string
 }{{
 	about: "complete login",
@@ -69,6 +70,48 @@ var formLoginTests = []struct {
 		return nil, testError
 	},
 	expectError: `cannot get discharge from ".*": cannot start interactive session: cannot handle form: test error`,
+}, {
+	about: "login methods fallback success",
+	opts: dischargeOptions{
+		ignoreAccept: true,
+	},
+	fallback: func(u *url.URL) error {
+		resp, err := http.Get(u.String() + "&fallback=OK")
+		if err == nil {
+			resp.Body.Close()
+		}
+		return err
+	},
+}, {
+	about: "login methods fallback failure",
+	opts: dischargeOptions{
+		ignoreAccept: true,
+	},
+	fallback: func(u *url.URL) error {
+		return testError
+	},
+	expectError: `cannot get discharge from ".*": cannot start interactive session: test error`,
+}, {
+	about: "form not suppoorted fallback success",
+	opts: dischargeOptions{
+		formUnsupported: true,
+	},
+	fallback: func(u *url.URL) error {
+		resp, err := http.Get(u.String() + "&fallback=OK")
+		if err == nil {
+			resp.Body.Close()
+		}
+		return err
+	},
+}, {
+	about: "form not supported fallback failure",
+	opts: dischargeOptions{
+		formUnsupported: true,
+	},
+	fallback: func(u *url.URL) error {
+		return testError
+	},
+	expectError: `cannot get discharge from ".*": cannot start interactive session: test error`,
 }}
 
 func (s *formSuite) TestFormLogin(c *gc.C) {
@@ -93,6 +136,7 @@ func (s *formSuite) TestFormLogin(c *gc.C) {
 		if test.filler != nil {
 			h = test.filler
 		}
+		client.VisitWebPage = test.fallback
 		form.SetUpAuth(client, h)
 
 		ms, err := client.DischargeAll(m)
@@ -130,6 +174,11 @@ type formDischarger struct {
 }
 
 func (d *formDischarger) login(w http.ResponseWriter, r *http.Request) {
+	r.ParseForm()
+	if r.Form.Get("fallback") != "" {
+		d.discharger.FinishInteraction(w, r, nil)
+		return
+	}
 	if d.ignoreAccept {
 		w.Write([]byte("OK"))
 		return
