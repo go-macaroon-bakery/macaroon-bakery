@@ -176,7 +176,7 @@ type formDischarger struct {
 func (d *formDischarger) login(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	if r.Form.Get("fallback") != "" {
-		d.discharger.FinishInteraction(w, r, nil)
+		d.discharger.FinishInteraction(w, r, nil, nil)
 		return
 	}
 	if d.ignoreAccept {
@@ -188,7 +188,7 @@ func (d *formDischarger) login(w http.ResponseWriter, r *http.Request) {
 	}
 	if d.loginError {
 		httprequest.WriteJSON(w, http.StatusInternalServerError, testError)
-		d.discharger.FinishInteraction(w, r, testError)
+		d.discharger.FinishInteraction(w, r, nil, testError)
 		return
 	}
 	methods := map[string]string{}
@@ -208,7 +208,7 @@ func (d *formDischarger) form(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
 		if d.getError {
 			httprequest.WriteJSON(w, http.StatusInternalServerError, testError)
-			d.discharger.FinishInteraction(w, r, testError)
+			d.discharger.FinishInteraction(w, r, nil, testError)
 			return
 		}
 		var sr form.SchemaResponse
@@ -232,7 +232,7 @@ func (d *formDischarger) form(w http.ResponseWriter, r *http.Request) {
 	}
 	if d.postError {
 		httprequest.WriteJSON(w, http.StatusInternalServerError, testError)
-		d.discharger.FinishInteraction(w, r, testError)
+		d.discharger.FinishInteraction(w, r, nil, testError)
 		return
 	}
 	var lr form.LoginRequest
@@ -241,7 +241,7 @@ func (d *formDischarger) form(w http.ResponseWriter, r *http.Request) {
 		d.errorf(w, r, "bad login request: %s", err)
 		return
 	}
-	d.discharger.FinishInteraction(w, r, nil)
+	d.discharger.FinishInteraction(w, r, nil, nil)
 }
 
 func (d *formDischarger) errorf(w http.ResponseWriter, r *http.Request, s string, p ...interface{}) {
@@ -249,7 +249,7 @@ func (d *formDischarger) errorf(w http.ResponseWriter, r *http.Request, s string
 		Code:    httpbakery.ErrBadRequest,
 		Message: fmt.Sprintf(s, p...),
 	}
-	d.discharger.FinishInteraction(w, r, err)
+	d.discharger.FinishInteraction(w, r, nil, err)
 }
 
 var testError = &httpbakery.Error{

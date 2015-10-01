@@ -132,9 +132,14 @@ func (d *Discharger) PublicKeyForLocation(loc string) (*bakery.PublicKey, error)
 	return nil, bakery.ErrNotFound
 }
 
+type dischargeResult struct {
+	err  error
+	cavs []checkers.Caveat
+}
+
 type discharge struct {
 	cavId string
-	c     chan error
+	c     chan dischargeResult
 }
 
 // InteractiveDischarger is a Discharger that always requires interraction to
@@ -214,7 +219,7 @@ func (d *InteractiveDischarger) checker(req *http.Request, cavId, cav string) ([
 	d.mu.Lock()
 	id := fmt.Sprintf("%d", d.id)
 	d.id++
-	d.waiting[id] = discharge{cavId, make(chan error, 1)}
+	d.waiting[id] = discharge{cavId, make(chan dischargeResult, 1)}
 	d.mu.Unlock()
 	visitURL := fmt.Sprintf("%s/visit?waitid=%s", d.Discharger.server.URL, id)
 	waitURL := fmt.Sprintf("%s/wait?waitid=%s", d.Discharger.server.URL, id)
@@ -237,9 +242,11 @@ func (d *InteractiveDischarger) wait(w http.ResponseWriter, r *http.Request) {
 		d.mu.Unlock()
 	}()
 	var err error
+	var cavs []checkers.Caveat
 	select {
-	case e := <-discharge.c:
-		err = e
+	case res := <-discharge.c:
+		err = res.err
+		cavs = res.cavs
 	case <-time.After(5 * time.Minute):
 		code, body := httpbakery.ErrorToResponse(errgo.New("timeout waiting for interaction to complete"))
 		httprequest.WriteJSON(w, code, body)
@@ -253,7 +260,7 @@ func (d *InteractiveDischarger) wait(w http.ResponseWriter, r *http.Request) {
 	m, err := d.Service.Discharge(
 		bakery.ThirdPartyCheckerFunc(
 			func(cavId, caveat string) ([]checkers.Caveat, error) {
-				return nil, nil
+				return cavs, nil
 			},
 		),
 		discharge.cavId,
@@ -276,7 +283,7 @@ func (d *InteractiveDischarger) wait(w http.ResponseWriter, r *http.Request) {
 // particular interaction is complete. It causes any waiting requests to
 // return. If err is not nil then it will be returned by the
 // corresponding /wait request.
-func (d *InteractiveDischarger) FinishInteraction(w http.ResponseWriter, r *http.Request, err error) {
+func (d *InteractiveDischarger) FinishInteraction(w http.ResponseWriter, r *http.Request, cavs []checkers.Caveat, err error) {
 	r.ParseForm()
 	d.mu.Lock()
 	discharge, ok := d.waiting[r.Form.Get("waitid")]
@@ -287,7 +294,7 @@ func (d *InteractiveDischarger) FinishInteraction(w http.ResponseWriter, r *http
 		return
 	}
 	select {
-	case discharge.c <- err:
+	case discharge.c <- dischargeResult{err: err, cavs: cavs}:
 	default:
 		panic("cannot finish interaction " + r.Form.Get("waitid"))
 	}

@@ -142,7 +142,11 @@ func (s *suite) TestInteractiveDischarger(c *gc.C) {
 	var d *bakerytest.InteractiveDischarger
 	d = bakerytest.NewInteractiveDischarger(nil, http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
-			d.FinishInteraction(w, r, nil)
+			d.FinishInteraction(w, r, []checkers.Caveat{
+				checkers.Caveat{
+					Condition: "test pass",
+				},
+			}, nil)
 		},
 	))
 	defer d.Close()
@@ -166,15 +170,18 @@ func (s *suite) TestInteractiveDischarger(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 2)
 
-	err = svc.Check(ms, failChecker)
+	var r recordingChecker
+	err = svc.Check(ms, &r)
 	c.Assert(err, gc.IsNil)
+	c.Assert(r.caveats, gc.HasLen, 1)
+	c.Assert(r.caveats[0], gc.Equals, "test pass")
 }
 
 func (s *suite) TestLoginDischargerError(c *gc.C) {
 	var d *bakerytest.InteractiveDischarger
 	d = bakerytest.NewInteractiveDischarger(nil, http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
-			d.FinishInteraction(w, r, errors.New("test error"))
+			d.FinishInteraction(w, r, nil, errors.New("test error"))
 		},
 	))
 	defer d.Close()
@@ -209,7 +216,7 @@ func (s *suite) TestInteractiveDischargerURL(c *gc.C) {
 	defer d.Close()
 	d.Mux.Handle("/redirect", http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
-			d.FinishInteraction(w, r, nil)
+			d.FinishInteraction(w, r, nil, nil)
 		},
 	))
 	svc, err := bakery.NewService(bakery.NewServiceParams{
@@ -233,4 +240,13 @@ func (s *suite) TestInteractiveDischargerURL(c *gc.C) {
 
 	err = svc.Check(ms, failChecker)
 	c.Assert(err, gc.IsNil)
+}
+
+type recordingChecker struct {
+	caveats []string
+}
+
+func (c *recordingChecker) CheckFirstPartyCaveat(caveat string) error {
+	c.caveats = append(c.caveats, caveat)
+	return nil
 }
