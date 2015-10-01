@@ -57,28 +57,44 @@ type Filler interface {
 }
 
 // SetUpAuth configures form authentication on c. The VisitWebPage field
-// in c will be set to a function that will attempt form based
-// authentication using h to perform the interaction with the user.
-//
-// The VisitWebPage function downloads the schema from the specified
-// server and calls h.Handle. The map returned by h.Handle should match
-// the schema specified, but VisitWebPage will not verify this before
-// sending to the server. Any errors returned by h.Handle will not have
-// their cause masked.
+// in c will be set to a function that will attempt form-based
+// authentication using f to perform the interaction with the user and
+// fall back to using the current value of VisitWebPage if form-based
+// authentication is not supported.
 func SetUpAuth(c *httpbakery.Client, f Filler) {
-	v := webPageVisitor{
-		client: &httprequest.Client{
+	c.VisitWebPage = VisitWebPage(
+		&httprequest.Client{
 			Doer: c,
 		},
-		filler: f,
+		f,
+		c.VisitWebPage,
+	)
+}
+
+// VisitWebPage creates a function suitable for use with
+// httpbakery.Client.VisitWebPage. The new function downloads the schema
+// from the specified server and calls f.Fill. The map returned by f.Fill
+// should match the schema specified, but this is not verified before
+// sending to the server. Any errors returned by f.Fill or fallback will
+// not have their cause masked.
+//
+// If the new function detects that form login is not supported by the
+// server and fallback is not nil then fallback will be called to perform
+// the visit.
+func VisitWebPage(c *httprequest.Client, f Filler, fallback func(u *url.URL) error) func(u *url.URL) error {
+	v := webPageVisitor{
+		client:   c,
+		filler:   f,
+		fallback: fallback,
 	}
-	c.VisitWebPage = v.visitWebPage
+	return v.visitWebPage
 }
 
 // webPageVisitor contains the state required by visitWebPage.
 type webPageVisitor struct {
-	client *httprequest.Client
-	filler Filler
+	client   *httprequest.Client
+	filler   Filler
+	fallback func(u *url.URL) error
 }
 
 // loginMethods contains the response expected from the login URL. It
@@ -123,9 +139,21 @@ func (v webPageVisitor) visitWebPage(u *url.URL) error {
 	req.Header.Set("Accept", "application/json")
 	var lm loginMethods
 	if err := v.client.Do(req, nil, &lm); err != nil {
+		if v.fallback != nil {
+			if err := v.fallback(u); err != nil {
+				return errgo.Mask(err, errgo.Any)
+			}
+			return nil
+		}
 		return errgo.Notef(err, "cannot get login methods")
 	}
 	if lm.Form == "" {
+		if v.fallback != nil {
+			if err := v.fallback(u); err != nil {
+				return errgo.Mask(err, errgo.Any)
+			}
+			return nil
+		}
 		return errgo.Newf("form login not supported")
 	}
 	var s SchemaResponse
