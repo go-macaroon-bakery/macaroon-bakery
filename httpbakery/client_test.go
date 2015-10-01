@@ -142,6 +142,52 @@ func (s *ClientSuite) TestRepeatedRequestWithBody(c *gc.C) {
 	c.Assert(bodyReader.byteCount, gc.Equals, len(bodyText)*2)
 }
 
+func (s ClientSuite) TestWithLargeBody(c *gc.C) {
+	// This test is designed to fail when run with the race
+	// checker enabled and when go issue #12796
+	// is not fixed.
+
+	d := bakerytest.NewDischarger(nil, noCaveatChecker)
+	defer d.Close()
+
+	// Create a target service.
+	svc := newService("loc", d)
+
+	ts := httptest.NewServer(serverHandler(svc, d.Location(), nil))
+	defer ts.Close()
+
+	// Create a client request.
+	req, err := http.NewRequest("POST", ts.URL+"/no-body", nil)
+	c.Assert(err, gc.IsNil)
+
+	resp, err := httpbakery.NewClient().DoWithBody(req, &largeReader{total: 3 * 1024 * 1024})
+	c.Assert(err, gc.IsNil)
+	c.Assert(resp.StatusCode, gc.Equals, http.StatusOK)
+}
+
+// largeReader implements a reader that produces up to total bytes
+// in 1 byte reads.
+type largeReader struct {
+	total int
+	n     int
+}
+
+func (r *largeReader) Read(buf []byte) (int, error) {
+	if r.n >= r.total {
+		return 0, io.EOF
+	}
+	r.n++
+	return copy(buf, []byte("a")), nil
+}
+
+func (r *largeReader) Seek(offset int64, whence int) (int64, error) {
+	if offset != 0 || whence != 0 {
+		panic("unexpected seek")
+	}
+	r.n = 0
+	return 0, nil
+}
+
 func (s *ClientSuite) TestDoWithBodyFailsWithBodyInRequest(c *gc.C) {
 	body := strings.NewReader("foo")
 	// Create a client request.
@@ -576,6 +622,10 @@ func serverHandler(service *bakery.Service, authLocation string, cookiePath func
 			return newDischargeRequiredError(service, authLocation, cookiePath, checkErr, p.Request)
 		}
 		fmt.Fprintf(p.Response, "done")
+		// Special case: the no-body path doesn't return the body.
+		if p.Request.URL.Path == "/no-body" {
+			return nil
+		}
 		data, err := ioutil.ReadAll(p.Request.Body)
 		if err != nil {
 			panic(fmt.Errorf("cannot read body: %v", err))
