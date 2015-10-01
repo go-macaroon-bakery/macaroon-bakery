@@ -212,6 +212,9 @@ func relativeURL(base, new string) (*url.URL, error) {
 // of the HTTP request, and reset to its start by seeking if the request
 // is retried. It is an error if req.Body is non-zero.
 //
+// Note that, unlike the request body passed to http.NewRequest,
+// the body will not be closed even if implements io.Closer.
+//
 // Do may add headers to req.Header.
 func (c *Client) DoWithBody(req *http.Request, body io.ReadSeeker) (*http.Response, error) {
 	return c.DoWithBodyAndCustomError(req, body, nil)
