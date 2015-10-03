@@ -281,6 +281,60 @@ func newHTTPDischarger(locator bakery.PublicKeyLocator, checker func(svc *bakery
 	return svc.PublicKey(), mux
 }
 
+func (s *ClientSuite) TestDischargeAcquirer(c *gc.C) {
+	rootKey := []byte("secret")
+	m, err := macaroon.New(rootKey, "", "here")
+	c.Assert(err, gc.IsNil)
+
+	dischargeRootKey := []byte("shared root key")
+	thirdPartyCaveatId := "3rd party caveat"
+	err = m.AddThirdPartyCaveat(dischargeRootKey, thirdPartyCaveatId, "there")
+	c.Assert(err, gc.IsNil)
+
+	dm, err := macaroon.New(dischargeRootKey, thirdPartyCaveatId, "there")
+	c.Assert(err, gc.IsNil)
+
+	ta := &testAcquirer{dischargeMacaroon: dm}
+	cl := httpbakery.NewClient()
+	cl.DischargeAcquirer = ta
+
+	ms, err := cl.DischargeAll(m)
+	c.Assert(err, gc.IsNil)
+	c.Assert(ms, gc.HasLen, 2)
+
+	c.Assert(ta.acquireLocation, gc.Equals, "here") // should be first-party location
+	c.Assert(ta.acquireCaveat.Id, gc.Equals, thirdPartyCaveatId)
+	expectCaveat := "must foo"
+	var lastCaveat string
+	err = ms[0].Verify(rootKey, func(s string) error {
+		if s != expectCaveat {
+			return errgo.Newf(`expected %q, got %q`, expectCaveat, s)
+		}
+		lastCaveat = s
+		return nil
+	}, ms[1:])
+	c.Assert(err, gc.IsNil)
+	c.Assert(lastCaveat, gc.Equals, expectCaveat)
+}
+
+type testAcquirer struct {
+	dischargeMacaroon *macaroon.Macaroon
+
+	acquireLocation string
+	acquireCaveat   macaroon.Caveat
+}
+
+// AcquireDischarge implements httpbakery.DischargeAcquirer.
+func (ta *testAcquirer) AcquireDischarge(loc string, cav macaroon.Caveat) (*macaroon.Macaroon, error) {
+	ta.acquireLocation = loc
+	ta.acquireCaveat = cav
+	err := ta.dischargeMacaroon.AddFirstPartyCaveat("must foo")
+	if err != nil {
+		return nil, err
+	}
+	return ta.dischargeMacaroon, nil
+}
+
 func (s *ClientSuite) TestMacaroonCookiePath(c *gc.C) {
 	svc := newService("loc", nil)
 

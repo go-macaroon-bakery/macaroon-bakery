@@ -115,6 +115,19 @@ type Client struct {
 	// "local" by using this key. See bakery.DischargeAllWithKey and
 	// bakery.LocalThirdPartyCaveat for more information
 	Key *bakery.KeyPair
+
+	// DischargeAcquirer holds the object that will be used to obtain
+	// third-party discharges. If nil, the Client itself will be used.
+	DischargeAcquirer DischargeAcquirer
+}
+
+// DischargeAcquirer can be implemented by clients that want to customize the
+// discharge-acquisition process used by a Client.
+type DischargeAcquirer interface {
+	// AcquireDischarge should return a discharge macaroon for the given third
+	// party caveat. The firstPartyLocation holds the location of the original
+	// macaroon.
+	AcquireDischarge(firstPartyLocation string, cav macaroon.Caveat) (*macaroon.Macaroon, error)
 }
 
 // NewClient returns a new Client containing an HTTP client
@@ -162,7 +175,14 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 // The returned macaroon slice will not be stored in the client
 // cookie jar (see SetCookie if you need to do that).
 func (c *Client) DischargeAll(m *macaroon.Macaroon) (macaroon.Slice, error) {
-	return bakery.DischargeAllWithKey(m, c.obtainThirdPartyDischarge, c.Key)
+	return bakery.DischargeAllWithKey(m, c.dischargeAcquirer().AcquireDischarge, c.Key)
+}
+
+func (c *Client) dischargeAcquirer() DischargeAcquirer {
+	if c.DischargeAcquirer != nil {
+		return c.DischargeAcquirer
+	}
+	return c
 }
 
 // PublicKeyForLocation returns the public key from a macaroon
@@ -277,7 +297,7 @@ func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker, getError func
 		return nil, errgo.New("no macaroon found in discharge-required response")
 	}
 	mac := respErr.Info.Macaroon
-	macaroons, err := bakery.DischargeAllWithKey(mac, c.obtainThirdPartyDischarge, c.Key)
+	macaroons, err := bakery.DischargeAllWithKey(mac, c.dischargeAcquirer().AcquireDischarge, c.Key)
 	if err != nil {
 		return nil, errgo.Mask(err, errgo.Any)
 	}
@@ -445,7 +465,9 @@ func appendURLElem(u, elem string) string {
 	return u + "/" + elem
 }
 
-func (c *Client) obtainThirdPartyDischarge(originalLocation string, cav macaroon.Caveat) (*macaroon.Macaroon, error) {
+// AcquireDischarge implements DischargeAcquirer by requesting a discharge
+// macaroon from the caveat location as an HTTP URL.
+func (c *Client) AcquireDischarge(originalLocation string, cav macaroon.Caveat) (*macaroon.Macaroon, error) {
 	var resp dischargeResponse
 	loc := appendURLElem(cav.Location, "discharge")
 	err := postFormJSON(
