@@ -462,6 +462,12 @@ func SetCookie(jar http.CookieJar, url *url.URL, ms macaroon.Slice) error {
 	return nil
 }
 
+// MacaroonsForURL returns any macaroons associated with the
+// given URL in the given cookie jar.
+func MacaroonsForURL(jar http.CookieJar, u *url.URL) []macaroon.Slice {
+	return cookiesToMacaroons(jar.Cookies(u))
+}
+
 func (c *Client) addCookie(req *http.Request, ms macaroon.Slice) error {
 	cookies, err := NewCookie(ms)
 	if err != nil {
@@ -622,7 +628,14 @@ func RequestMacaroons(req *http.Request) []macaroon.Slice {
 			mss = append(mss, ms)
 		}
 	}
-	for _, cookie := range req.Cookies() {
+	return append(mss, cookiesToMacaroons(req.Cookies())...)
+}
+
+// cookiesToMacaroons returns a slice of any macaroons found
+// in the given slice of cookies.
+func cookiesToMacaroons(cookies []*http.Cookie) []macaroon.Slice {
+	var mss []macaroon.Slice
+	for _, cookie := range cookies {
 		if !strings.HasPrefix(cookie.Name, "macaroon-") {
 			continue
 		}
