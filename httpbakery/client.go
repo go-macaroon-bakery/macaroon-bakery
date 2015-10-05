@@ -286,36 +286,9 @@ func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker, getError func
 	}
 	httpResp.Body.Close()
 
-	respErr, ok := errgo.Cause(err).(*Error)
-	if !ok {
-		return nil, errgo.Mask(err, errgo.Any)
-	}
-	if respErr.Code != ErrDischargeRequired {
+	if err := c.HandleError(req.URL, err); err != nil {
 		return nil, errgo.NoteMask(err, fmt.Sprintf("%s %s failed", req.Method, req.URL), errgo.Any)
 	}
-	if respErr.Info == nil || respErr.Info.Macaroon == nil {
-		return nil, errgo.New("no macaroon found in discharge-required response")
-	}
-	mac := respErr.Info.Macaroon
-	macaroons, err := bakery.DischargeAllWithKey(mac, c.dischargeAcquirer().AcquireDischarge, c.Key)
-	if err != nil {
-		return nil, errgo.Mask(err, errgo.Any)
-	}
-	var cookiePath string
-	if path := respErr.Info.MacaroonPath; path != "" {
-		relURL, err := parseURLPath(path)
-		if err != nil {
-			logger.Warningf("ignoring invalid path in discharge-required response: %v", err)
-		} else {
-			cookiePath = req.URL.ResolveReference(relURL).Path
-		}
-	}
-	cookie, err := NewCookie(macaroons)
-	if err != nil {
-		return nil, errgo.Notef(err, "cannot make cookie")
-	}
-	cookie.Path = cookiePath
-	c.Jar.SetCookies(req.URL, []*http.Cookie{cookie})
 
 	if err := c.setRequestBody(req, body); err != nil {
 		return nil, errgo.Mask(err)
@@ -326,6 +299,49 @@ func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker, getError func
 		return nil, errgo.Mask(err, errgo.Any)
 	}
 	return hresp, nil
+}
+
+// HandleError tries to resolve the given error, which should be a
+// response to the given URL, by discharging any macaroon contained in
+// it. That is, if the error cause is an *Error and its code is
+// ErrDischargeRequired, then it will try to discharge
+// err.Info.Macaroon. If the discharge succeeds, the discharged macaroon
+// will be saved to the client's cookie jar and ResolveError will return
+// nil.
+//
+// For any other kind of error, the original error will be returned.
+func (c *Client) HandleError(reqURL *url.URL, err error) error {
+	respErr, ok := errgo.Cause(err).(*Error)
+	if !ok {
+		return err
+	}
+	if respErr.Code != ErrDischargeRequired {
+		return respErr
+	}
+	if respErr.Info == nil || respErr.Info.Macaroon == nil {
+		return errgo.New("no macaroon found in discharge-required response")
+	}
+	mac := respErr.Info.Macaroon
+	macaroons, err := bakery.DischargeAllWithKey(mac, c.dischargeAcquirer().AcquireDischarge, c.Key)
+	if err != nil {
+		return errgo.Mask(err, errgo.Any)
+	}
+	var cookiePath string
+	if path := respErr.Info.MacaroonPath; path != "" {
+		relURL, err := parseURLPath(path)
+		if err != nil {
+			logger.Warningf("ignoring invalid path in discharge-required response: %v", err)
+		} else {
+			cookiePath = reqURL.ResolveReference(relURL).Path
+		}
+	}
+	cookie, err := NewCookie(macaroons)
+	if err != nil {
+		return errgo.Notef(err, "cannot make cookie")
+	}
+	cookie.Path = cookiePath
+	c.Jar.SetCookies(reqURL, []*http.Cookie{cookie})
+	return nil
 }
 
 // DefaultGetError is the default error unmarshaler used by Client.DoWithBody.

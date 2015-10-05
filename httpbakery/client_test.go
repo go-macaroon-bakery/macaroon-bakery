@@ -482,7 +482,7 @@ func (s *ClientSuite) TestThirdPartyDischargeRefused(c *gc.C) {
 	// Make the request to the server.
 	resp, err := client.Do(req)
 	c.Assert(errgo.Cause(err), gc.FitsTypeOf, (*httpbakery.DischargeError)(nil))
-	c.Assert(err, gc.ErrorMatches, `cannot get discharge from ".*": third party refused discharge: cannot discharge: boo! cond is-ok`)
+	c.Assert(err, gc.ErrorMatches, `GET http://.* failed: cannot get discharge from ".*": third party refused discharge: cannot discharge: boo! cond is-ok`)
 	c.Assert(resp, gc.IsNil)
 }
 
@@ -517,7 +517,7 @@ func (s *ClientSuite) TestDischargeWithInteractionRequiredError(c *gc.C) {
 
 	// Make the request to the server.
 	resp, err := client.Do(req)
-	c.Assert(err, gc.ErrorMatches, `cannot get discharge from ".*": cannot start interactive session: cannot visit`)
+	c.Assert(err, gc.ErrorMatches, `GET http://.* failed: cannot get discharge from "https://.*": cannot start interactive session: cannot visit`)
 	c.Assert(httpbakery.IsInteractionError(errgo.Cause(err)), gc.Equals, true)
 	ierr, ok := errgo.Cause(err).(*httpbakery.InteractionError)
 	c.Assert(ok, gc.Equals, true)
@@ -534,14 +534,14 @@ var dischargeWithVisitURLErrorTests = []struct {
 	respond: func(w http.ResponseWriter) {
 		httprequest.ErrorMapper(httpbakery.ErrorToResponse).WriteError(w, fmt.Errorf("an error"))
 	},
-	expectError: `cannot get discharge from ".*": failed to acquire macaroon after waiting: third party refused discharge: an error`,
+	expectError: `GET http://.* failed: cannot get discharge from ".*": failed to acquire macaroon after waiting: third party refused discharge: an error`,
 }, {
 	about: "non-JSON error",
 	respond: func(w http.ResponseWriter) {
 		w.Write([]byte("bad response"))
 	},
 	// TODO fix this unhelpful error message
-	expectError: `cannot get discharge from ".*": cannot unmarshal wait response: invalid character 'b' looking for beginning of value`,
+	expectError: `GET http://.* failed: cannot get discharge from ".*": cannot unmarshal wait response: invalid character 'b' looking for beginning of value`,
 }}
 
 func (s *ClientSuite) TestDischargeWithVisitURLError(c *gc.C) {
@@ -813,4 +813,63 @@ func (s *ClientSuite) TestDoWithBodyAndCustomError(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	c.Assert(string(data), gc.Equals, "hello there")
 	c.Assert(callCount, gc.Equals, 2)
+}
+
+func (s *ClientSuite) TestHandleError(c *gc.C) {
+	d := bakerytest.NewDischarger(nil, noCaveatChecker)
+	defer d.Close()
+
+	// Create a target service.
+	svc := newService("loc", d)
+
+	srv := httptest.NewServer(serverHandler(svc, "unknown", nil))
+	defer srv.Close()
+
+	m, err := svc.NewMacaroon("", nil, []checkers.Caveat{{
+		Location:  d.Location(),
+		Condition: "something",
+	}})
+	c.Assert(err, gc.IsNil)
+
+	u, err := url.Parse(srv.URL + "/bar")
+	c.Assert(err, gc.IsNil)
+
+	respErr := &httpbakery.Error{
+		Message: "an error",
+		Code:    httpbakery.ErrDischargeRequired,
+		Info: &httpbakery.ErrorInfo{
+			Macaroon:     m,
+			MacaroonPath: "/foo",
+		},
+	}
+	client := httpbakery.NewClient()
+	err = client.HandleError(u, respErr)
+	c.Assert(err, gc.Equals, nil)
+	// No cookies at the original location.
+	c.Assert(client.Client.Jar.Cookies(u), gc.HasLen, 0)
+
+	u.Path = "/foo"
+	cookies := client.Client.Jar.Cookies(u)
+	c.Assert(cookies, gc.HasLen, 1)
+
+	// Check that we can actually make a request
+	// with the newly acquired macaroon cookies.
+
+	req, err := http.NewRequest("GET", srv.URL+"/foo", nil)
+	c.Assert(err, gc.IsNil)
+
+	resp, err := client.Do(req)
+	c.Assert(err, gc.IsNil)
+	resp.Body.Close()
+	c.Assert(resp.StatusCode, gc.Equals, http.StatusOK)
+}
+
+func (s *ClientSuite) TestHandleErrorDifferentError(c *gc.C) {
+	berr := &httpbakery.Error{
+		Message: "an error",
+		Code:    "another code",
+	}
+	client := httpbakery.NewClient()
+	err := client.HandleError(&url.URL{}, berr)
+	c.Assert(err, gc.Equals, berr)
 }
