@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/juju/httprequest"
 	jujutesting "github.com/juju/testing"
+	jc "github.com/juju/testing/checkers"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v1"
@@ -588,6 +590,63 @@ func (s *ClientSuite) TestDischargeWithVisitURLError(c *gc.C) {
 		_, err = client.Do(req)
 		c.Assert(err, gc.ErrorMatches, test.expectError)
 	}
+}
+
+func (s *ClientSuite) TestMacaroonsForURL(c *gc.C) {
+	// Create a target service.
+	svc := newService("loc", nil)
+
+	m1, err := svc.NewMacaroon("id1", []byte("key1"), nil)
+	c.Assert(err, gc.IsNil)
+	m2, err := svc.NewMacaroon("id2", []byte("key2"), nil)
+	c.Assert(err, gc.IsNil)
+
+	u1 := mustParseURL("http://0.1.2.3/")
+	u2 := mustParseURL("http://0.1.2.3/x/")
+
+	// Create some cookies with different cookie paths.
+	jar, err := cookiejar.New(nil)
+	c.Assert(err, gc.IsNil)
+	httpbakery.SetCookie(jar, u1, macaroon.Slice{m1})
+	httpbakery.SetCookie(jar, u2, macaroon.Slice{m2})
+	jar.SetCookies(u1, []*http.Cookie{{
+		Name:  "foo",
+		Path:  "/",
+		Value: "ignored",
+	}, {
+		Name:  "bar",
+		Path:  "/x/",
+		Value: "ignored",
+	}})
+
+	// Check that MacaroonsForURL behaves correctly
+	// with both single and multiple cookies.
+
+	mss := httpbakery.MacaroonsForURL(jar, u1)
+	c.Assert(mss, gc.HasLen, 1)
+	c.Assert(mss[0], gc.HasLen, 1)
+	c.Assert(mss[0][0].Id(), gc.Equals, "id1")
+
+	mss = httpbakery.MacaroonsForURL(jar, u2)
+
+	checked := make(map[string]int)
+	for _, ms := range mss {
+		checked[ms[0].Id()]++
+		err := svc.Check(ms, checkers.New())
+		c.Assert(err, gc.IsNil)
+	}
+	c.Assert(checked, jc.DeepEquals, map[string]int{
+		"id1": 1,
+		"id2": 1,
+	})
+}
+
+func mustParseURL(s string) *url.URL {
+	u, err := url.Parse(s)
+	if err != nil {
+		panic(err)
+	}
+	return u
 }
 
 type visitHandler struct {
