@@ -484,7 +484,7 @@ func (s *ClientSuite) TestThirdPartyDischargeRefused(c *gc.C) {
 	// Make the request to the server.
 	resp, err := client.Do(req)
 	c.Assert(errgo.Cause(err), gc.FitsTypeOf, (*httpbakery.DischargeError)(nil))
-	c.Assert(err, gc.ErrorMatches, `GET http://.* failed: cannot get discharge from ".*": third party refused discharge: cannot discharge: boo! cond is-ok`)
+	c.Assert(err, gc.ErrorMatches, `cannot get discharge from ".*": third party refused discharge: cannot discharge: boo! cond is-ok`)
 	c.Assert(resp, gc.IsNil)
 }
 
@@ -519,7 +519,7 @@ func (s *ClientSuite) TestDischargeWithInteractionRequiredError(c *gc.C) {
 
 	// Make the request to the server.
 	resp, err := client.Do(req)
-	c.Assert(err, gc.ErrorMatches, `GET http://.* failed: cannot get discharge from "https://.*": cannot start interactive session: cannot visit`)
+	c.Assert(err, gc.ErrorMatches, `cannot get discharge from "https://.*": cannot start interactive session: cannot visit`)
 	c.Assert(httpbakery.IsInteractionError(errgo.Cause(err)), gc.Equals, true)
 	ierr, ok := errgo.Cause(err).(*httpbakery.InteractionError)
 	c.Assert(ok, gc.Equals, true)
@@ -536,14 +536,14 @@ var dischargeWithVisitURLErrorTests = []struct {
 	respond: func(w http.ResponseWriter) {
 		httprequest.ErrorMapper(httpbakery.ErrorToResponse).WriteError(w, fmt.Errorf("an error"))
 	},
-	expectError: `GET http://.* failed: cannot get discharge from ".*": failed to acquire macaroon after waiting: third party refused discharge: an error`,
+	expectError: `cannot get discharge from ".*": failed to acquire macaroon after waiting: third party refused discharge: an error`,
 }, {
 	about: "non-JSON error",
 	respond: func(w http.ResponseWriter) {
 		w.Write([]byte("bad response"))
 	},
 	// TODO fix this unhelpful error message
-	expectError: `GET http://.* failed: cannot get discharge from ".*": cannot unmarshal wait response: invalid character 'b' looking for beginning of value`,
+	expectError: `cannot get discharge from ".*": cannot unmarshal wait response: invalid character 'b' looking for beginning of value`,
 }}
 
 func (s *ClientSuite) TestDischargeWithVisitURLError(c *gc.C) {
