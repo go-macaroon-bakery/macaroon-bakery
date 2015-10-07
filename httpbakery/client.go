@@ -287,7 +287,7 @@ func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker, getError func
 	httpResp.Body.Close()
 
 	if err := c.HandleError(req.URL, err); err != nil {
-		return nil, errgo.NoteMask(err, fmt.Sprintf("%s %s failed", req.Method, req.URL), errgo.Any)
+		return nil, errgo.Mask(err, errgo.Any)
 	}
 
 	if err := c.setRequestBody(req, body); err != nil {
