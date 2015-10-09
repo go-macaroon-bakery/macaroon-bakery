@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"time"
 
@@ -221,8 +222,9 @@ func (d *InteractiveDischarger) checker(req *http.Request, cavId, cav string) ([
 	d.id++
 	d.waiting[id] = discharge{cavId, make(chan dischargeResult, 1)}
 	d.mu.Unlock()
-	visitURL := fmt.Sprintf("%s/visit?waitid=%s", d.Discharger.server.URL, id)
-	waitURL := fmt.Sprintf("%s/wait?waitid=%s", d.Discharger.server.URL, id)
+	prefix := strings.TrimSuffix(req.URL.String(), "/discharge")
+	visitURL := fmt.Sprintf("%s/visit?waitid=%s", prefix, id)
+	waitURL := fmt.Sprintf("%s/wait?waitid=%s", prefix, id)
 	return nil, httpbakery.NewInteractionRequiredError(visitURL, waitURL, nil, req)
 }
 

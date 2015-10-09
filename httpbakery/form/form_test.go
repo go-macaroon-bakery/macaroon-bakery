@@ -6,8 +6,10 @@ import (
 	"net/url"
 
 	"github.com/juju/httprequest"
+	"github.com/juju/testing/httptesting"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/juju/environschema.v1"
+	esform "gopkg.in/juju/environschema.v1/form"
 
 	"gopkg.in/macaroon-bakery.v1/bakery"
 	"gopkg.in/macaroon-bakery.v1/bakery/checkers"
@@ -66,7 +68,7 @@ var formLoginTests = []struct {
 	expectError: `cannot get discharge from ".*": cannot start interactive session: invalid schema: no fields found`,
 }, {
 	about: "filler error",
-	filler: func(environschema.Fields) (map[string]interface{}, error) {
+	filler: func(esform.Form) (map[string]interface{}, error) {
 		return nil, testError
 	},
 	expectError: `cannot get discharge from ".*": cannot start interactive session: cannot handle form: test error`,
@@ -157,6 +159,55 @@ func (s *formSuite) TestFormLoginNewRequestError(c *gc.C) {
 	}
 	err := client.VisitWebPage(&u)
 	c.Assert(err, gc.ErrorMatches, "cannot create request: parse :://: missing protocol scheme")
+}
+
+var formTitleTests = []struct {
+	host   string
+	expect string
+}{{
+	host:   "xyz.com",
+	expect: "Log in to xyz.com",
+}, {
+	host:   "abc.xyz.com",
+	expect: "Log in to xyz.com",
+}, {
+	host:   "com",
+	expect: "Log in to com",
+}}
+
+func (s *formSuite) TestFormTitle(c *gc.C) {
+	d := &formDischarger{}
+	d.discharger = bakerytest.NewInteractiveDischarger(nil, http.HandlerFunc(d.login))
+	defer d.discharger.Close()
+	d.discharger.Mux.Handle("/form", http.HandlerFunc(d.form))
+	svc, err := bakery.NewService(bakery.NewServiceParams{
+		Locator: testLocator{
+			loc:     d.discharger.Location(),
+			locator: d.discharger,
+		},
+	})
+	c.Assert(err, gc.IsNil)
+	for i, test := range formTitleTests {
+		c.Logf("%d. %s", i, test.host)
+		m, err := svc.NewMacaroon("", nil, []checkers.Caveat{{
+			Location:  "https://" + test.host,
+			Condition: "test condition",
+		}})
+		c.Assert(err, gc.Equals, nil)
+		client := httpbakery.NewClient()
+		client.Client.Transport = httptesting.URLRewritingTransport{
+			MatchPrefix:  "https://" + test.host,
+			Replace:      d.discharger.Location(),
+			RoundTripper: http.DefaultTransport,
+		}
+		f := new(titleTestFiller)
+		form.SetUpAuth(client, f)
+
+		ms, err := client.DischargeAll(m)
+		c.Assert(err, gc.IsNil)
+		c.Assert(len(ms), gc.Equals, 2)
+		c.Assert(f.title, gc.Equals, test.expect)
+	}
 }
 
 type dischargeOptions struct {
@@ -256,12 +307,30 @@ var testError = &httpbakery.Error{
 	Message: "test error",
 }
 
-type fillerFunc func(environschema.Fields) (map[string]interface{}, error)
+type fillerFunc func(esform.Form) (map[string]interface{}, error)
 
-func (h fillerFunc) Fill(f environschema.Fields) (map[string]interface{}, error) {
-	return h(f)
+func (f fillerFunc) Fill(form esform.Form) (map[string]interface{}, error) {
+	return f(form)
 }
 
-var defaultFiller = fillerFunc(func(environschema.Fields) (map[string]interface{}, error) {
+var defaultFiller = fillerFunc(func(esform.Form) (map[string]interface{}, error) {
 	return map[string]interface{}{"test": 1}, nil
 })
+
+type testLocator struct {
+	loc     string
+	locator bakery.PublicKeyLocator
+}
+
+func (l testLocator) PublicKeyForLocation(loc string) (*bakery.PublicKey, error) {
+	return l.locator.PublicKeyForLocation(l.loc)
+}
+
+type titleTestFiller struct {
+	title string
+}
+
+func (f *titleTestFiller) Fill(form esform.Form) (map[string]interface{}, error) {
+	f.title = form.Title
+	return map[string]interface{}{"test": 1}, nil
+}

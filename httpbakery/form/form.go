@@ -6,8 +6,10 @@ import (
 	"net/url"
 
 	"github.com/juju/httprequest"
+	"golang.org/x/net/publicsuffix"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/juju/environschema.v1"
+	"gopkg.in/juju/environschema.v1/form"
 
 	"gopkg.in/macaroon-bakery.v1/httpbakery"
 )
@@ -49,19 +51,12 @@ client's responsibility to interpret the schema and present it to the
 user.
 */
 
-// Filler represents an object that can fill out a form. The given schema
-// represents the form template. The returned value should be compatible
-// with this.
-type Filler interface {
-	Fill(schema environschema.Fields) (map[string]interface{}, error)
-}
-
 // SetUpAuth configures form authentication on c. The VisitWebPage field
 // in c will be set to a function that will attempt form-based
 // authentication using f to perform the interaction with the user and
 // fall back to using the current value of VisitWebPage if form-based
 // authentication is not supported.
-func SetUpAuth(c *httpbakery.Client, f Filler) {
+func SetUpAuth(c *httpbakery.Client, f form.Filler) {
 	c.VisitWebPage = VisitWebPage(
 		&httprequest.Client{
 			Doer: c,
@@ -81,7 +76,7 @@ func SetUpAuth(c *httpbakery.Client, f Filler) {
 // If the new function detects that form login is not supported by the
 // server and fallback is not nil then fallback will be called to perform
 // the visit.
-func VisitWebPage(c *httprequest.Client, f Filler, fallback func(u *url.URL) error) func(u *url.URL) error {
+func VisitWebPage(c *httprequest.Client, f form.Filler, fallback func(u *url.URL) error) func(u *url.URL) error {
 	v := webPageVisitor{
 		client:   c,
 		filler:   f,
@@ -93,7 +88,7 @@ func VisitWebPage(c *httprequest.Client, f Filler, fallback func(u *url.URL) err
 // webPageVisitor contains the state required by visitWebPage.
 type webPageVisitor struct {
 	client   *httprequest.Client
-	filler   Filler
+	filler   form.Filler
 	fallback func(u *url.URL) error
 }
 
@@ -163,7 +158,14 @@ func (v webPageVisitor) visitWebPage(u *url.URL) error {
 	if len(s.Schema) == 0 {
 		return errgo.Newf("invalid schema: no fields found")
 	}
-	form, err := v.filler.Fill(s.Schema)
+	host, err := publicsuffix.EffectiveTLDPlusOne(u.Host)
+	if err != nil {
+		host = u.Host
+	}
+	form, err := v.filler.Fill(form.Form{
+		Title:  "Log in to " + host,
+		Fields: s.Schema,
+	})
 	if err != nil {
 		return errgo.NoteMask(err, "cannot handle form", errgo.Any)
 	}
