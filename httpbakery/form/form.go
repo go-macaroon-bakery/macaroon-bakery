@@ -57,13 +57,7 @@ user.
 // fall back to using the current value of VisitWebPage if form-based
 // authentication is not supported.
 func SetUpAuth(c *httpbakery.Client, f form.Filler) {
-	c.VisitWebPage = VisitWebPage(
-		&httprequest.Client{
-			Doer: c,
-		},
-		f,
-		c.VisitWebPage,
-	)
+	c.VisitWebPage = VisitWebPage(c, f, c.VisitWebPage)
 }
 
 // VisitWebPage creates a function suitable for use with
@@ -76,9 +70,11 @@ func SetUpAuth(c *httpbakery.Client, f form.Filler) {
 // If the new function detects that form login is not supported by the
 // server and fallback is not nil then fallback will be called to perform
 // the visit.
-func VisitWebPage(c *httprequest.Client, f form.Filler, fallback func(u *url.URL) error) func(u *url.URL) error {
+func VisitWebPage(d httprequest.Doer, f form.Filler, fallback func(u *url.URL) error) func(u *url.URL) error {
 	v := webPageVisitor{
-		client:   c,
+		client: &httprequest.Client{
+			Doer: d,
+		},
 		filler:   f,
 		fallback: fallback,
 	}
