@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/juju/loggo"
 	"golang.org/x/net/publicsuffix"
@@ -522,20 +523,33 @@ func (c *Client) interact(location, visitURLStr, waitURLStr string) (*macaroon.M
 			Reason: err,
 		}
 	}
-	waitResp, err := c.Client.Get(waitURL.String())
-	if err != nil {
-		return nil, errgo.Notef(err, "cannot get %q", waitURL)
-	}
-	defer waitResp.Body.Close()
-	if waitResp.StatusCode != http.StatusOK {
-		var resp Error
-		if err := json.NewDecoder(waitResp.Body).Decode(&resp); err != nil {
-			return nil, errgo.Notef(err, "cannot unmarshal wait error response")
+	var waitResp *http.Response
+	delay := 1
+WAITING:
+	for {
+		waitResp, err = c.Client.Get(waitURL.String())
+		if err != nil {
+			return nil, errgo.Notef(err, "cannot get %q", waitURL)
 		}
-		dischargeErr := &DischargeError{
-			Reason: &resp,
+		defer waitResp.Body.Close()
+		switch waitResp.StatusCode {
+		case http.StatusOK, http.StatusCreated:
+			break WAITING
+		case http.StatusAccepted:
+			time.Sleep(time.Duration(delay) * time.Second)
+			if delay < 30 {
+				delay++
+			}
+		default:
+			var resp Error
+			if err := json.NewDecoder(waitResp.Body).Decode(&resp); err != nil {
+				return nil, errgo.Notef(err, "cannot unmarshal wait error response")
+			}
+			dischargeErr := &DischargeError{
+				Reason: &resp,
+			}
+			return nil, errgo.NoteMask(dischargeErr, "failed to acquire macaroon after waiting", errgo.Any)
 		}
-		return nil, errgo.NoteMask(dischargeErr, "failed to acquire macaroon after waiting", errgo.Any)
 	}
 	var resp WaitResponse
 	if err := json.NewDecoder(waitResp.Body).Decode(&resp); err != nil {
