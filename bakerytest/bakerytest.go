@@ -112,10 +112,15 @@ func NewDischarger(
 	}
 }
 
-// Close shuts down the server.
+// Close shuts down the server. It may be called more than
+// once on the same discharger.
 func (d *Discharger) Close() {
+	if d.server == nil {
+		return
+	}
 	d.server.Close()
 	stopSkipVerify()
+	d.server = nil
 }
 
 // Location returns the location of the discharger, suitable
