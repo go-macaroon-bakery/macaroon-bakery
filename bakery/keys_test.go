@@ -172,6 +172,22 @@ var publicKeyRingTests = []struct {
 	loc:       "http://foo.com/",
 	expectKey: testKey,
 }, {
+	about: "non-prefix match with slash matches non-slash",
+	add: []addPublicKeyArgs{{
+		loc: "http://foo.com/x/",
+		key: testKey,
+	}},
+	loc:       "http://foo.com/x",
+	expectKey: testKey,
+}, {
+	about: "non-prefix match without slash matches slash",
+	add: []addPublicKeyArgs{{
+		loc: "http://foo.com/x",
+		key: testKey,
+	}},
+	loc:       "http://foo.com/x/",
+	expectKey: testKey,
+}, {
 	about: "port mismatch",
 	add: []addPublicKeyArgs{{
 		loc: "http://foo.com:8080/x",
