@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"net/url"
+	"strings"
 	"sync"
 
 	"golang.org/x/crypto/nacl/box"
@@ -152,6 +153,10 @@ func NewPublicKeyRing() *PublicKeyRing {
 // of http.ServeMux, For example, http://foo.com/x/ matches http://foo.com/x/y
 // but http://foo.com/x does not.
 //
+// If prefix is false, then matches will be exact except for the presence
+// or absence of a trailing "/". For example, with prefix false, http://foo.com/x will
+// match http://foo.com/x and http://foo.com/x/ but not http://foo.com/x/y.
+//
 // As a special case, http://foo.com is always treated the same as http://foo.com/.
 //
 // The scheme is not significant.
@@ -229,7 +234,7 @@ func (r *publicKeyRecord) match(url *url.URL) bool {
 		return false
 	}
 	if !r.prefix {
-		return url.Path == r.url.Path
+		return strings.TrimSuffix(url.Path, "/") == strings.TrimSuffix(r.url.Path, "/")
 	}
 	pattern := r.url.Path
 	n := len(pattern)
