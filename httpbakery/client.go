@@ -479,7 +479,7 @@ func (c *Client) AcquireDischarge(originalLocation string, cav macaroon.Caveat) 
 	}
 	cause, ok := errgo.Cause(err).(*Error)
 	if !ok {
-		return nil, errgo.Notef(err, "cannot acquire discharge")
+		return nil, errgo.NoteMask(err, "cannot acquire discharge", IsInteractionError)
 	}
 	if cause.Code != ErrInteractionRequired {
 		return nil, &DischargeError{
