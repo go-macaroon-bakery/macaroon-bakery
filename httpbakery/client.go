@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/juju/loggo"
 	"golang.org/x/net/publicsuffix"
@@ -400,6 +401,8 @@ func (r *readStopper) Close() error {
 	return nil
 }
 
+var timeNow = time.Now
+
 // NewCookie takes a slice of macaroons and returns them
 // encoded as a cookie. The slice should contain a single primary
 // macaroon in its first element, and any discharges after that.
@@ -416,6 +419,11 @@ func NewCookie(ms macaroon.Slice) (*http.Cookie, error) {
 		Value: base64.StdEncoding.EncodeToString(data),
 	}
 	cookie.Expires, _ = checkers.MacaroonsExpiryTime(ms)
+	// if macaroons have no expiry time, we set the cookie
+	// expiry to now plus one day.
+	if cookie.Expires.IsZero() {
+		cookie.Expires = timeNow().Add(24 * time.Hour)
+	}
 	// TODO(rog) other fields.
 	return cookie, nil
 }

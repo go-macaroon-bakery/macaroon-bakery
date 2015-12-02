@@ -775,6 +775,20 @@ func (s *ClientSuite) TestNewCookieExpires(c *gc.C) {
 	c.Assert(cookie.Expires.Equal(t), gc.Equals, true, gc.Commentf("obtained: %s, expected: %s", cookie.Expires, t))
 }
 
+func (s *ClientSuite) TestNewCookieDefaultExpiry(c *gc.C) {
+	t := time.Now()
+	jujutesting.PatchValue(httpbakery.TimeNow, func() time.Time {
+		return t
+	})
+
+	svc := newService("loc", nil)
+	m, err := svc.NewMacaroon("", nil, []checkers.Caveat{})
+	c.Assert(err, gc.IsNil)
+	cookie, err := httpbakery.NewCookie(macaroon.Slice{m})
+	c.Assert(err, gc.IsNil)
+	c.Assert(cookie.Expires.Equal(t.Add(24*time.Hour)), gc.Equals, true, gc.Commentf("obtained: %s, expected: %s", cookie.Expires, t))
+}
+
 func (s *ClientSuite) TestDoWithBodyAndCustomError(c *gc.C) {
 	d := bakerytest.NewDischarger(nil, noCaveatChecker)
 	defer d.Close()
