@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/juju/httprequest"
 	jujutesting "github.com/juju/testing"
+	jc "github.com/juju/testing/checkers"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v1"
@@ -422,45 +424,6 @@ func (s *ClientSuite) TestMacaroonCookiePath(c *gc.C) {
 	assertCookieCount("/foo/bar/baz", 1)
 }
 
-func (s *ClientSuite) TestPublicKey(c *gc.C) {
-	d := bakerytest.NewDischarger(nil, noCaveatChecker)
-	defer d.Close()
-	client := httpbakery.NewHTTPClient()
-	publicKey, err := httpbakery.PublicKeyForLocation(client, d.Location())
-	c.Assert(err, gc.IsNil)
-	expectedKey := d.Service.PublicKey()
-	c.Assert(publicKey, gc.DeepEquals, expectedKey)
-}
-
-func (s *ClientSuite) TestPublicKeyWrongURL(c *gc.C) {
-	client := httpbakery.NewHTTPClient()
-	_, err := httpbakery.PublicKeyForLocation(client, "http://localhost:0")
-	c.Assert(err, gc.ErrorMatches,
-		`cannot get public key from "http://localhost:0/publickey": Get http://localhost:0/publickey: dial tcp 127.0.0.1:0: .*connection refused`)
-}
-
-func (s *ClientSuite) TestPublicKeyReturnsInvalidJson(c *gc.C) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "BADJSON")
-	}))
-	defer ts.Close()
-	client := httpbakery.NewHTTPClient()
-	_, err := httpbakery.PublicKeyForLocation(client, ts.URL)
-	c.Assert(err, gc.ErrorMatches,
-		fmt.Sprintf(`failed to decode response from "%s/publickey": invalid character 'B' looking for beginning of value`, ts.URL))
-}
-
-func (s *ClientSuite) TestPublicKeyReturnsStatusInternalServerError(c *gc.C) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	defer ts.Close()
-	client := httpbakery.NewHTTPClient()
-	_, err := httpbakery.PublicKeyForLocation(client, ts.URL)
-	c.Assert(err, gc.ErrorMatches,
-		fmt.Sprintf(`cannot get public key from "%s/publickey": got status 500 Internal Server Error`, ts.URL))
-}
-
 func (s *ClientSuite) TestThirdPartyDischargeRefused(c *gc.C) {
 	d := bakerytest.NewDischarger(nil, func(_ *http.Request, cond, arg string) ([]checkers.Caveat, error) {
 		return nil, errgo.New("boo! cond " + cond)
@@ -517,7 +480,7 @@ func (s *ClientSuite) TestDischargeWithInteractionRequiredError(c *gc.C) {
 
 	// Make the request to the server.
 	resp, err := client.Do(req)
-	c.Assert(err, gc.ErrorMatches, `cannot get discharge from ".*": cannot start interactive session: cannot visit`)
+	c.Assert(err, gc.ErrorMatches, `cannot get discharge from "https://.*": cannot start interactive session: cannot visit`)
 	c.Assert(httpbakery.IsInteractionError(errgo.Cause(err)), gc.Equals, true)
 	ierr, ok := errgo.Cause(err).(*httpbakery.InteractionError)
 	c.Assert(ok, gc.Equals, true)
@@ -588,6 +551,63 @@ func (s *ClientSuite) TestDischargeWithVisitURLError(c *gc.C) {
 		_, err = client.Do(req)
 		c.Assert(err, gc.ErrorMatches, test.expectError)
 	}
+}
+
+func (s *ClientSuite) TestMacaroonsForURL(c *gc.C) {
+	// Create a target service.
+	svc := newService("loc", nil)
+
+	m1, err := svc.NewMacaroon("id1", []byte("key1"), nil)
+	c.Assert(err, gc.IsNil)
+	m2, err := svc.NewMacaroon("id2", []byte("key2"), nil)
+	c.Assert(err, gc.IsNil)
+
+	u1 := mustParseURL("http://0.1.2.3/")
+	u2 := mustParseURL("http://0.1.2.3/x/")
+
+	// Create some cookies with different cookie paths.
+	jar, err := cookiejar.New(nil)
+	c.Assert(err, gc.IsNil)
+	httpbakery.SetCookie(jar, u1, macaroon.Slice{m1})
+	httpbakery.SetCookie(jar, u2, macaroon.Slice{m2})
+	jar.SetCookies(u1, []*http.Cookie{{
+		Name:  "foo",
+		Path:  "/",
+		Value: "ignored",
+	}, {
+		Name:  "bar",
+		Path:  "/x/",
+		Value: "ignored",
+	}})
+
+	// Check that MacaroonsForURL behaves correctly
+	// with both single and multiple cookies.
+
+	mss := httpbakery.MacaroonsForURL(jar, u1)
+	c.Assert(mss, gc.HasLen, 1)
+	c.Assert(mss[0], gc.HasLen, 1)
+	c.Assert(mss[0][0].Id(), gc.Equals, "id1")
+
+	mss = httpbakery.MacaroonsForURL(jar, u2)
+
+	checked := make(map[string]int)
+	for _, ms := range mss {
+		checked[ms[0].Id()]++
+		err := svc.Check(ms, checkers.New())
+		c.Assert(err, gc.IsNil)
+	}
+	c.Assert(checked, jc.DeepEquals, map[string]int{
+		"id1": 1,
+		"id2": 1,
+	})
+}
+
+func mustParseURL(s string) *url.URL {
+	u, err := url.Parse(s)
+	if err != nil {
+		panic(err)
+	}
+	return u
 }
 
 type visitHandler struct {
@@ -813,4 +833,63 @@ func (s *ClientSuite) TestDoWithBodyAndCustomError(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	c.Assert(string(data), gc.Equals, "hello there")
 	c.Assert(callCount, gc.Equals, 2)
+}
+
+func (s *ClientSuite) TestHandleError(c *gc.C) {
+	d := bakerytest.NewDischarger(nil, noCaveatChecker)
+	defer d.Close()
+
+	// Create a target service.
+	svc := newService("loc", d)
+
+	srv := httptest.NewServer(serverHandler(svc, "unknown", nil))
+	defer srv.Close()
+
+	m, err := svc.NewMacaroon("", nil, []checkers.Caveat{{
+		Location:  d.Location(),
+		Condition: "something",
+	}})
+	c.Assert(err, gc.IsNil)
+
+	u, err := url.Parse(srv.URL + "/bar")
+	c.Assert(err, gc.IsNil)
+
+	respErr := &httpbakery.Error{
+		Message: "an error",
+		Code:    httpbakery.ErrDischargeRequired,
+		Info: &httpbakery.ErrorInfo{
+			Macaroon:     m,
+			MacaroonPath: "/foo",
+		},
+	}
+	client := httpbakery.NewClient()
+	err = client.HandleError(u, respErr)
+	c.Assert(err, gc.Equals, nil)
+	// No cookies at the original location.
+	c.Assert(client.Client.Jar.Cookies(u), gc.HasLen, 0)
+
+	u.Path = "/foo"
+	cookies := client.Client.Jar.Cookies(u)
+	c.Assert(cookies, gc.HasLen, 1)
+
+	// Check that we can actually make a request
+	// with the newly acquired macaroon cookies.
+
+	req, err := http.NewRequest("GET", srv.URL+"/foo", nil)
+	c.Assert(err, gc.IsNil)
+
+	resp, err := client.Do(req)
+	c.Assert(err, gc.IsNil)
+	resp.Body.Close()
+	c.Assert(resp.StatusCode, gc.Equals, http.StatusOK)
+}
+
+func (s *ClientSuite) TestHandleErrorDifferentError(c *gc.C) {
+	berr := &httpbakery.Error{
+		Message: "an error",
+		Code:    "another code",
+	}
+	client := httpbakery.NewClient()
+	err := client.HandleError(&url.URL{}, berr)
+	c.Assert(err, gc.Equals, berr)
 }

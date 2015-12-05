@@ -186,33 +186,6 @@ func (c *Client) dischargeAcquirer() DischargeAcquirer {
 	return c
 }
 
-// PublicKeyForLocation returns the public key from a macaroon
-// discharge server running at the given location URL.
-// Note that this is insecure if an http: URL scheme is used.
-func PublicKeyForLocation(client *http.Client, url string) (*bakery.PublicKey, error) {
-	url = url + "/publickey"
-	resp, err := client.Get(url)
-	if err != nil {
-		return nil, errgo.Notef(err, "cannot get public key from %q", url)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, errgo.Newf("cannot get public key from %q: got status %s", url, resp.Status)
-	}
-	defer resp.Body.Close()
-	data, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, errgo.Notef(err, "failed to read response body from %q", url)
-	}
-	var pubkey struct {
-		PublicKey *bakery.PublicKey
-	}
-	err = json.Unmarshal(data, &pubkey)
-	if err != nil {
-		return nil, errgo.Notef(err, "failed to decode response from %q", url)
-	}
-	return pubkey.PublicKey, nil
-}
-
 // relativeURL returns newPath relative to an original URL.
 func relativeURL(base, new string) (*url.URL, error) {
 	if new == "" {
@@ -287,36 +260,9 @@ func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker, getError func
 	}
 	httpResp.Body.Close()
 
-	respErr, ok := errgo.Cause(err).(*Error)
-	if !ok {
+	if err := c.HandleError(req.URL, err); err != nil {
 		return nil, errgo.Mask(err, errgo.Any)
 	}
-	if respErr.Code != ErrDischargeRequired {
-		return nil, errgo.NoteMask(err, fmt.Sprintf("%s %s failed", req.Method, req.URL), errgo.Any)
-	}
-	if respErr.Info == nil || respErr.Info.Macaroon == nil {
-		return nil, errgo.New("no macaroon found in discharge-required response")
-	}
-	mac := respErr.Info.Macaroon
-	macaroons, err := bakery.DischargeAllWithKey(mac, c.dischargeAcquirer().AcquireDischarge, c.Key)
-	if err != nil {
-		return nil, errgo.Mask(err, errgo.Any)
-	}
-	var cookiePath string
-	if path := respErr.Info.MacaroonPath; path != "" {
-		relURL, err := parseURLPath(path)
-		if err != nil {
-			logger.Warningf("ignoring invalid path in discharge-required response: %v", err)
-		} else {
-			cookiePath = req.URL.ResolveReference(relURL).Path
-		}
-	}
-	cookie, err := NewCookie(macaroons)
-	if err != nil {
-		return nil, errgo.Notef(err, "cannot make cookie")
-	}
-	cookie.Path = cookiePath
-	c.Jar.SetCookies(req.URL, []*http.Cookie{cookie})
 
 	if err := c.setRequestBody(req, body); err != nil {
 		return nil, errgo.Mask(err)
@@ -327,6 +273,49 @@ func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker, getError func
 		return nil, errgo.Mask(err, errgo.Any)
 	}
 	return hresp, nil
+}
+
+// HandleError tries to resolve the given error, which should be a
+// response to the given URL, by discharging any macaroon contained in
+// it. That is, if the error cause is an *Error and its code is
+// ErrDischargeRequired, then it will try to discharge
+// err.Info.Macaroon. If the discharge succeeds, the discharged macaroon
+// will be saved to the client's cookie jar and ResolveError will return
+// nil.
+//
+// For any other kind of error, the original error will be returned.
+func (c *Client) HandleError(reqURL *url.URL, err error) error {
+	respErr, ok := errgo.Cause(err).(*Error)
+	if !ok {
+		return err
+	}
+	if respErr.Code != ErrDischargeRequired {
+		return respErr
+	}
+	if respErr.Info == nil || respErr.Info.Macaroon == nil {
+		return errgo.New("no macaroon found in discharge-required response")
+	}
+	mac := respErr.Info.Macaroon
+	macaroons, err := bakery.DischargeAllWithKey(mac, c.dischargeAcquirer().AcquireDischarge, c.Key)
+	if err != nil {
+		return errgo.Mask(err, errgo.Any)
+	}
+	var cookiePath string
+	if path := respErr.Info.MacaroonPath; path != "" {
+		relURL, err := parseURLPath(path)
+		if err != nil {
+			logger.Warningf("ignoring invalid path in discharge-required response: %v", err)
+		} else {
+			cookiePath = reqURL.ResolveReference(relURL).Path
+		}
+	}
+	cookie, err := NewCookie(macaroons)
+	if err != nil {
+		return errgo.Notef(err, "cannot make cookie")
+	}
+	cookie.Path = cookiePath
+	c.Jar.SetCookies(reqURL, []*http.Cookie{cookie})
+	return nil
 }
 
 // DefaultGetError is the default error unmarshaler used by Client.DoWithBody.
@@ -447,6 +436,12 @@ func SetCookie(jar http.CookieJar, url *url.URL, ms macaroon.Slice) error {
 	return nil
 }
 
+// MacaroonsForURL returns any macaroons associated with the
+// given URL in the given cookie jar.
+func MacaroonsForURL(jar http.CookieJar, u *url.URL) []macaroon.Slice {
+	return cookiesToMacaroons(jar.Cookies(u))
+}
+
 func (c *Client) addCookie(req *http.Request, ms macaroon.Slice) error {
 	cookies, err := NewCookie(ms)
 	if err != nil {
@@ -485,7 +480,7 @@ func (c *Client) AcquireDischarge(originalLocation string, cav macaroon.Caveat) 
 	}
 	cause, ok := errgo.Cause(err).(*Error)
 	if !ok {
-		return nil, errgo.Notef(err, "cannot acquire discharge")
+		return nil, errgo.NoteMask(err, "cannot acquire discharge", IsInteractionError)
 	}
 	if cause.Code != ErrInteractionRequired {
 		return nil, &DischargeError{
@@ -620,7 +615,14 @@ func RequestMacaroons(req *http.Request) []macaroon.Slice {
 			mss = append(mss, ms)
 		}
 	}
-	for _, cookie := range req.Cookies() {
+	return append(mss, cookiesToMacaroons(req.Cookies())...)
+}
+
+// cookiesToMacaroons returns a slice of any macaroons found
+// in the given slice of cookies.
+func cookiesToMacaroons(cookies []*http.Cookie) []macaroon.Slice {
+	var mss []macaroon.Slice
+	for _, cookie := range cookies {
 		if !strings.HasPrefix(cookie.Name, "macaroon-") {
 			continue
 		}
