@@ -54,12 +54,12 @@ func (kr *PublicKeyRing) PublicKeyForLocation(loc string) (*bakery.PublicKey, er
 	if err != nil {
 		return nil, errgo.Notef(err, "invalid discharge URL %q", loc)
 	}
-	if u.Scheme != "https" && !kr.allowInsecure {
-		return nil, errgo.Newf("untrusted discharge URL %q", loc)
-	}
 	k, err := kr.cache.PublicKeyForLocation(loc)
 	if err == nil {
 		return k, nil
+	}
+	if u.Scheme != "https" && !kr.allowInsecure {
+		return nil, errgo.Newf("untrusted discharge URL %q", loc)
 	}
 	k, err = PublicKeyForLocation(kr.client, loc)
 	if err != nil {
