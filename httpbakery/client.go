@@ -313,6 +313,9 @@ func (c *Client) HandleError(reqURL *url.URL, err error) error {
 		return errgo.Notef(err, "cannot make cookie")
 	}
 	cookie.Path = cookiePath
+	if name := respErr.Info.CookieNameSuffix; name != "" {
+		cookie.Name = "macaroon-" + name
+	}
 	c.Jar.SetCookies(reqURL, []*http.Cookie{cookie})
 	return nil
 }
@@ -439,18 +442,6 @@ func SetCookie(jar http.CookieJar, url *url.URL, ms macaroon.Slice) error {
 // given URL in the given cookie jar.
 func MacaroonsForURL(jar http.CookieJar, u *url.URL) []macaroon.Slice {
 	return cookiesToMacaroons(jar.Cookies(u))
-}
-
-func (c *Client) addCookie(req *http.Request, ms macaroon.Slice) error {
-	cookies, err := NewCookie(ms)
-	if err != nil {
-		return errgo.Mask(err)
-	}
-	// TODO should we set it for the URL only, or the host.
-	// Can we set cookies such that they'll always get sent to any
-	// URL on the given host?
-	c.Jar.SetCookies(req.URL, []*http.Cookie{cookies})
-	return nil
 }
 
 func appendURLElem(u, elem string) string {

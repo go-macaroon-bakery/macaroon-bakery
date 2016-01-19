@@ -77,6 +77,13 @@ type ErrorInfo struct {
 	// the original URL from which the error was returned.
 	MacaroonPath string `json:",omitempty"`
 
+	// CookieNameSuffix holds the desired cookie name suffix to be
+	// associated with the macaroon. The actual name used will be
+	// ("macaroon-" + CookieName). Clients may ignore this field -
+	// older clients will always use ("macaroon-" +
+	// macaroon.Signature() in hex).
+	CookieNameSuffix string `json:",omitempty"`
+
 	// VisitURL and WaitURL are associated with the
 	// ErrInteractionRequired error code.
 
@@ -235,6 +242,11 @@ func NewInteractionRequiredError(visitURL, waitURL string, originalErr error, re
 // This function should always be used in preference to
 // NewDischargeRequiredError, because it enables in-browser macaroon
 // discharge.
+//
+// To request a particular cookie name:
+//
+//	err := NewDischargeRequiredErrorForRequest(...)
+//	err.(*httpbakery.Error).Info.CookieNameSuffix = cookieName
 func NewDischargeRequiredErrorForRequest(m *macaroon.Macaroon, path string, originalErr error, req *http.Request) error {
 	v := versionFromRequest(req)
 	return newDischargeRequiredErrorWithVersion(m, path, originalErr, v)
