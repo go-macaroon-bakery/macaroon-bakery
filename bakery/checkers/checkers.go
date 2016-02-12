@@ -17,6 +17,7 @@ const (
 	CondDeclared     = "declared"
 	CondTimeBefore   = "time-before"
 	CondClientIPAddr = "client-ip-addr"
+	CondClientOrigin = "origin"
 	CondError        = "error"
 	CondNeedDeclared = "need-declared"
 	CondAllow        = "allow"
@@ -221,6 +222,12 @@ func ClientIPAddrCaveat(addr net.IP) Caveat {
 		return ErrorCaveatf("bad IP address %d", []byte(addr))
 	}
 	return firstParty(CondClientIPAddr, addr.String())
+}
+
+// ClientOriginCaveat returns a caveat that will check whether the
+// client's Origin header in its HTTP request is as provided.
+func ClientOriginCaveat(origin string) Caveat {
+	return firstParty(CondClientOrigin, origin)
 }
 
 // ErrorCaveatf returns a caveat that will never be satisfied, holding

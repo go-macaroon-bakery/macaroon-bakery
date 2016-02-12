@@ -21,6 +21,7 @@ func Checkers(req *http.Request) checkers.Checker {
 	c := httpContext{req}
 	return checkers.Map{
 		checkers.CondClientIPAddr: c.clientIPAddr,
+		checkers.CondClientOrigin: c.clientOrigin,
 	}
 }
 
@@ -40,6 +41,15 @@ func (c httpContext) clientIPAddr(_, addr string) error {
 	}
 	if !reqIP.Equal(ip) {
 		return errgo.Newf("client IP address mismatch, got %s", reqIP)
+	}
+	return nil
+}
+
+// clientOrigin implements the Origin header checker
+// for an HTTP request.
+func (c httpContext) clientOrigin(_, origin string) error {
+	if reqOrigin := c.req.Header.Get("Origin"); reqOrigin != origin {
+		return errgo.Newf("request has invalid Origin header; got %q", reqOrigin)
 	}
 	return nil
 }

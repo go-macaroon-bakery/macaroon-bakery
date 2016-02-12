@@ -126,6 +126,28 @@ var checkerTests = []struct {
 		}).Condition,
 		expectError: `caveat "client-ip-addr 127.0.0.2" not satisfied: client IP address mismatch, got 2001:4860:0:2001::68`,
 	}},
+}, {
+	about:   "request with no origin",
+	checker: checkers.New(httpbakery.Checkers(&http.Request{})),
+	checks: []checkTest{{
+		caveat: checkers.ClientOriginCaveat("").Condition,
+	}, {
+		caveat:      checkers.ClientOriginCaveat("somewhere").Condition,
+		expectError: `caveat "origin somewhere" not satisfied: request has invalid Origin header; got ""`,
+	}},
+}, {
+	about: "request with origin",
+	checker: checkers.New(httpbakery.Checkers(&http.Request{
+		Header: http.Header{
+			"Origin": {"somewhere"},
+		},
+	})),
+	checks: []checkTest{{
+		caveat:      checkers.ClientOriginCaveat("").Condition,
+		expectError: `caveat "origin " not satisfied: request has invalid Origin header; got "somewhere"`,
+	}, {
+		caveat: checkers.ClientOriginCaveat("somewhere").Condition,
+	}},
 }}
 
 func (s *CheckersSuite) TestCheckers(c *gc.C) {

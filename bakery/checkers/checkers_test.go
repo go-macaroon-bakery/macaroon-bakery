@@ -292,6 +292,17 @@ func (s *CheckersSuite) TestClientIPAddrCaveat(c *gc.C) {
 	})
 }
 
+func (s *CheckersSuite) TestClientOriginCaveat(c *gc.C) {
+	cav := checkers.ClientOriginCaveat("")
+	c.Assert(cav, gc.Equals, checkers.Caveat{
+		Condition: "origin ",
+	})
+	cav = checkers.ClientOriginCaveat("somewhere")
+	c.Assert(cav, gc.Equals, checkers.Caveat{
+		Condition: "origin somewhere",
+	})
+}
+
 var inferDeclaredTests = []struct {
 	about   string
 	caveats [][]checkers.Caveat
