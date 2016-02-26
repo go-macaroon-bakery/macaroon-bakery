@@ -583,7 +583,7 @@ const MacaroonsHeader = "Macaroons"
 // cookies found in the request. By convention, each slice will contain a
 // primary macaroon followed by its discharges.
 func RequestMacaroons(req *http.Request) []macaroon.Slice {
-	var mss []macaroon.Slice
+	mss := cookiesToMacaroons(req.Cookies())
 	for _, h := range req.Header[MacaroonsHeader] {
 		ms, err := decodeMacaroonSlice(h)
 		if err != nil {
@@ -592,7 +592,7 @@ func RequestMacaroons(req *http.Request) []macaroon.Slice {
 			mss = append(mss, ms)
 		}
 	}
-	return append(mss, cookiesToMacaroons(req.Cookies())...)
+	return mss
 }
 
 // cookiesToMacaroons returns a slice of any macaroons found
@@ -647,9 +647,20 @@ func isVerificationError(err error) bool {
 //
 // It returns any attributes declared in the successfully validated request.
 func CheckRequest(svc *bakery.Service, req *http.Request, assert map[string]string, checker checkers.Checker) (map[string]string, error) {
+	attrs, _, err := CheckRequestM(svc, req, assert, checker)
+	return attrs, err
+}
+
+// CheckRequestM is like CheckRequest except that on success it also returns
+// the set of macaroons that was successfully checked.
+// The "M" suffix is for backward compatibility reasons - in a
+// later bakery version, the signature of CheckRequest will be
+// changed to return the macaroon slice and CheckRequestM will be
+// removed.
+func CheckRequestM(svc *bakery.Service, req *http.Request, assert map[string]string, checker checkers.Checker) (map[string]string, macaroon.Slice, error) {
 	mss := RequestMacaroons(req)
 	if len(mss) == 0 {
-		return nil, &bakery.VerificationError{
+		return nil, nil, &bakery.VerificationError{
 			Reason: errgo.Newf("no macaroon cookies in request"),
 		}
 	}
@@ -658,11 +669,11 @@ func CheckRequest(svc *bakery.Service, req *http.Request, assert map[string]stri
 		Checkers(req),
 		checkers.TimeBefore,
 	)
-	attrs, err := svc.CheckAny(mss, assert, checker)
+	attrs, ms, err := svc.CheckAnyM(mss, assert, checker)
 	if err != nil {
-		return nil, errgo.Mask(err, isVerificationError)
+		return nil, nil, errgo.Mask(err, isVerificationError)
 	}
-	return attrs, nil
+	return attrs, ms, nil
 }
 
 type cookieLogger struct {
