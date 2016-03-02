@@ -319,10 +319,10 @@ func (s *ServiceSuite) TestDischargeMacaroonCannotBeUsedAsNormalMacaroon(c *gc.C
 	c.Assert(err, gc.ErrorMatches, `verification failed: macaroon not found in storage`)
 }
 
-func (*ServiceSuite) TestCheckAnyWithNoMacaroons(c *gc.C) {
+func (*ServiceSuite) TestCheckAny(c *gc.C) {
 	svc := newService(c, "somewhere", nil)
-	newMacaroons := func(caveats ...checkers.Caveat) macaroon.Slice {
-		m, err := svc.NewMacaroon("", nil, caveats)
+	newMacaroons := func(id string, caveats ...checkers.Caveat) macaroon.Slice {
+		m, err := svc.NewMacaroon(id, nil, caveats)
 		c.Assert(err, gc.IsNil)
 		return macaroon.Slice{m}
 	}
@@ -332,6 +332,7 @@ func (*ServiceSuite) TestCheckAnyWithNoMacaroons(c *gc.C) {
 		assert         map[string]string
 		checker        checkers.Checker
 		expectDeclared map[string]string
+		expectId       string
 		expectError    string
 	}{{
 		about:       "no macaroons",
@@ -339,12 +340,13 @@ func (*ServiceSuite) TestCheckAnyWithNoMacaroons(c *gc.C) {
 	}, {
 		about: "one macaroon, no caveats",
 		macaroons: []macaroon.Slice{
-			newMacaroons(),
+			newMacaroons("x"),
 		},
+		expectId: "x",
 	}, {
 		about: "one macaroon, one unrecognized caveat",
 		macaroons: []macaroon.Slice{
-			newMacaroons(checkers.Caveat{
+			newMacaroons("x", checkers.Caveat{
 				Condition: "bad",
 			}),
 		},
@@ -352,15 +354,16 @@ func (*ServiceSuite) TestCheckAnyWithNoMacaroons(c *gc.C) {
 	}, {
 		about: "two macaroons, only one ok",
 		macaroons: []macaroon.Slice{
-			newMacaroons(checkers.Caveat{
+			newMacaroons("x", checkers.Caveat{
 				Condition: "bad",
 			}),
-			newMacaroons(),
+			newMacaroons("y"),
 		},
+		expectId: "y",
 	}, {
 		about: "macaroon with declared caveats",
 		macaroons: []macaroon.Slice{
-			newMacaroons(
+			newMacaroons("x",
 				checkers.DeclaredCaveat("key1", "value1"),
 				checkers.DeclaredCaveat("key2", "value2"),
 			),
@@ -369,10 +372,11 @@ func (*ServiceSuite) TestCheckAnyWithNoMacaroons(c *gc.C) {
 			"key1": "value1",
 			"key2": "value2",
 		},
+		expectId: "x",
 	}, {
 		about: "macaroon with declared values and asserted keys with wrong value",
 		macaroons: []macaroon.Slice{
-			newMacaroons(
+			newMacaroons("x",
 				checkers.DeclaredCaveat("key1", "value1"),
 				checkers.DeclaredCaveat("key2", "value2"),
 			),
@@ -380,11 +384,12 @@ func (*ServiceSuite) TestCheckAnyWithNoMacaroons(c *gc.C) {
 		assert: map[string]string{
 			"key1": "valuex",
 		},
+		expectId:    "x",
 		expectError: `verification failed: caveat "declared key1 value1" not satisfied: got key1="valuex", expected "value1"`,
 	}, {
 		about: "macaroon with declared values and asserted keys with correct value",
 		macaroons: []macaroon.Slice{
-			newMacaroons(
+			newMacaroons("x",
 				checkers.DeclaredCaveat("key1", "value1"),
 				checkers.DeclaredCaveat("key2", "value2"),
 			),
@@ -396,7 +401,8 @@ func (*ServiceSuite) TestCheckAnyWithNoMacaroons(c *gc.C) {
 			"key1": "value1",
 			"key2": "value2",
 		},
-	}}
+		expectId: "x",
+	}, {}}
 	for i, test := range tests {
 		c.Logf("test %d: %s", i, test.about)
 		if test.expectDeclared == nil {
@@ -406,14 +412,16 @@ func (*ServiceSuite) TestCheckAnyWithNoMacaroons(c *gc.C) {
 			test.checker = checkers.New()
 		}
 
-		decl, err := svc.CheckAny(test.macaroons, test.assert, test.checker)
+		decl, ms, err := svc.CheckAnyM(test.macaroons, test.assert, test.checker)
 		if test.expectError != "" {
 			c.Assert(err, gc.ErrorMatches, test.expectError)
 			c.Assert(decl, gc.HasLen, 0)
+			c.Assert(ms, gc.IsNil)
 			continue
 		}
 		c.Assert(err, gc.IsNil)
 		c.Assert(decl, jc.DeepEquals, test.expectDeclared)
+		c.Assert(ms[0].Id(), gc.Equals, test.expectId)
 	}
 }
 

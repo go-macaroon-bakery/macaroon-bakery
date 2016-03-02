@@ -129,6 +129,36 @@ func (svc *Service) Check(ms macaroon.Slice, checker FirstPartyChecker) error {
 	return nil
 }
 
+// CheckAnyM is like CheckAny except that on success it also returns
+// the set of macaroons that was successfully checked.
+// The "M" suffix is for backward compatibility reasons - in a
+// later bakery version, the signature of CheckRequest will be
+// changed to return the macaroon slice and CheckAnyM will be
+// removed.
+func (svc *Service) CheckAnyM(mss []macaroon.Slice, assert map[string]string, checker checkers.Checker) (map[string]string, macaroon.Slice, error) {
+	if len(mss) == 0 {
+		return nil, nil, &VerificationError{
+			Reason: errgo.Newf("no macaroons"),
+		}
+	}
+	// TODO perhaps return a slice of attribute maps, one
+	// for each successfully validated macaroon slice?
+	var err error
+	for _, ms := range mss {
+		declared := checkers.InferDeclared(ms)
+		for key, val := range assert {
+			declared[key] = val
+		}
+		err = svc.Check(ms, checkers.New(declared, checker))
+		if err == nil {
+			return declared, ms, nil
+		}
+	}
+	// Return an arbitrary error from the macaroons provided.
+	// TODO return all errors.
+	return nil, nil, errgo.Mask(err, isVerificationError)
+}
+
 // CheckAny checks that the given slice of slices contains at least
 // one macaroon minted by the given service, using checker to check
 // any first party caveats. It returns an error with a
@@ -144,27 +174,8 @@ func (svc *Service) Check(ms macaroon.Slice, checker FirstPartyChecker) error {
 //
 // It returns any attributes declared in the successfully validated request.
 func (svc *Service) CheckAny(mss []macaroon.Slice, assert map[string]string, checker checkers.Checker) (map[string]string, error) {
-	if len(mss) == 0 {
-		return nil, &VerificationError{
-			Reason: errgo.Newf("no macaroons"),
-		}
-	}
-	// TODO perhaps return a slice of attribute maps, one
-	// for each successfully validated macaroon slice?
-	var err error
-	for _, ms := range mss {
-		declared := checkers.InferDeclared(ms)
-		for key, val := range assert {
-			declared[key] = val
-		}
-		err = svc.Check(ms, checkers.New(declared, checker))
-		if err == nil {
-			return declared, nil
-		}
-	}
-	// Return an arbitrary error from the macaroons provided.
-	// TODO return all errors.
-	return nil, errgo.Mask(err, isVerificationError)
+	attrs, _, err := svc.CheckAnyM(mss, assert, checker)
+	return attrs, err
 }
 
 func isVerificationError(err error) bool {
