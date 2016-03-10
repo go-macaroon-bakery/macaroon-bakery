@@ -103,6 +103,7 @@ func (svc *Service) PublicKey() *PublicKey {
 // describes the error (other errors might be returned in other
 // circumstances).
 func (svc *Service) Check(ms macaroon.Slice, checker FirstPartyChecker) error {
+	logger.Infof("check with store %T %#v", svc.store)
 	if len(ms) == 0 {
 		return &VerificationError{
 			Reason: fmt.Errorf("no macaroons in slice"),
@@ -132,7 +133,7 @@ func (svc *Service) Check(ms macaroon.Slice, checker FirstPartyChecker) error {
 // CheckAnyM is like CheckAny except that on success it also returns
 // the set of macaroons that was successfully checked.
 // The "M" suffix is for backward compatibility reasons - in a
-// later bakery version, the signature of CheckRequest will be
+// later bakery version, the signature of CheckAny will be
 // changed to return the macaroon slice and CheckAnyM will be
 // removed.
 func (svc *Service) CheckAnyM(mss []macaroon.Slice, assert map[string]string, checker checkers.Checker) (map[string]string, macaroon.Slice, error) {
@@ -247,7 +248,6 @@ func LocalThirdPartyCaveat(key *PublicKey) checkers.Caveat {
 // encrypted with that public key. See LocalThirdPartyCaveat
 // for a way of creating such caveats.
 func (svc *Service) AddCaveat(m *macaroon.Macaroon, cav checkers.Caveat) error {
-	logger.Infof("Service.AddCaveat id %q; cav %#v", m.Id(), cav)
 	if cav.Location == "" {
 		m.AddFirstPartyCaveat(cav.Condition)
 		return nil

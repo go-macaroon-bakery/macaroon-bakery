@@ -340,13 +340,13 @@ func (*ServiceSuite) TestCheckAny(c *gc.C) {
 	}, {
 		about: "one macaroon, no caveats",
 		macaroons: []macaroon.Slice{
-			newMacaroons("x"),
+			newMacaroons("x1"),
 		},
-		expectId: "x",
+		expectId: "x1",
 	}, {
 		about: "one macaroon, one unrecognized caveat",
 		macaroons: []macaroon.Slice{
-			newMacaroons("x", checkers.Caveat{
+			newMacaroons("x2", checkers.Caveat{
 				Condition: "bad",
 			}),
 		},
@@ -354,16 +354,16 @@ func (*ServiceSuite) TestCheckAny(c *gc.C) {
 	}, {
 		about: "two macaroons, only one ok",
 		macaroons: []macaroon.Slice{
-			newMacaroons("x", checkers.Caveat{
+			newMacaroons("x3", checkers.Caveat{
 				Condition: "bad",
 			}),
-			newMacaroons("y"),
+			newMacaroons("y3"),
 		},
-		expectId: "y",
+		expectId: "y3",
 	}, {
 		about: "macaroon with declared caveats",
 		macaroons: []macaroon.Slice{
-			newMacaroons("x",
+			newMacaroons("x4",
 				checkers.DeclaredCaveat("key1", "value1"),
 				checkers.DeclaredCaveat("key2", "value2"),
 			),
@@ -372,11 +372,11 @@ func (*ServiceSuite) TestCheckAny(c *gc.C) {
 			"key1": "value1",
 			"key2": "value2",
 		},
-		expectId: "x",
+		expectId: "x4",
 	}, {
 		about: "macaroon with declared values and asserted keys with wrong value",
 		macaroons: []macaroon.Slice{
-			newMacaroons("x",
+			newMacaroons("x5",
 				checkers.DeclaredCaveat("key1", "value1"),
 				checkers.DeclaredCaveat("key2", "value2"),
 			),
@@ -384,12 +384,12 @@ func (*ServiceSuite) TestCheckAny(c *gc.C) {
 		assert: map[string]string{
 			"key1": "valuex",
 		},
-		expectId:    "x",
+		expectId:    "x5",
 		expectError: `verification failed: caveat "declared key1 value1" not satisfied: got key1="valuex", expected "value1"`,
 	}, {
 		about: "macaroon with declared values and asserted keys with correct value",
 		macaroons: []macaroon.Slice{
-			newMacaroons("x",
+			newMacaroons("x6",
 				checkers.DeclaredCaveat("key1", "value1"),
 				checkers.DeclaredCaveat("key2", "value2"),
 			),
@@ -401,8 +401,8 @@ func (*ServiceSuite) TestCheckAny(c *gc.C) {
 			"key1": "value1",
 			"key2": "value2",
 		},
-		expectId: "x",
-	}, {}}
+		expectId: "x6",
+	}}
 	for i, test := range tests {
 		c.Logf("test %d: %s", i, test.about)
 		if test.expectDeclared == nil {
