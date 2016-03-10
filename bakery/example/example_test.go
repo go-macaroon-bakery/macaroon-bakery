@@ -1,15 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
-	"net/url"
 	"testing"
 
 	gc "gopkg.in/check.v1"
 
 	"gopkg.in/macaroon-bakery.v1/bakery"
-	"gopkg.in/macaroon-bakery.v1/httpbakery"
 )
 
 func TestPackage(t *testing.T) {
@@ -61,16 +58,5 @@ func (s *exampleSuite) BenchmarkExample(c *gc.C) {
 		resp, err := clientRequest(client, serverEndpoint)
 		c.Assert(err, gc.IsNil)
 		c.Assert(resp, gc.Equals, "hello, world\n")
-	}
-}
-
-func newClient() *httpbakery.Client {
-	return &httpbakery.Client{
-		Client: httpbakery.NewHTTPClient(),
-		VisitWebPage: func(url *url.URL) error {
-			fmt.Printf("please visit this web page:\n")
-			fmt.Printf("\t%s\n", url)
-			return nil
-		},
 	}
 }

@@ -4,6 +4,7 @@ github.com/juju/loggo	git	8477fc936adf0e382d680310047ca27e128a309a	2015-05-27T03
 github.com/juju/schema	git	afe1151cb49d1d7ed3c75592dfc6f38703f2e988	2015-08-07T07:58:08Z
 github.com/juju/testing	git	6e944d606b6efca96146fbda3e6a27f73313d867	2015-10-02T11:09:45Z
 github.com/juju/utils	git	c9d1b9e09eebb41c3bb2d762ea16f4d8abed6ce5	2015-09-02T22:36:51Z
+github.com/juju/webbrowser	git	54b8c57083b4afb7dc75da7f13e2967b2606a507	2016-03-09T14:36:29Z
 github.com/julienschmidt/httprouter	git	109e267447e95ad1bb48b758e40dd7453eb7b039	2015-09-05T17:25:33Z
 golang.org/x/crypto	git	aedad9a179ec1ea11b7064c57cbc6dc30d7724ec	2015-08-30T18:06:42Z
 golang.org/x/net	git	ea47fc708ee3e20177f3ca3716217c4ab75942cb	2015-08-29T23:03:18Z
