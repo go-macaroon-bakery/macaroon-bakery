@@ -147,18 +147,25 @@ func (v webPageVisitor) visitWebPage(u *url.URL) error {
 		}
 		return errgo.Newf("form login not supported")
 	}
+	host, err := publicsuffix.EffectiveTLDPlusOne(u.Host)
+	if err != nil {
+		host = u.Host
+	}
+	return LoginWithForm(v.client, v.filler, host, lm.Form)
+}
+
+// LoginWithForm performs an login by retrieving a form schema from url,
+// using filler to complete the form and submitting the completed form
+// back to url.
+func LoginWithForm(client *httprequest.Client, filler form.Filler, host string, url string) error {
 	var s SchemaResponse
-	if err := v.client.CallURL(lm.Form, &SchemaRequest{}, &s); err != nil {
+	if err := client.CallURL(url, &SchemaRequest{}, &s); err != nil {
 		return errgo.Notef(err, "cannot get schema")
 	}
 	if len(s.Schema) == 0 {
 		return errgo.Newf("invalid schema: no fields found")
 	}
-	host, err := publicsuffix.EffectiveTLDPlusOne(u.Host)
-	if err != nil {
-		host = u.Host
-	}
-	form, err := v.filler.Fill(form.Form{
+	form, err := filler.Fill(form.Form{
 		Title:  "Log in to " + host,
 		Fields: s.Schema,
 	})
@@ -170,7 +177,7 @@ func (v webPageVisitor) visitWebPage(u *url.URL) error {
 			Form: form,
 		},
 	}
-	if err := v.client.CallURL(lm.Form, &lr, nil); err != nil {
+	if err := client.CallURL(url, &lr, nil); err != nil {
 		return errgo.Notef(err, "cannot submit form")
 	}
 	return nil
