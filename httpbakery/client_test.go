@@ -609,6 +609,48 @@ func (s *ClientSuite) TestDischargeWithInteractionRequiredError(c *gc.C) {
 	c.Assert(resp, gc.IsNil)
 }
 
+func (s *ClientSuite) TestDischargeWithInteractionRequiredErrorAndWebPageVisitor(c *gc.C) {
+	d := bakerytest.NewDischarger(nil, func(_ *http.Request, cond, arg string) ([]checkers.Caveat, error) {
+		return nil, &httpbakery.Error{
+			Code:    httpbakery.ErrInteractionRequired,
+			Message: "interaction required",
+			Info: &httpbakery.ErrorInfo{
+				VisitURL: "http://0.1.2.3/",
+				WaitURL:  "http://0.1.2.3/",
+			},
+		}
+	})
+	defer d.Close()
+
+	// Create a target service.
+	svc := newService("loc", d)
+
+	ts := httptest.NewServer(serverHandler(serverHandlerParams{
+		service:      svc,
+		authLocation: d.Location(),
+	}))
+	defer ts.Close()
+
+	// Create a client request.
+	req, err := http.NewRequest("GET", ts.URL, nil)
+	c.Assert(err, gc.IsNil)
+
+	errCannotVisit := errgo.New("cannot visit")
+	client := httpbakery.NewClient()
+	client.WebPageVisitor = visitorFunc(func(_ *httpbakery.Client, m map[string]*url.URL) error {
+		return errCannotVisit
+	})
+
+	// Make the request to the server.
+	resp, err := client.Do(req)
+	c.Assert(err, gc.ErrorMatches, `cannot get discharge from "https://.*": cannot start interactive session: cannot visit`)
+	c.Assert(httpbakery.IsInteractionError(errgo.Cause(err)), gc.Equals, true)
+	ierr, ok := errgo.Cause(err).(*httpbakery.InteractionError)
+	c.Assert(ok, gc.Equals, true)
+	c.Assert(ierr.Reason, gc.Equals, errCannotVisit)
+	c.Assert(resp, gc.IsNil)
+}
+
 var dischargeWithVisitURLErrorTests = []struct {
 	about       string
 	respond     func(http.ResponseWriter)

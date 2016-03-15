@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"time"
 
@@ -227,9 +226,8 @@ func (d *InteractiveDischarger) checker(req *http.Request, cavId, cav string) ([
 	d.id++
 	d.waiting[id] = discharge{cavId, make(chan dischargeResult, 1)}
 	d.mu.Unlock()
-	prefix := strings.TrimSuffix(req.URL.String(), "/discharge")
-	visitURL := fmt.Sprintf("%s/visit?waitid=%s", prefix, id)
-	waitURL := fmt.Sprintf("%s/wait?waitid=%s", prefix, id)
+	visitURL := "/visit?waitid=" + id
+	waitURL := "/wait?waitid=" + id
 	return nil, httpbakery.NewInteractionRequiredError(visitURL, waitURL, nil, req)
 }
 
@@ -308,11 +306,19 @@ func (d *InteractiveDischarger) FinishInteraction(w http.ResponseWriter, r *http
 	return
 }
 
+// HostRelativeURL is like URL but includes only the
+// URL path and query parameters. Use this when returning
+// a URL for use in GetInteractionMethods.
+func (d *InteractiveDischarger) HostRelativeURL(path string, r *http.Request) string {
+	r.ParseForm()
+	return path + "?waitid=" + r.Form.Get("waitid")
+}
+
 // URL returns a URL addressed to the given path in the discharger that
 // contains any discharger context information found in the given
 // request. Use this to generate intermediate URLs before calling
 // FinishInteraction.
 func (d *InteractiveDischarger) URL(path string, r *http.Request) string {
 	r.ParseForm()
-	return d.Location() + path + "?waitid=" + r.Form.Get("waitid")
+	return d.Location() + d.HostRelativeURL(path, r)
 }
