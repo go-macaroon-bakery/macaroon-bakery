@@ -24,3 +24,17 @@ func OpenWebBrowser(url *url.URL) error {
 	}
 	return err
 }
+
+// WebBrowserVisitor holds an interactor that supports the "Interactive"
+// method by opening a web browser at the required location.
+var WebBrowserVisitor Visitor = webBrowserVisitor{}
+
+type webBrowserVisitor struct{}
+
+func (webBrowserVisitor) VisitWebPage(client *Client, methodURLs map[string]*url.URL) error {
+	u := methodURLs[UserInteractionMethod]
+	if u == nil {
+		return ErrMethodNotSupported
+	}
+	return OpenWebBrowser(u)
+}

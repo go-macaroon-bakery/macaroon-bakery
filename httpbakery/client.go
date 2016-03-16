@@ -104,10 +104,22 @@ type Client struct {
 	// headers (see NewHTTPClient).
 	*http.Client
 
-	// VisitWebPage is called when the authorization process
-	// requires user interaction, and should cause the given URL to
-	// be opened in a web browser. If this is nil, no interaction
-	// will be allowed.
+	// WebPageVisitor holds a Visitor that is called when the
+	// discharge process requires further interaction. If this
+	// is nil, VisitWebPage will be called; if that is also nil, no
+	// interaction will be allowed.
+	//
+	// The VisitWebPage method will always be called with a map
+	// containing a single entry with the key UserInteractionMethod,
+	// holding the URL found in the InteractionRequired error's
+	// VisitURL field.
+	WebPageVisitor Visitor
+
+	// VisitWebPage is called when WebPageVisitor is nil and
+	// the discharge process requires further interaction.
+	//
+	// Note that this field is now deprecated in favour of
+	// WebPageVisitor, which will take priority if set.
 	VisitWebPage func(*url.URL) error
 
 	// Key holds the client's key. If set, the client will try to
@@ -498,12 +510,17 @@ func (c *Client) interact(location, visitURLStr, waitURLStr string) (*macaroon.M
 	if err != nil {
 		return nil, errgo.Notef(err, "cannot make relative wait URL")
 	}
-	if c.VisitWebPage == nil {
-		return nil, &InteractionError{
-			Reason: errgo.New("interaction required but not possible"),
-		}
+	switch {
+	case c.WebPageVisitor != nil:
+		err = c.WebPageVisitor.VisitWebPage(c, map[string]*url.URL{
+			UserInteractionMethod: visitURL,
+		})
+	case c.VisitWebPage != nil:
+		err = c.VisitWebPage(visitURL)
+	default:
+		err = errgo.New("interaction required but not possible")
 	}
-	if err := c.VisitWebPage(visitURL); err != nil {
+	if err != nil {
 		return nil, &InteractionError{
 			Reason: err,
 		}
