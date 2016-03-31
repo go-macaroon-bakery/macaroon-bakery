@@ -103,7 +103,6 @@ func (svc *Service) PublicKey() *PublicKey {
 // describes the error (other errors might be returned in other
 // circumstances).
 func (svc *Service) Check(ms macaroon.Slice, checker FirstPartyChecker) error {
-	logger.Infof("check with store %T %#v", svc.store)
 	if len(ms) == 0 {
 		return &VerificationError{
 			Reason: fmt.Errorf("no macaroons in slice"),
