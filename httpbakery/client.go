@@ -51,7 +51,7 @@ func (e *InteractionError) Error() string {
 	return fmt.Sprintf("cannot start interactive session: %v", e.Reason)
 }
 
-// IsInteractionError reports whether err is a *DischargeError.
+// IsInteractionError reports whether err is an *InteractionError.
 func IsInteractionError(err error) bool {
 	_, ok := err.(*InteractionError)
 	return ok

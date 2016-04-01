@@ -52,7 +52,9 @@ func NewMultiVisitor(methods ...Visitor) Visitor {
 
 // VisitWebPage implements Visitor.VisitWebPage by obtaining all the
 // available interaction methods and calling v.supportedMethods until it
-// finds one that recognizes the method.
+// finds one that recognizes the method. If a Visitor returns an error
+// other than ErrMethodNotSupported the error will be immediately
+// returned to the caller; its cause will not be masked.
 func (v multiVisitor) VisitWebPage(client *Client, methodURLs map[string]*url.URL) error {
 	// The Client implementation will always include a UserInteractionMethod
 	// entry taken from the VisitURL field in the error, so use that
@@ -82,7 +84,7 @@ func (v multiVisitor) VisitWebPage(client *Client, methodURLs map[string]*url.UR
 			return nil
 		}
 		if errgo.Cause(err) != ErrMethodNotSupported {
-			return errgo.Mask(err)
+			return errgo.Mask(err, errgo.Any)
 		}
 	}
 	return errgo.Newf("no methods supported")

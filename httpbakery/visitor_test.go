@@ -9,6 +9,7 @@ import (
 	jujutesting "github.com/juju/testing"
 	jc "github.com/juju/testing/checkers"
 	gc "gopkg.in/check.v1"
+	"gopkg.in/errgo.v1"
 
 	"gopkg.in/macaroon-bakery.v1/httpbakery"
 )
@@ -145,6 +146,25 @@ func (*VisitorSuite) TestUserInteractionFallback(c *gc.C) {
 	})
 	c.Assert(err, gc.IsNil)
 	c.Assert(called, gc.Equals, 1)
+}
+
+func (*VisitorSuite) TestMultiVisitorVisitorError(c *gc.C) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"method": "http://somewhere/something"}`)
+	}))
+	defer srv.Close()
+
+	testError := errgo.New("test error")
+	v := httpbakery.NewMultiVisitor(
+		visitorFunc(func(*httpbakery.Client, map[string]*url.URL) error {
+			return testError
+		}),
+	)
+	err := v.VisitWebPage(httpbakery.NewClient(), map[string]*url.URL{
+		httpbakery.UserInteractionMethod: mustParseURL(srv.URL),
+	})
+	c.Assert(errgo.Cause(err), gc.Equals, testError)
 }
 
 type visitorFunc func(*httpbakery.Client, map[string]*url.URL) error
