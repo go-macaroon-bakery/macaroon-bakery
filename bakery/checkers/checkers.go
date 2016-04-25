@@ -273,7 +273,43 @@ func operationCaveat(cond string, op []string) Caveat {
 	return firstParty(cond, strings.Join(op, " "))
 }
 
-// OperationChecker checks any allow or deny caveats ensuring they do not
+// OperationsChecker checks any allow or deny caveats
+// with respect to all the named operations in the slice.
+// An allow caveat must allow all the operations in the
+// slice; a deny caveat will fail if it denies any operation in the
+// slice.
+type OperationsChecker []string
+
+// Condition implements Checker.Condition.
+func (OperationsChecker) Condition() string {
+	return ""
+}
+
+// Check implements Checker.Check.
+func (os OperationsChecker) Check(cond, arg string) error {
+	if len(os) == 0 {
+		switch cond {
+		case CondDeny:
+			return nil
+		case CondAllow:
+			f := strings.Fields(arg)
+			if len(f) == 0 {
+				return errgo.New("no operations allowed")
+			}
+			return errgo.Newf("%s not allowed", f[0])
+		default:
+			return ErrCaveatNotRecognized
+		}
+	}
+	for _, o := range os {
+		if err := OperationChecker(o).Check(cond, arg); err != nil {
+			return errgo.Mask(err, errgo.Is(ErrCaveatNotRecognized))
+		}
+	}
+	return nil
+}
+
+// OperationChecker checks any allow or deny caveats, ensuring they do not
 // prohibit the named operation.
 type OperationChecker string
 

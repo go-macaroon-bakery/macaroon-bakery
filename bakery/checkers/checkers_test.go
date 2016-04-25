@@ -479,6 +479,62 @@ func (*CheckersSuite) TestOperationChecker(c *gc.C) {
 	}
 }
 
+var operationsCheckerTests = []struct {
+	about       string
+	caveat      checkers.Caveat
+	oc          checkers.OperationsChecker
+	expectError string
+}{{
+	about:  "all allowed",
+	caveat: checkers.AllowCaveat("op1", "op2", "op4", "op3"),
+	oc:     checkers.OperationsChecker{"op1", "op3", "op2"},
+}, {
+	about:  "none denied",
+	caveat: checkers.DenyCaveat("op1", "op2"),
+	oc:     checkers.OperationsChecker{"op3", "op4"},
+}, {
+	about:       "one not allowed",
+	caveat:      checkers.AllowCaveat("op1", "op2"),
+	oc:          checkers.OperationsChecker{"op1", "op3"},
+	expectError: `op3 not allowed`,
+}, {
+	about:       "one denied",
+	caveat:      checkers.DenyCaveat("op1", "op2"),
+	oc:          checkers.OperationsChecker{"op4", "op5", "op2"},
+	expectError: `op2 not allowed`,
+}, {
+	about:       "no operations, allow caveat",
+	caveat:      checkers.AllowCaveat("op1"),
+	oc:          checkers.OperationsChecker{},
+	expectError: `op1 not allowed`,
+}, {
+	about:  "no operations, deny caveat",
+	caveat: checkers.DenyCaveat("op1"),
+	oc:     checkers.OperationsChecker{},
+}, {
+	about: "no operations, empty allow caveat",
+	caveat: checkers.Caveat{
+		Condition: checkers.CondAllow,
+	},
+	oc:          checkers.OperationsChecker{},
+	expectError: `no operations allowed`,
+}}
+
+func (*CheckersSuite) TestOperationsChecker(c *gc.C) {
+	for i, test := range operationsCheckerTests {
+		c.Logf("%d: %s", i, test.about)
+		cond, arg, err := checkers.ParseCaveat(test.caveat.Condition)
+		c.Assert(err, gc.IsNil)
+		c.Assert(test.oc.Condition(), gc.Equals, "")
+		err = test.oc.Check(cond, arg)
+		if test.expectError == "" {
+			c.Assert(err, gc.IsNil)
+			continue
+		}
+		c.Assert(err, gc.ErrorMatches, test.expectError)
+	}
+}
+
 var operationErrorCaveatTests = []struct {
 	about           string
 	caveat          checkers.Caveat
