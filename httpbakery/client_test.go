@@ -119,8 +119,9 @@ func (s *ClientSuite) TestRepeatedRequestWithBody(c *gc.C) {
 	svc := newService("loc", d)
 
 	ts := httptest.NewServer(serverHandler(serverHandlerParams{
-		service:      svc,
-		authLocation: d.Location(),
+		service:        svc,
+		authLocation:   d.Location(),
+		alwaysReadBody: true,
 	}))
 	defer ts.Close()
 
@@ -176,8 +177,12 @@ func (s ClientSuite) TestWithLargeBody(c *gc.C) {
 	req, err := http.NewRequest("POST", ts.URL+"/no-body", nil)
 	c.Assert(err, gc.IsNil)
 
-	resp, err := httpbakery.NewClient().DoWithBody(req, &largeReader{total: 3 * 1024 * 1024})
+	body := &largeReader{total: 3 * 1024 * 1024}
+	resp, err := httpbakery.NewClient().DoWithBody(req, body)
 	c.Assert(err, gc.IsNil)
+	resp.Body.Close()
+	body.Close()
+
 	c.Assert(resp.StatusCode, gc.Equals, http.StatusOK)
 }
 
@@ -202,6 +207,15 @@ func (r *largeReader) Seek(offset int64, whence int) (int64, error) {
 	}
 	r.n = 0
 	return 0, nil
+}
+
+func (r *largeReader) Close() error {
+	// By setting n to zero, we ensure that if there's
+	// a concurrent read, it will also read from n
+	// and so the race detector should pick up the
+	// problem.
+	r.n = 0
+	return nil
 }
 
 func (s *ClientSuite) TestDoWithBodyFailsWithBodyInRequest(c *gc.C) {
@@ -1017,6 +1031,10 @@ type serverHandlerParams struct {
 	// If caveats is non-nil, it is called to get caveats to
 	// add to the returned macaroon.
 	caveats func() []checkers.Caveat
+
+	// alwaysReadBody specifies whether the handler should always read
+	// the entire request body before returning.
+	alwaysReadBody bool
 }
 
 // serverHandler returns an HTTP handler that checks macaroon authorization
@@ -1028,6 +1046,9 @@ func serverHandler(hp serverHandlerParams) http.Handler {
 		hp.checker = isChecker("something")
 	}
 	h := handleErrors(func(p httprequest.Params) error {
+		if hp.alwaysReadBody {
+			defer ioutil.ReadAll(p.Request.Body)
+		}
 		if _, checkErr := httpbakery.CheckRequest(hp.service, p.Request, nil, hp.checker); checkErr != nil {
 			return newDischargeRequiredError(hp, checkErr, p.Request)
 		}

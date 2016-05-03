@@ -260,6 +260,14 @@ func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker, getError func
 	if err := c.setRequestBody(req, body); err != nil {
 		return nil, errgo.Mask(err)
 	}
+	// Ensure that the request body (which will always be *readStopper) is
+	// closed before doWithBody returns. This means that even when
+	// the net/http code continues to read from the body after
+	// the Do returns, it'll be thwarted by our readStopper so
+	// allowing the caller to close the body without a race.
+	// See http://golang.org/issue/12796.
+	defer c.closeRequestBody(req)
+
 	req.Header.Set(BakeryProtocolHeader, fmt.Sprint(latestVersion))
 	httpResp, err := c.Client.Do(req)
 	if err != nil {
@@ -284,6 +292,12 @@ func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker, getError func
 		return nil, errgo.Mask(err, errgo.Any)
 	}
 	return hresp, nil
+}
+
+func (c *Client) closeRequestBody(req *http.Request) {
+	if req.Body != nil {
+		req.Body.Close()
+	}
 }
 
 // HandleError tries to resolve the given error, which should be a
@@ -372,6 +386,7 @@ func (c *Client) setRequestBody(req *http.Request, body io.ReadSeeker) error {
 		return nil
 	}
 	if req.Body != nil {
+		// Close the old readStopper.
 		req.Body.Close()
 		if _, err := body.Seek(0, 0); err != nil {
 			return errgo.Notef(err, "cannot seek to start of request body")
@@ -403,7 +418,13 @@ func (r *readStopper) Read(buf []byte) (int, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.r == nil {
-		return 0, errClosed
+		// Note: we have to use io.EOF here because otherwise
+		// another connection can (in rare circumstances) be
+		// polluted by the error returned here. Although this
+		// means the file may appear truncated to the server,
+		// that shouldn't matter because the body will only
+		// be closed after the server has replied.
+		return 0, io.EOF
 	}
 	return r.r.Read(buf)
 }
