@@ -4,15 +4,18 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/juju/testing"
+	jc "github.com/juju/testing/checkers"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/macaroon.v1"
 
-	jc "github.com/juju/testing/checkers"
 	"gopkg.in/macaroon-bakery.v1/bakery"
 	"gopkg.in/macaroon-bakery.v1/bakery/checkers"
 )
 
-type ServiceSuite struct{}
+type ServiceSuite struct {
+	testing.CleanupSuite
+}
 
 var _ = gc.Suite(&ServiceSuite{})
 
@@ -423,6 +426,93 @@ func (*ServiceSuite) TestCheckAny(c *gc.C) {
 		c.Assert(decl, jc.DeepEquals, test.expectDeclared)
 		c.Assert(ms[0].Id(), gc.Equals, test.expectId)
 	}
+}
+
+func (s *ServiceSuite) TestNewMacaroonWithRootKeyStorage(c *gc.C) {
+	svc, err := bakery.NewService(bakery.NewServiceParams{
+		Location: "somewhere",
+	})
+	c.Assert(err, gc.IsNil)
+
+	store := bakery.NewMemRootKeyStorage()
+	key, id, err := store.RootKey()
+	c.Assert(err, gc.IsNil)
+
+	svc = svc.WithRootKeyStore(store)
+
+	m, err := svc.NewMacaroon("", nil, []checkers.Caveat{{
+		Location:  "",
+		Condition: "something",
+	}})
+	c.Assert(err, gc.IsNil)
+	c.Assert(m.Location(), gc.Equals, "somewhere")
+	id1 := m.Id()
+	c.Assert(id1, gc.Matches, id+"-[0-9a-f]{32}")
+
+	err = svc.Check(macaroon.Slice{m}, strcmpChecker("something"))
+	c.Assert(err, gc.IsNil)
+
+	// Check that it's really using the root key returned from
+	// the store.
+	err = m.Verify(key, func(string) error {
+		return nil
+	}, nil)
+	c.Assert(err, gc.IsNil)
+
+	// Create another one and check that it re-uses the
+	// same key but has a different id.
+	m, err = svc.NewMacaroon("", nil, []checkers.Caveat{{
+		Location:  "",
+		Condition: "something",
+	}})
+	c.Assert(err, gc.IsNil)
+	c.Assert(m.Location(), gc.Equals, "somewhere")
+	id2 := m.Id()
+	c.Assert(id2, gc.Matches, id+"-[0-9a-f]{32}")
+	c.Assert(id2, gc.Not(gc.Equals), id1)
+	err = m.Verify(key, func(string) error { return nil }, nil)
+	c.Assert(err, gc.IsNil)
+}
+
+func (s *ServiceSuite) TestNewMacaroonWithRootKeyStorageInParams(c *gc.C) {
+	store := bakery.NewMemRootKeyStorage()
+	_, id, err := store.RootKey()
+	c.Assert(err, gc.IsNil)
+
+	// Check that we can create a bakery with the root key store
+	// in its parameters too.
+	svc, err := bakery.NewService(bakery.NewServiceParams{
+		Location:     "elsewhere",
+		RootKeyStore: store,
+	})
+	c.Assert(err, gc.IsNil)
+
+	m, err := svc.NewMacaroon("", nil, nil)
+	c.Assert(err, gc.IsNil)
+	c.Assert(m.Id(), gc.Matches, id+"-[0-9a-f]{32}")
+
+	err = svc.Check(macaroon.Slice{m}, checkers.New())
+	c.Assert(err, gc.IsNil)
+}
+
+func (s *ServiceSuite) TestNewMacaroonWithExplicitIdAndRootKeyStorage(c *gc.C) {
+	store := bakery.NewMemRootKeyStorage()
+
+	// Check that we can create a bakery with the root key store
+	// in its parameters too.
+	svc, err := bakery.NewService(bakery.NewServiceParams{
+		Location:     "somewhere",
+		RootKeyStore: store,
+	})
+	c.Assert(err, gc.IsNil)
+
+	m, err := svc.NewMacaroon("someid", nil, nil)
+	c.Assert(err, gc.ErrorMatches, `cannot choose root key or id when using RootKeyStore`)
+	c.Assert(m, gc.IsNil)
+
+	m, err = svc.NewMacaroon("", []byte{1}, nil)
+	c.Assert(err, gc.ErrorMatches, `cannot choose root key or id when using RootKeyStore`)
+	c.Assert(m, gc.IsNil)
 }
 
 func newService(c *gc.C, location string, locator bakery.PublicKeyLocatorMap) *bakery.Service {
