@@ -7,7 +7,6 @@ import (
 	"github.com/juju/testing"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/macaroon.v1"
-	"gopkg.in/mgo.v2"
 
 	"gopkg.in/macaroon-bakery.v1/bakery"
 	"gopkg.in/macaroon-bakery.v1/bakery/checkers"
@@ -16,25 +15,18 @@ import (
 
 type StorageSuite struct {
 	testing.MgoSuite
-	session *mgo.Session
-	store   bakery.Storage
+	store bakery.Storage
 }
 
 var _ = gc.Suite(&StorageSuite{})
 
 func (s *StorageSuite) SetUpTest(c *gc.C) {
 	s.MgoSuite.SetUpTest(c)
-	s.session = testing.MgoServer.MustDial()
 
-	store, err := mgostorage.New(s.session.DB("test").C("items"))
+	store, err := mgostorage.New(s.Session.DB("test").C("items"))
 	c.Assert(err, gc.IsNil)
 
 	s.store = store
-}
-
-func (s *StorageSuite) TearDownTest(c *gc.C) {
-	s.session.Close()
-	s.MgoSuite.TearDownTest(c)
 }
 
 func (s *StorageSuite) TestMgoStorage(c *gc.C) {

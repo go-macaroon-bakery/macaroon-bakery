@@ -3,6 +3,7 @@ package bakery_test
 import (
 	"fmt"
 
+	jc "github.com/juju/testing/checkers"
 	gc "gopkg.in/check.v1"
 
 	"gopkg.in/macaroon-bakery.v1/bakery"
@@ -59,4 +60,32 @@ func (*StorageSuite) TestConcurrentMemStorage(c *gc.C) {
 	for i := 0; i < 3; i++ {
 		<-done
 	}
+}
+
+func (*StorageSuite) TestMemRootKeyStorage(c *gc.C) {
+	store := bakery.NewMemRootKeyStorage()
+	key, err := store.Get("x")
+	c.Assert(err, gc.Equals, bakery.ErrNotFound)
+	c.Assert(key, gc.IsNil)
+
+	key, err = store.Get("0")
+	c.Assert(err, gc.Equals, bakery.ErrNotFound)
+	c.Assert(key, gc.IsNil)
+
+	key, id, err := store.RootKey()
+	c.Assert(err, gc.IsNil)
+	c.Assert(key, gc.HasLen, 24)
+	c.Assert(id, gc.Equals, "0")
+
+	key1, id1, err := store.RootKey()
+	c.Assert(err, gc.IsNil)
+	c.Assert(key1, jc.DeepEquals, key)
+	c.Assert(id1, gc.Equals, id)
+
+	key2, err := store.Get(id)
+	c.Assert(err, gc.IsNil)
+	c.Assert(key2, jc.DeepEquals, key)
+
+	_, err = store.Get("1")
+	c.Assert(err, gc.Equals, bakery.ErrNotFound)
 }
