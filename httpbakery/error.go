@@ -285,9 +285,14 @@ func versionFromRequest(req *http.Request) version {
 		return version0
 	}
 	v, err := strconv.Atoi(vs)
-	if err != nil || version(v) < 0 || version(v) > latestVersion {
+	if err != nil || version(v) < 0 {
 		// Badly formed header - use backward compatibility mode.
 		return version0
+	}
+	if version(v) > latestVersion {
+		// Later version than we know about - use the
+		// latest version that we can.
+		return latestVersion
 	}
 	return version(v)
 }
