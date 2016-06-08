@@ -119,4 +119,27 @@ func (s *ErrorSuite) TestNewInteractionRequiredError(c *gc.C) {
 		},
 	})
 
+	// With a request with a later version header, the response
+	// should be also be 401.
+	req.Header.Set("Bakery-Protocol-Version", "2")
+
+	err = httpbakery.NewInteractionRequiredError("/visit", "/wait", nil, req)
+	code, resp = httpbakery.ErrorToResponse(err)
+	c.Assert(code, gc.Equals, http.StatusUnauthorized)
+
+	h = make(http.Header)
+	resp.(httprequest.HeaderSetter).SetHeader(h)
+	c.Assert(h.Get("WWW-Authenticate"), gc.Equals, "Macaroon")
+
+	data, err = json.Marshal(resp)
+	c.Assert(err, gc.IsNil)
+
+	c.Assert(string(data), jc.JSONEquals, &httpbakery.Error{
+		Code:    httpbakery.ErrInteractionRequired,
+		Message: httpbakery.ErrInteractionRequired.Error(),
+		Info: &httpbakery.ErrorInfo{
+			VisitURL: "/visit",
+			WaitURL:  "/wait",
+		},
+	})
 }
