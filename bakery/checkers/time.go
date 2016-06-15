@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"gopkg.in/errgo.v1"
-	"gopkg.in/macaroon.v1"
+	"gopkg.in/macaroon.v2-unstable"
 )
 
 var timeNow = time.Now
@@ -39,10 +39,11 @@ func ExpiryTime(cavs []macaroon.Caveat) (time.Time, bool) {
 	var t time.Time
 	var expires bool
 	for _, cav := range cavs {
-		if !strings.HasPrefix(cav.Id, CondTimeBefore) {
+		cond := string(cav.Id)
+		if !strings.HasPrefix(cond, CondTimeBefore) {
 			continue
 		}
-		et, err := time.Parse(CondTimeBefore+" "+time.RFC3339Nano, cav.Id)
+		et, err := time.Parse(CondTimeBefore+" "+time.RFC3339Nano, cond)
 		if err != nil {
 			continue
 		}

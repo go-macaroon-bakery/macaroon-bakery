@@ -3,6 +3,7 @@ package bakery
 import (
 	"bytes"
 
+	jc "github.com/juju/testing/checkers"
 	"golang.org/x/crypto/nacl/box"
 
 	gc "gopkg.in/check.v1"
@@ -24,33 +25,38 @@ func (s *codecSuite) SetUpTest(c *gc.C) {
 }
 
 func (s *codecSuite) TestJSONRoundTrip(c *gc.C) {
-	cid, err := encodeJSONCaveatId(s.firstPartyKey, caveatInfo{
-		peerPublicKey: &s.thirdPartyKey.Public,
-		rootKey:       []byte("a random string"),
-		condition:     "is-authenticated-user",
-	})
+	cid, err := encodeJSONCaveatId(
+		"is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
+
 	c.Assert(err, gc.IsNil)
 
 	res, err := decodeCaveatId(s.thirdPartyKey, cid)
 	c.Assert(err, gc.IsNil)
-	c.Assert(res.peerPublicKey, gc.DeepEquals, &s.firstPartyKey.Public)
-	c.Assert(res.rootKey, gc.DeepEquals, []byte("a random string"))
-	c.Assert(res.condition, gc.Equals, "is-authenticated-user")
+	c.Assert(res, jc.DeepEquals, &ThirdPartyCaveatInfo{
+		FirstPartyPublicKey: s.firstPartyKey.Public,
+		RootKey:             []byte("a random string"),
+		Condition:           "is-authenticated-user",
+		CaveatId:            cid,
+		MacaroonId:          cid,
+		ThirdPartyKeyPair:   *s.thirdPartyKey,
+	})
 }
 
 func (s *codecSuite) TestV0RoundTrip(c *gc.C) {
-	cid, err := encodeCaveatIdV0(s.firstPartyKey, caveatInfo{
-		peerPublicKey: &s.thirdPartyKey.Public,
-		rootKey:       []byte("a random string"),
-		condition:     "is-authenticated-user",
-	})
+	cid, err := encodeCaveatIdV0("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
+
 	c.Assert(err, gc.IsNil)
 
 	res, err := decodeCaveatId(s.thirdPartyKey, cid)
 	c.Assert(err, gc.IsNil)
-	c.Assert(res.peerPublicKey, gc.DeepEquals, &s.firstPartyKey.Public)
-	c.Assert(res.rootKey, gc.DeepEquals, []byte("a random string"))
-	c.Assert(res.condition, gc.Equals, "is-authenticated-user")
+	c.Assert(res, jc.DeepEquals, &ThirdPartyCaveatInfo{
+		FirstPartyPublicKey: s.firstPartyKey.Public,
+		RootKey:             []byte("a random string"),
+		Condition:           "is-authenticated-user",
+		CaveatId:            cid,
+		MacaroonId:          cid,
+		ThirdPartyKeyPair:   *s.thirdPartyKey,
+	})
 }
 
 func (s *codecSuite) TestEmptyCaveatId(c *gc.C) {
@@ -69,11 +75,8 @@ func (s *codecSuite) TestV0TooShort(c *gc.C) {
 }
 
 func (s *codecSuite) TestV0BadKey(c *gc.C) {
-	cid, err := encodeCaveatIdV0(s.firstPartyKey, caveatInfo{
-		peerPublicKey: &s.thirdPartyKey.Public,
-		rootKey:       []byte("a random string"),
-		condition:     "is-authenticated-user",
-	})
+	cid, err := encodeCaveatIdV0("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
+
 	c.Assert(err, gc.IsNil)
 	cid[1] ^= 1
 
@@ -82,11 +85,8 @@ func (s *codecSuite) TestV0BadKey(c *gc.C) {
 }
 
 func (s *codecSuite) TestV0DecryptionError(c *gc.C) {
-	cid, err := encodeCaveatIdV0(s.firstPartyKey, caveatInfo{
-		peerPublicKey: &s.thirdPartyKey.Public,
-		rootKey:       []byte("a random string"),
-		condition:     "is-authenticated-user",
-	})
+	cid, err := encodeCaveatIdV0("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
+
 	c.Assert(err, gc.IsNil)
 	cid[5] ^= 1
 
@@ -95,11 +95,8 @@ func (s *codecSuite) TestV0DecryptionError(c *gc.C) {
 }
 
 func (s *codecSuite) TestV0EmptySecretPart(c *gc.C) {
-	cid, err := encodeCaveatIdV0(s.firstPartyKey, caveatInfo{
-		peerPublicKey: &s.thirdPartyKey.Public,
-		rootKey:       []byte("a random string"),
-		condition:     "is-authenticated-user",
-	})
+	cid, err := encodeCaveatIdV0("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
+
 	c.Assert(err, gc.IsNil)
 	cid = s.replaceV0SecretPart(cid, []byte{})
 
@@ -108,11 +105,7 @@ func (s *codecSuite) TestV0EmptySecretPart(c *gc.C) {
 }
 
 func (s *codecSuite) TestV0BadSecretPartVersion(c *gc.C) {
-	cid, err := encodeCaveatIdV0(s.firstPartyKey, caveatInfo{
-		peerPublicKey: &s.thirdPartyKey.Public,
-		rootKey:       []byte("a random string"),
-		condition:     "is-authenticated-user",
-	})
+	cid, err := encodeCaveatIdV0("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
 	c.Assert(err, gc.IsNil)
 	cid = s.replaceV0SecretPart(cid, []byte{1})
 
@@ -121,33 +114,35 @@ func (s *codecSuite) TestV0BadSecretPartVersion(c *gc.C) {
 }
 
 func (s *codecSuite) TestV0EmptyRootKey(c *gc.C) {
-	cid, err := encodeCaveatIdV0(s.firstPartyKey, caveatInfo{
-		peerPublicKey: &s.thirdPartyKey.Public,
-		rootKey:       []byte{},
-		condition:     "is-authenticated-user",
-	})
+	cid, err := encodeCaveatIdV0("is-authenticated-user", []byte{}, &s.thirdPartyKey.Public, s.firstPartyKey)
 	c.Assert(err, gc.IsNil)
 
 	res, err := decodeCaveatId(s.thirdPartyKey, cid)
 	c.Assert(err, gc.IsNil)
-	c.Assert(res.peerPublicKey, gc.DeepEquals, &s.firstPartyKey.Public)
-	c.Assert(res.rootKey, gc.DeepEquals, []byte{})
-	c.Assert(res.condition, gc.Equals, "is-authenticated-user")
+	c.Assert(res, jc.DeepEquals, &ThirdPartyCaveatInfo{
+		FirstPartyPublicKey: s.firstPartyKey.Public,
+		RootKey:             []byte{},
+		Condition:           "is-authenticated-user",
+		CaveatId:            cid,
+		MacaroonId:          cid,
+		ThirdPartyKeyPair:   *s.thirdPartyKey,
+	})
 }
 
 func (s *codecSuite) TestV0LongRootKey(c *gc.C) {
-	cid, err := encodeCaveatIdV0(s.firstPartyKey, caveatInfo{
-		peerPublicKey: &s.thirdPartyKey.Public,
-		rootKey:       bytes.Repeat([]byte{0}, 65536),
-		condition:     "is-authenticated-user",
-	})
+	cid, err := encodeCaveatIdV0("is-authenticated-user", bytes.Repeat([]byte{0}, 65536), &s.thirdPartyKey.Public, s.firstPartyKey)
 	c.Assert(err, gc.IsNil)
 
 	res, err := decodeCaveatId(s.thirdPartyKey, cid)
 	c.Assert(err, gc.IsNil)
-	c.Assert(res.peerPublicKey, gc.DeepEquals, &s.firstPartyKey.Public)
-	c.Assert(res.rootKey, gc.DeepEquals, bytes.Repeat([]byte{0}, 65536))
-	c.Assert(res.condition, gc.Equals, "is-authenticated-user")
+	c.Assert(res, jc.DeepEquals, &ThirdPartyCaveatInfo{
+		FirstPartyPublicKey: s.firstPartyKey.Public,
+		RootKey:             bytes.Repeat([]byte{0}, 65536),
+		Condition:           "is-authenticated-user",
+		CaveatId:            cid,
+		MacaroonId:          cid,
+		ThirdPartyKeyPair:   *s.thirdPartyKey,
+	})
 }
 
 func (s *codecSuite) replaceV0SecretPart(cid, replacement []byte) []byte {

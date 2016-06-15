@@ -1,6 +1,7 @@
 package mgostorage_test
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/juju/testing"
@@ -8,8 +9,8 @@ import (
 	gc "gopkg.in/check.v1"
 	"gopkg.in/mgo.v2"
 
-	"gopkg.in/macaroon-bakery.v1/bakery"
-	"gopkg.in/macaroon-bakery.v1/bakery/mgostorage"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/mgostorage"
 )
 
 type RootKeyStorageSuite struct {
@@ -36,7 +37,7 @@ var isValidWithPolicyTests = []struct {
 	key: mgostorage.RootKey{
 		Created: epoch.Add(19 * time.Minute),
 		Expires: epoch.Add(24 * time.Minute),
-		Id:      "id",
+		Id:      []byte("id"),
 		RootKey: []byte("key"),
 	},
 	expect: true,
@@ -59,7 +60,7 @@ var isValidWithPolicyTests = []struct {
 	key: mgostorage.RootKey{
 		Created: epoch.Add(18*time.Minute - time.Millisecond),
 		Expires: epoch.Add(24 * time.Minute),
-		Id:      "id",
+		Id:      []byte("id"),
 		RootKey: []byte("key"),
 	},
 	expect: false,
@@ -73,7 +74,7 @@ var isValidWithPolicyTests = []struct {
 	key: mgostorage.RootKey{
 		Created: epoch.Add(19 * time.Minute),
 		Expires: epoch.Add(21 * time.Minute),
-		Id:      "id",
+		Id:      []byte("id"),
 		RootKey: []byte("key"),
 	},
 	expect: false,
@@ -87,7 +88,7 @@ var isValidWithPolicyTests = []struct {
 	key: mgostorage.RootKey{
 		Created: epoch.Add(19 * time.Minute),
 		Expires: epoch.Add(25*time.Minute + time.Millisecond),
-		Id:      "id",
+		Id:      []byte("id"),
 		RootKey: []byte("key"),
 	},
 	expect: false,
@@ -130,13 +131,13 @@ func (s *RootKeyStorageSuite) TestRootKeyUsesKeysValidWithPolicy(c *gc.C) {
 		key, id, err := store.RootKey()
 		c.Assert(err, gc.IsNil)
 		if test.expect {
-			c.Assert(id, gc.Equals, "id")
+			c.Assert(string(id), gc.Equals, "id")
 			c.Assert(string(key), gc.Equals, "key")
 		} else {
 			// If it didn't match then RootKey will have
 			// generated a new key.
 			c.Assert(key, gc.HasLen, 24)
-			c.Assert(id, gc.Matches, "[0-9a-f]{32}")
+			c.Assert(id, gc.HasLen, 32)
 		}
 	}
 }
@@ -154,7 +155,7 @@ func (s *RootKeyStorageSuite) TestRootKey(c *gc.C) {
 	key, id, err := store.RootKey()
 	c.Assert(err, gc.IsNil)
 	c.Assert(key, gc.HasLen, 24)
-	c.Assert(id, gc.Matches, "[0-9a-f]{32}")
+	c.Assert(id, gc.HasLen, 32)
 
 	// If we get a key within the generate interval, we should
 	// get the same one.
@@ -162,7 +163,7 @@ func (s *RootKeyStorageSuite) TestRootKey(c *gc.C) {
 	key1, id1, err := store.RootKey()
 	c.Assert(err, gc.IsNil)
 	c.Assert(key1, gc.DeepEquals, key)
-	c.Assert(id1, gc.Equals, id)
+	c.Assert(id1, gc.DeepEquals, id)
 
 	// A different storage instance should get the same root key.
 	store1 := mgostorage.NewRootKeys(10).NewStorage(s.coll(), mgostorage.Policy{
@@ -172,22 +173,22 @@ func (s *RootKeyStorageSuite) TestRootKey(c *gc.C) {
 	key1, id1, err = store1.RootKey()
 	c.Assert(err, gc.IsNil)
 	c.Assert(key1, gc.DeepEquals, key)
-	c.Assert(id1, gc.Equals, id)
+	c.Assert(id1, gc.DeepEquals, id)
 
 	// After the generation interval has passed, we should generate a new key.
 	now = epoch.Add(2*time.Minute + time.Second)
 	key1, id1, err = store.RootKey()
 	c.Assert(err, gc.IsNil)
 	c.Assert(key, gc.HasLen, 24)
-	c.Assert(id, gc.Matches, "[0-9a-f]{32}")
+	c.Assert(id, gc.HasLen, 32)
 	c.Assert(key1, gc.Not(gc.DeepEquals), key)
-	c.Assert(id1, gc.Not(gc.Equals), id)
+	c.Assert(id1, gc.Not(gc.DeepEquals), id)
 
 	// The other store should pick it up too.
 	key2, id2, err := store1.RootKey()
 	c.Assert(err, gc.IsNil)
 	c.Assert(key2, gc.DeepEquals, key1)
-	c.Assert(id2, gc.Equals, id1)
+	c.Assert(id2, gc.DeepEquals, id1)
 }
 
 func (s *RootKeyStorageSuite) TestRootKeyDefaultGenerateInterval(c *gc.C) {
@@ -205,13 +206,13 @@ func (s *RootKeyStorageSuite) TestRootKeyDefaultGenerateInterval(c *gc.C) {
 	key1, id1, err := store.RootKey()
 	c.Assert(err, gc.IsNil)
 	c.Assert(key1, jc.DeepEquals, key)
-	c.Assert(id1, gc.Equals, id)
+	c.Assert(id1, jc.DeepEquals, id)
 
 	now = epoch.Add(5*time.Minute + time.Millisecond)
 	key1, id1, err = store.RootKey()
 	c.Assert(err, gc.IsNil)
-	c.Assert(key1, gc.Not(gc.DeepEquals), key)
-	c.Assert(id1, gc.Not(gc.Equals), id)
+	c.Assert(string(key1), gc.Not(gc.Equals), string(key))
+	c.Assert(string(id1), gc.Not(gc.Equals), string(id))
 }
 
 var preferredRootKeyTests = []struct {
@@ -219,55 +220,55 @@ var preferredRootKeyTests = []struct {
 	now      time.Time
 	keys     []mgostorage.RootKey
 	policy   mgostorage.Policy
-	expectId string
+	expectId []byte
 }{{
 	about: "latest creation time is preferred",
 	now:   epoch.Add(5 * time.Minute),
 	keys: []mgostorage.RootKey{{
 		Created: epoch.Add(4 * time.Minute),
 		Expires: epoch.Add(15 * time.Minute),
-		Id:      "id0",
+		Id:      []byte("id0"),
 		RootKey: []byte("key0"),
 	}, {
 		Created: epoch.Add(5*time.Minute + 30*time.Second),
 		Expires: epoch.Add(16 * time.Minute),
-		Id:      "id1",
+		Id:      []byte("id1"),
 		RootKey: []byte("key1"),
 	}, {
 		Created: epoch.Add(5 * time.Minute),
 		Expires: epoch.Add(16 * time.Minute),
-		Id:      "id2",
+		Id:      []byte("id2"),
 		RootKey: []byte("key2"),
 	}},
 	policy: mgostorage.Policy{
 		GenerateInterval: 5 * time.Minute,
 		ExpiryDuration:   7 * time.Minute,
 	},
-	expectId: "id1",
+	expectId: []byte("id1"),
 }, {
 	about: "ineligible keys are exluded",
 	now:   epoch.Add(5 * time.Minute),
 	keys: []mgostorage.RootKey{{
 		Created: epoch.Add(4 * time.Minute),
 		Expires: epoch.Add(15 * time.Minute),
-		Id:      "id0",
+		Id:      []byte("id0"),
 		RootKey: []byte("key0"),
 	}, {
 		Created: epoch.Add(5 * time.Minute),
 		Expires: epoch.Add(16*time.Minute + 30*time.Second),
-		Id:      "id1",
+		Id:      []byte("id1"),
 		RootKey: []byte("key1"),
 	}, {
 		Created: epoch.Add(6 * time.Minute),
 		Expires: epoch.Add(time.Hour),
-		Id:      "id2",
+		Id:      []byte("id2"),
 		RootKey: []byte("key2"),
 	}},
 	policy: mgostorage.Policy{
 		GenerateInterval: 5 * time.Minute,
 		ExpiryDuration:   7 * time.Minute,
 	},
-	expectId: "id1",
+	expectId: []byte("id1"),
 }}
 
 func (s *RootKeyStorageSuite) TestPreferredRootKeyFromDatabase(c *gc.C) {
@@ -287,7 +288,7 @@ func (s *RootKeyStorageSuite) TestPreferredRootKeyFromDatabase(c *gc.C) {
 		now = test.now
 		_, id, err := store.RootKey()
 		c.Assert(err, gc.IsNil)
-		c.Assert(id, gc.Equals, test.expectId)
+		c.Assert(id, gc.DeepEquals, test.expectId)
 	}
 }
 
@@ -318,7 +319,7 @@ func (s *RootKeyStorageSuite) TestPreferredRootKeyFromCache(c *gc.C) {
 		now = test.now
 		_, id, err := store.RootKey()
 		c.Assert(err, gc.IsNil)
-		c.Assert(id, gc.Equals, test.expectId)
+		c.Assert(id, jc.DeepEquals, test.expectId)
 	}
 }
 
@@ -341,12 +342,12 @@ func (s *RootKeyStorageSuite) TestGet(c *gc.C) {
 	for i := 0; i < 20; i++ {
 		key, id, err := store.RootKey()
 		c.Assert(err, gc.IsNil)
-		c.Assert(keyIds[id], gc.Equals, false)
-		keys = append(keys, idKey{id, key})
+		c.Assert(keyIds[string(id)], gc.Equals, false)
+		keys = append(keys, idKey{string(id), key})
 		now = now.Add(time.Minute + time.Second)
 	}
 	for i, k := range keys {
-		key, err := store.Get(k.id)
+		key, err := store.Get([]byte(k.id))
 		c.Assert(err, gc.IsNil, gc.Commentf("key %d (%s)", i, k.id))
 		c.Assert(key, gc.DeepEquals, k.key, gc.Commentf("key %d (%s)", i, k.id))
 	}
@@ -366,14 +367,14 @@ func (s *RootKeyStorageSuite) TestGet(c *gc.C) {
 
 	var fetched []string
 	s.PatchValue(mgostorage.MgoCollectionFindId, func(coll *mgo.Collection, id interface{}) *mgo.Query {
-		fetched = append(fetched, id.(string))
+		fetched = append(fetched, string(id.([]byte)))
 		return coll.FindId(id)
 	})
 	c.Logf("testing cache")
 
 	for i := len(keys) - 1; i >= 0; i-- {
 		k := keys[i]
-		key, err := store.Get(k.id)
+		key, err := store.Get([]byte(k.id))
 		c.Assert(err, gc.IsNil)
 		c.Assert(err, gc.IsNil, gc.Commentf("key %d (%s)", i, k.id))
 		c.Assert(key, gc.DeepEquals, k.key, gc.Commentf("key %d (%s)", i, k.id))
@@ -391,16 +392,17 @@ func (s *RootKeyStorageSuite) TestGetCachesMisses(c *gc.C) {
 	})
 	var fetched []string
 	s.PatchValue(mgostorage.MgoCollectionFindId, func(coll *mgo.Collection, id interface{}) *mgo.Query {
-		fetched = append(fetched, id.(string))
+		fetched = append(fetched, fmt.Sprintf("%#v", id))
 		return coll.FindId(id)
 	})
-	key, err := store.Get("foo")
+	key, err := store.Get([]byte("foo"))
 	c.Assert(err, gc.Equals, bakery.ErrNotFound)
 	c.Assert(key, gc.IsNil)
-	c.Assert(fetched, jc.DeepEquals, []string{"foo"})
+	// This should check twice first using a []byte second using a string
+	c.Assert(fetched, jc.DeepEquals, []string{fmt.Sprintf("%#v", []byte("foo")), fmt.Sprintf("%#v", "foo")})
 	fetched = nil
 
-	key, err = store.Get("foo")
+	key, err = store.Get([]byte("foo"))
 	c.Assert(err, gc.Equals, bakery.ErrNotFound)
 	c.Assert(key, gc.IsNil)
 	c.Assert(fetched, gc.IsNil)
@@ -468,6 +470,29 @@ func (s *RootKeyStorageSuite) TestEnsureIndex(c *gc.C) {
 		}
 	}
 	c.Fatalf("key was never removed from database")
+}
+
+type legacyRootKey struct {
+	Id      string `bson:"_id"`
+	Created time.Time
+	Expires time.Time
+	RootKey []byte
+}
+
+func (s *RootKeyStorageSuite) TestLegacy(c *gc.C) {
+	err := s.coll().Insert(&legacyRootKey{
+		Id:      "foo",
+		RootKey: []byte("a key"),
+		Created: time.Now(),
+		Expires: time.Now().Add(10 * time.Minute),
+	})
+	c.Assert(err, gc.IsNil)
+	store := mgostorage.NewRootKeys(10).NewStorage(s.coll(), mgostorage.Policy{
+		ExpiryDuration: 5 * time.Minute,
+	})
+	rk, err := store.Get([]byte("foo"))
+	c.Assert(err, gc.IsNil)
+	c.Assert(string(rk), gc.Equals, "a key")
 }
 
 func (s *RootKeyStorageSuite) coll() *mgo.Collection {

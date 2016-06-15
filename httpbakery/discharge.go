@@ -9,15 +9,15 @@ import (
 	"github.com/juju/httprequest"
 	"github.com/julienschmidt/httprouter"
 	"gopkg.in/errgo.v1"
-	"gopkg.in/macaroon.v1"
+	"gopkg.in/macaroon.v2-unstable"
 
-	"gopkg.in/macaroon-bakery.v1/bakery"
-	"gopkg.in/macaroon-bakery.v1/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
 )
 
 type dischargeHandler struct {
 	svc     *bakery.Service
-	checker func(req *http.Request, cavId, cav string) ([]checkers.Caveat, error)
+	checker func(req *http.Request, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error)
 }
 
 // AddDischargeHandler adds handlers to the given
@@ -44,9 +44,9 @@ type dischargeHandler struct {
 //
 // POST /discharge
 //	params:
-//		id: id of macaroon to discharge
-//		location: location of original macaroon (optional (?))
-//		?? flow=redirect|newwindow
+//		id: all-UTF-8 third party caveat id
+//		id64: non-padded URL-base64 encoded caveat id
+//		macaroon-id: (optional) id to give to discharge macaroon (defaults to id)
 //	result on success (http.StatusOK):
 //		{
 //			Macaroon *macaroon.Macaroon
@@ -56,7 +56,7 @@ type dischargeHandler struct {
 //	result:
 //		public key of service
 //		expiry time of key
-func AddDischargeHandler(mux *http.ServeMux, rootPath string, svc *bakery.Service, checker func(req *http.Request, cavId, cav string) ([]checkers.Caveat, error)) {
+func AddDischargeHandler(mux *http.ServeMux, rootPath string, svc *bakery.Service, checker func(req *http.Request, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error)) {
 	d := &dischargeHandler{
 		svc:     svc,
 		checker: checker,
@@ -93,15 +93,14 @@ func (d *dischargeHandler) serveDischarge1(p httprequest.Params) (interface{}, e
 	if id == "" {
 		return nil, badRequestErrorf("id attribute is empty")
 	}
-	checker := func(cavId, cav string) ([]checkers.Caveat, error) {
-		return d.checker(p.Request, cavId, cav)
+	// TODO support macaroon id independent of caveat id
+
+	checker := func(info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+		return d.checker(p.Request, info)
 	}
 
-	// TODO(rog) pass location into discharge
-	// location := p.Request.Form.Get("location")
-
 	var resp dischargeResponse
-	m, err := d.svc.Discharge(bakery.ThirdPartyCheckerFunc(checker), id)
+	m, err := d.svc.Discharge(bakery.ThirdPartyCheckerFunc(checker), []byte(id))
 	if err != nil {
 		return nil, errgo.NoteMask(err, "cannot discharge", errgo.Any)
 	}

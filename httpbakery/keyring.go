@@ -9,7 +9,7 @@ import (
 
 	"gopkg.in/errgo.v1"
 
-	"gopkg.in/macaroon-bakery.v1/bakery"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 )
 
 // NewPublicKeyRing returns a new public keyring that uses
