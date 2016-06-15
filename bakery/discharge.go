@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	"gopkg.in/errgo.v1"
-	"gopkg.in/macaroon.v1"
+	"gopkg.in/macaroon.v2-unstable"
 
-	"gopkg.in/macaroon-bakery.v1/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
 )
 
 // DischargeAll gathers discharge macaroons for all the third party
@@ -16,7 +16,7 @@ import (
 // All the discharge macaroons will be bound to the primary macaroon.
 func DischargeAll(
 	m *macaroon.Macaroon,
-	getDischarge func(firstPartyLocation string, cav macaroon.Caveat) (*macaroon.Macaroon, error),
+	getDischarge func(cav macaroon.Caveat) (*macaroon.Macaroon, error),
 ) (macaroon.Slice, error) {
 	return DischargeAllWithKey(m, getDischarge, nil)
 }
@@ -32,7 +32,7 @@ func DischargeAll(
 // DischargeAll.
 func DischargeAllWithKey(
 	m *macaroon.Macaroon,
-	getDischarge func(firstPartyLocation string, cav macaroon.Caveat) (*macaroon.Macaroon, error),
+	getDischarge func(cav macaroon.Caveat) (*macaroon.Macaroon, error),
 	localKey *KeyPair,
 ) (macaroon.Slice, error) {
 	sig := m.Signature()
@@ -47,7 +47,6 @@ func DischargeAllWithKey(
 		}
 	}
 	addCaveats(m)
-	firstPartyLocation := m.Location()
 	for len(need) > 0 {
 		cav := need[0]
 		need = need[1:]
@@ -56,7 +55,7 @@ func DischargeAllWithKey(
 		if localKey != nil && cav.Location == "local" {
 			dm, _, err = Discharge(localKey, localDischargeChecker, cav.Id)
 		} else {
-			dm, err = getDischarge(firstPartyLocation, cav)
+			dm, err = getDischarge(cav)
 		}
 		if err != nil {
 			return nil, errgo.NoteMask(err, fmt.Sprintf("cannot get discharge from %q", cav.Location), errgo.Any)
@@ -68,8 +67,8 @@ func DischargeAllWithKey(
 	return discharges, nil
 }
 
-var localDischargeChecker = ThirdPartyCheckerFunc(func(caveatId, caveat string) ([]checkers.Caveat, error) {
-	if caveat != "true" {
+var localDischargeChecker = ThirdPartyCheckerFunc(func(info *ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+	if info.Condition != "true" {
 		return nil, checkers.ErrCaveatNotRecognized
 	}
 	return nil, nil

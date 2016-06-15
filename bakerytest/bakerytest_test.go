@@ -10,10 +10,10 @@ import (
 	"github.com/juju/httprequest"
 	gc "gopkg.in/check.v1"
 
-	"gopkg.in/macaroon-bakery.v1/bakery"
-	"gopkg.in/macaroon-bakery.v1/bakery/checkers"
-	"gopkg.in/macaroon-bakery.v1/bakerytest"
-	"gopkg.in/macaroon-bakery.v1/httpbakery"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakerytest"
+	"gopkg.in/macaroon-bakery.v2-unstable/httpbakery"
 )
 
 type suite struct {
@@ -39,7 +39,7 @@ func (s *suite) TestDischargerSimple(c *gc.C) {
 		Locator:  d,
 	})
 	c.Assert(err, gc.IsNil)
-	m, err := svc.NewMacaroon("", nil, []checkers.Caveat{{
+	m, err := svc.NewMacaroon(nil, nil, []checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
 	}})
@@ -83,7 +83,7 @@ func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 		Locator:  locator,
 	})
 	c.Assert(err, gc.IsNil)
-	m, err := svc.NewMacaroon("", nil, []checkers.Caveat{{
+	m, err := svc.NewMacaroon(nil, nil, []checkers.Caveat{{
 		Location:  d2.Location(),
 		Condition: "true",
 	}})
@@ -156,7 +156,7 @@ func (s *suite) TestInteractiveDischarger(c *gc.C) {
 		Locator:  d,
 	})
 	c.Assert(err, gc.IsNil)
-	m, err := svc.NewMacaroon("", nil, []checkers.Caveat{{
+	m, err := svc.NewMacaroon(nil, nil, []checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
 	}})
@@ -191,7 +191,7 @@ func (s *suite) TestLoginDischargerError(c *gc.C) {
 		Locator:  d,
 	})
 	c.Assert(err, gc.IsNil)
-	m, err := svc.NewMacaroon("", nil, []checkers.Caveat{{
+	m, err := svc.NewMacaroon(nil, nil, []checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
 	}})
@@ -224,7 +224,7 @@ func (s *suite) TestInteractiveDischargerURL(c *gc.C) {
 		Locator:  d,
 	})
 	c.Assert(err, gc.IsNil)
-	m, err := svc.NewMacaroon("", nil, []checkers.Caveat{{
+	m, err := svc.NewMacaroon(nil, nil, []checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
 	}})

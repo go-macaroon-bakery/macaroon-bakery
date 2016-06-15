@@ -15,10 +15,10 @@ import (
 	"github.com/juju/loggo"
 	"golang.org/x/net/publicsuffix"
 	"gopkg.in/errgo.v1"
-	"gopkg.in/macaroon.v1"
+	"gopkg.in/macaroon.v2-unstable"
 
-	"gopkg.in/macaroon-bakery.v1/bakery"
-	"gopkg.in/macaroon-bakery.v1/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
 )
 
 var logger = loggo.GetLogger("httpbakery")
@@ -137,9 +137,8 @@ type Client struct {
 // discharge-acquisition process used by a Client.
 type DischargeAcquirer interface {
 	// AcquireDischarge should return a discharge macaroon for the given third
-	// party caveat. The firstPartyLocation holds the location of the original
-	// macaroon.
-	AcquireDischarge(firstPartyLocation string, cav macaroon.Caveat) (*macaroon.Macaroon, error)
+	// party caveat.
+	AcquireDischarge(cav macaroon.Caveat) (*macaroon.Macaroon, error)
 }
 
 // NewClient returns a new Client containing an HTTP client
@@ -486,14 +485,14 @@ func appendURLElem(u, elem string) string {
 
 // AcquireDischarge implements DischargeAcquirer by requesting a discharge
 // macaroon from the caveat location as an HTTP URL.
-func (c *Client) AcquireDischarge(originalLocation string, cav macaroon.Caveat) (*macaroon.Macaroon, error) {
+func (c *Client) AcquireDischarge(cav macaroon.Caveat) (*macaroon.Macaroon, error) {
 	var resp dischargeResponse
 	loc := appendURLElem(cav.Location, "discharge")
+	// TODO support base64 encoding of binary caveat ids.
 	err := postFormJSON(
 		loc,
 		url.Values{
-			"id":       {cav.Id},
-			"location": {originalLocation},
+			"id": {string(cav.Id)},
 		},
 		&resp,
 		c.postForm,

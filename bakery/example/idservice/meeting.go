@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"gopkg.in/macaroon-bakery.v1/bakery/example/meeting"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/example/meeting"
 )
 
 type thirdPartyCaveatInfo struct {
-	CaveatId string
+	CaveatId []byte
 	Caveat   string
 }
 

@@ -7,7 +7,7 @@ import (
 	"gopkg.in/errgo.v1"
 	"gopkg.in/mgo.v2"
 
-	"gopkg.in/macaroon-bakery.v1/bakery"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 )
 
 // New returns an implementation of Storage

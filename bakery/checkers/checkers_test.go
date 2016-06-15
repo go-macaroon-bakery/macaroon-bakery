@@ -8,10 +8,10 @@ import (
 	jc "github.com/juju/testing/checkers"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
-	"gopkg.in/macaroon.v1"
+	"gopkg.in/macaroon.v2-unstable"
 
-	"gopkg.in/macaroon-bakery.v1/bakery"
-	"gopkg.in/macaroon-bakery.v1/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
 )
 
 type CheckersSuite struct{}
@@ -415,13 +415,13 @@ func (*CheckersSuite) TestInferDeclared(c *gc.C) {
 		c.Logf("test %d: %s", i, test.about)
 		ms := make(macaroon.Slice, len(test.caveats))
 		for i, caveats := range test.caveats {
-			m, err := macaroon.New(nil, fmt.Sprint(i), "")
+			m, err := macaroon.New(nil, []byte(fmt.Sprint(i)), "")
 			c.Assert(err, gc.IsNil)
 			for _, cav := range caveats {
 				if cav.Location == "" {
 					m.AddFirstPartyCaveat(cav.Condition)
 				} else {
-					m.AddThirdPartyCaveat(nil, cav.Condition, cav.Location)
+					m.AddThirdPartyCaveat(nil, []byte(cav.Condition), cav.Location)
 				}
 			}
 			ms[i] = m

@@ -10,16 +10,16 @@ import (
 	"sync"
 
 	"gopkg.in/errgo.v1"
-	"gopkg.in/macaroon.v1"
+	"gopkg.in/macaroon.v2-unstable"
 
-	"gopkg.in/macaroon-bakery.v1/bakery"
-	"gopkg.in/macaroon-bakery.v1/bakery/checkers"
-	"gopkg.in/macaroon-bakery.v1/httpbakery"
-	"gopkg.in/macaroon-bakery.v1/httpbakery/agent"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2-unstable/httpbakery"
+	"gopkg.in/macaroon-bakery.v2-unstable/httpbakery/agent"
 )
 
 type discharge struct {
-	cavId string
+	cavId []byte
 	c     chan error
 }
 
@@ -89,10 +89,10 @@ func (d *Discharger) FinishWait(w http.ResponseWriter, r *http.Request, err erro
 	return
 }
 
-func (d *Discharger) checker(req *http.Request, cavId, cav string) ([]checkers.Caveat, error) {
+func (d *Discharger) checker(req *http.Request, ci *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 	d.mu.Lock()
 	id := len(d.waiting)
-	d.waiting = append(d.waiting, discharge{cavId, make(chan error, 1)})
+	d.waiting = append(d.waiting, discharge{ci.MacaroonId, make(chan error, 1)})
 	d.mu.Unlock()
 	return nil, &httpbakery.Error{
 		Code:    httpbakery.ErrInteractionRequired,
@@ -125,7 +125,7 @@ func (d *Discharger) login(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	m, err := d.Bakery.NewMacaroon("", nil, []checkers.Caveat{
+	m, err := d.Bakery.NewMacaroon(nil, nil, []checkers.Caveat{
 		bakery.LocalThirdPartyCaveat(al.PublicKey),
 	})
 	if err != nil {
@@ -153,7 +153,7 @@ func (d *Discharger) wait(w http.ResponseWriter, r *http.Request) {
 	}
 	m, err := d.Bakery.Discharge(
 		bakery.ThirdPartyCheckerFunc(
-			func(cavId, caveat string) ([]checkers.Caveat, error) {
+			func(*bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 				return nil, nil
 			},
 		),
