@@ -28,7 +28,6 @@ type Service struct {
 	store    storage
 	rkStore  RootKeyStorage
 	checker  FirstPartyChecker
-	encoder  *boxEncoder
 	key      *KeyPair
 	locator  PublicKeyLocator
 }
@@ -89,7 +88,6 @@ func NewService(p NewServiceParams) (*Service, error) {
 		svc.locator = PublicKeyLocatorMap(nil)
 	}
 	svc.key = p.Key
-	svc.encoder = newBoxEncoder(p.Key)
 	return svc, nil
 }
 
@@ -345,11 +343,15 @@ func (svc *Service) AddCaveat(m *macaroon.Macaroon, cav checkers.Caveat) error {
 	if err != nil {
 		return errgo.Notef(err, "cannot generate third party secret")
 	}
-	id, err := svc.encoder.encodeCaveatId(cav.Condition, rootKey, thirdPartyPub)
+	id, err := encodeJSONCaveatId(svc.key, caveatInfo{
+		peerPublicKey: thirdPartyPub,
+		rootKey:       rootKey,
+		condition:     cav.Condition,
+	})
 	if err != nil {
 		return errgo.Notef(err, "cannot create third party caveat id at %q", cav.Location)
 	}
-	if err := m.AddThirdPartyCaveat(rootKey, id, cav.Location); err != nil {
+	if err := m.AddThirdPartyCaveat(rootKey, string(id), cav.Location); err != nil {
 		return errgo.Notef(err, "cannot add third party caveat")
 	}
 	return nil
@@ -361,22 +363,20 @@ func (svc *Service) AddCaveat(m *macaroon.Macaroon, cav checkers.Caveat) error {
 // it is valid, a new macaroon is returned which discharges the caveat
 // along with any caveats returned from the checker.
 func Discharge(key *KeyPair, checker ThirdPartyChecker, id string) (*macaroon.Macaroon, []checkers.Caveat, error) {
-	decoder := newBoxDecoder(key)
-
 	logger.Infof("server attempting to discharge %q", id)
-	rootKey, condition, err := decoder.decodeCaveatId(id)
+	cid, err := decodeCaveatId(key, []byte(id))
 	if err != nil {
 		return nil, nil, errgo.Notef(err, "discharger cannot decode caveat id")
 	}
 	// Note that we don't check the error - we allow the
 	// third party checker to see even caveats that we can't
 	// understand.
-	cond, arg, _ := checkers.ParseCaveat(condition)
+	cond, arg, _ := checkers.ParseCaveat(cid.condition)
 	var caveats []checkers.Caveat
 	if cond == checkers.CondNeedDeclared {
 		caveats, err = checkNeedDeclared(id, arg, checker)
 	} else {
-		caveats, err = checker.CheckThirdPartyCaveat(id, condition)
+		caveats, err = checker.CheckThirdPartyCaveat(id, cid.condition)
 	}
 	if err != nil {
 		return nil, nil, errgo.Mask(err, errgo.Any)
@@ -385,7 +385,7 @@ func Discharge(key *KeyPair, checker ThirdPartyChecker, id string) (*macaroon.Ma
 	// be stored persistently. Indeed, it would be a problem if
 	// we did, because then the macaroon could potentially be used
 	// for normal authorization with the third party.
-	m, err := macaroon.New(rootKey, id, "")
+	m, err := macaroon.New(cid.rootKey, id, "")
 	if err != nil {
 		return nil, nil, errgo.Mask(err)
 	}
@@ -395,7 +395,7 @@ func Discharge(key *KeyPair, checker ThirdPartyChecker, id string) (*macaroon.Ma
 // Discharge calls Discharge with the service's key and uses the service
 // to add any returned caveats to the discharge macaroon.
 func (svc *Service) Discharge(checker ThirdPartyChecker, id string) (*macaroon.Macaroon, error) {
-	m, caveats, err := Discharge(svc.encoder.key, checker, id)
+	m, caveats, err := Discharge(svc.key, checker, id)
 	if err != nil {
 		return nil, errgo.Mask(err, errgo.Any)
 	}
