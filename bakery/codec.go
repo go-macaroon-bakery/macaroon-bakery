@@ -4,11 +4,19 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
-	"fmt"
 
 	"golang.org/x/crypto/nacl/box"
+
+	"gopkg.in/errgo.v1"
 )
+
+type caveatInfo struct {
+	peerPublicKey *PublicKey
+	rootKey       []byte
+	condition     string
+}
 
 type caveatIdRecord struct {
 	RootKey   []byte
@@ -23,109 +31,189 @@ type caveatId struct {
 	Id                  string
 }
 
-// boxEncoder encodes caveat ids confidentially to a third-party service using
-// authenticated public key encryption compatible with NaCl box.
-type boxEncoder struct {
-	key *KeyPair
-}
-
-// newBoxEncoder creates a new boxEncoder that uses the given public key pair.
-func newBoxEncoder(key *KeyPair) *boxEncoder {
-	return &boxEncoder{
-		key: key,
-	}
-}
-
-func (enc *boxEncoder) encodeCaveatId(condition string, rootKey []byte, thirdPartyPub *PublicKey) (string, error) {
-	id, err := enc.newCaveatId(condition, rootKey, thirdPartyPub)
-	if err != nil {
-		return "", err
-	}
-	data, err := json.Marshal(id)
-	if err != nil {
-		return "", fmt.Errorf("cannot marshal %#v: %v", id, err)
-	}
-	return base64.StdEncoding.EncodeToString(data), nil
-}
-
-func (enc *boxEncoder) newCaveatId(condition string, rootKey []byte, thirdPartyPub *PublicKey) (*caveatId, error) {
+// encodeJSONCaveatId creates a JSON encoded third-party caveat.
+func encodeJSONCaveatId(key *KeyPair, ci caveatInfo) ([]byte, error) {
 	var nonce [NonceLen]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
-		return nil, fmt.Errorf("cannot generate random number for nonce: %v", err)
+		return nil, errgo.Notef(err, "cannot generate random number for nonce")
 	}
 	plain := caveatIdRecord{
-		RootKey:   rootKey,
-		Condition: condition,
+		RootKey:   ci.rootKey,
+		Condition: ci.condition,
 	}
 	plainData, err := json.Marshal(&plain)
 	if err != nil {
-		return nil, fmt.Errorf("cannot marshal %#v: %v", &plain, err)
+		return nil, errgo.Notef(err, "cannot marshal %#v", &plain)
 	}
-	sealed := box.Seal(nil, plainData, &nonce, thirdPartyPub.boxKey(), enc.key.Private.boxKey())
-	return &caveatId{
-		ThirdPartyPublicKey: thirdPartyPub,
-		FirstPartyPublicKey: &enc.key.Public,
+	sealed := box.Seal(nil, plainData, &nonce, ci.peerPublicKey.boxKey(), key.Private.boxKey())
+	id := caveatId{
+		ThirdPartyPublicKey: ci.peerPublicKey,
+		FirstPartyPublicKey: &key.Public,
 		Nonce:               nonce[:],
 		Id:                  base64.StdEncoding.EncodeToString(sealed),
+	}
+	data, err := json.Marshal(id)
+	if err != nil {
+		return nil, errgo.Notef(err, "cannot marshal %#v", id)
+	}
+	buf := make([]byte, base64.StdEncoding.EncodedLen(len(data)))
+	base64.StdEncoding.Encode(buf, data)
+	return buf, nil
+}
+
+const (
+	publicKeyPrefixLen = 4
+)
+
+// encodeCaveatIdV0 creates a version 0 third-party caveat.
+//
+// The v0 format has the following packed binary fields:
+// version 0 [1 byte]
+// first 4 bytes of third-party Curve25519 public key [4 bytes]
+// first-party Curve25519 public key [32 bytes]
+// nonce [24 bytes]
+// encrypted secret part [rest of message]
+func encodeCaveatIdV0(key *KeyPair, ci caveatInfo) ([]byte, error) {
+	var nonce [NonceLen]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return nil, errgo.Notef(err, "cannot generate random number for nonce")
+	}
+	data := make([]byte, 0, 1+publicKeyPrefixLen+KeyLen+NonceLen+1+binary.MaxVarintLen64+len(ci.rootKey)+len(ci.condition)+box.Overhead)
+	data = append(data, 0) //version
+	data = append(data, ci.peerPublicKey.Key[:publicKeyPrefixLen]...)
+	data = append(data, key.Public.Key[:]...)
+	data = append(data, nonce[:]...)
+	data = box.Seal(data, encodeSecretPartV0(ci), &nonce, ci.peerPublicKey.boxKey(), key.Private.boxKey())
+	return data, nil
+}
+
+// encodeSecretPartV0 creates a version 0 secret part of the third party
+// caveat. The generated secret part is not encrypted.
+//
+// The v0 format has the following packed binary fields:
+// version 0 [1 byte]
+// root key [24 bytes]
+// predicate [rest of message]
+func encodeSecretPartV0(ci caveatInfo) []byte {
+	data := make([]byte, 0, 1+binary.MaxVarintLen64+len(ci.rootKey)+len(ci.condition))
+	data = append(data, 0) // version
+	n := binary.PutUvarint(data[1:1+binary.MaxVarintLen64], uint64(len(ci.rootKey)))
+	data = data[0 : len(data)+n]
+	data = append(data, ci.rootKey...)
+	data = append(data, ci.condition...)
+	return data
+}
+
+// decodeCaveatId attempts to decode id decrypting the encrypted part
+// using key.
+func decodeCaveatId(key *KeyPair, id []byte) (caveatInfo, error) {
+	if len(id) == 0 {
+		return caveatInfo{}, errgo.New("caveat id empty")
+	}
+	switch id[0] {
+	case 0:
+		return decodeCaveatIdV0(key, []byte(id))
+	case 'e':
+		// 'e' will be the first byte if the caveatid is a base64 encoded JSON object.
+		return decodeJSONCaveatId(key, id)
+	default:
+		return caveatInfo{}, errgo.Newf("caveat id has unsupported version %d", id[0])
+	}
+}
+
+// decodeJSONCaveatId attempts to decode a base64 encoded JSON id. This
+// encoding is nominally version -1.
+func decodeJSONCaveatId(key *KeyPair, id []byte) (caveatInfo, error) {
+	data := make([]byte, (3*len(id)+3)/4)
+	n, err := base64.StdEncoding.Decode(data, id)
+	if err != nil {
+		return caveatInfo{}, errgo.Notef(err, "cannot base64-decode caveat id")
+	}
+	data = data[:n]
+	var tpid caveatId
+	if err := json.Unmarshal(data, &tpid); err != nil {
+		return caveatInfo{}, errgo.Notef(err, "cannot unmarshal caveat id %q", data)
+	}
+	if !bytes.Equal(key.Public.Key[:], tpid.ThirdPartyPublicKey.Key[:]) {
+		return caveatInfo{}, errgo.New("public key mismatch")
+	}
+	if tpid.FirstPartyPublicKey == nil {
+		return caveatInfo{}, errgo.New("target service public key not specified")
+	}
+	// The encrypted string is base64 encoded in the JSON representation.
+	secret, err := base64.StdEncoding.DecodeString(tpid.Id)
+	if err != nil {
+		return caveatInfo{}, errgo.Notef(err, "cannot base64-decode encrypted data")
+	}
+	var nonce [NonceLen]byte
+	if copy(nonce[:], tpid.Nonce) < NonceLen {
+		return caveatInfo{}, errgo.Newf("nonce too short %x", tpid.Nonce)
+	}
+	cid, ok := box.Open(nil, secret, &nonce, tpid.FirstPartyPublicKey.boxKey(), key.Private.boxKey())
+	if !ok {
+		return caveatInfo{}, errgo.Newf("cannot decrypt caveat id %#v", tpid)
+	}
+	var record caveatIdRecord
+	if err := json.Unmarshal(cid, &record); err != nil {
+		return caveatInfo{}, errgo.Notef(err, "cannot decode third party caveat record")
+	}
+	return caveatInfo{
+		peerPublicKey: tpid.FirstPartyPublicKey,
+		rootKey:       record.RootKey,
+		condition:     record.Condition,
 	}, nil
 }
 
-// boxDecoder decodes caveat ids for third-party service that were encoded to
-// the third-party with authenticated public key encryption compatible with
-// NaCl box.
-type boxDecoder struct {
-	key *KeyPair
-}
+// decodeCaveatIdV0 decodes a version 0 caveat id.
+func decodeCaveatIdV0(key *KeyPair, id []byte) (caveatInfo, error) {
+	if len(id) < 1+publicKeyPrefixLen+KeyLen+NonceLen+box.Overhead {
+		return caveatInfo{}, errgo.New("caveat id too short")
+	}
+	id = id[1:] // skip version (already checked)
 
-// newBoxDecoder creates a new BoxDecoder using the given key pair.
-func newBoxDecoder(key *KeyPair) *boxDecoder {
-	return &boxDecoder{
-		key: key,
+	publicKeyPrefix, id := id[:publicKeyPrefixLen], id[publicKeyPrefixLen:]
+	if !bytes.Equal(key.Public.Key[:publicKeyPrefixLen], publicKeyPrefix) {
+		return caveatInfo{}, errgo.New("public key mismatch")
 	}
-}
 
-func (d *boxDecoder) decodeCaveatId(id string) (rootKey []byte, condition string, err error) {
-	data, err := base64.StdEncoding.DecodeString(id)
-	if err != nil {
-		return nil, "", fmt.Errorf("cannot base64-decode caveat id: %v", err)
-	}
-	var tpid caveatId
-	if err := json.Unmarshal(data, &tpid); err != nil {
-		return nil, "", fmt.Errorf("cannot unmarshal caveat id %q: %v", data, err)
-	}
-	var recordData []byte
+	var peerPublicKey PublicKey
+	copy(peerPublicKey.Key[:], id[:KeyLen])
+	id = id[KeyLen:]
 
-	recordData, err = d.encryptedCaveatId(tpid)
-	if err != nil {
-		return nil, "", err
-	}
-	var record caveatIdRecord
-	if err := json.Unmarshal(recordData, &record); err != nil {
-		return nil, "", fmt.Errorf("cannot decode third party caveat record: %v", err)
-	}
-	return record.RootKey, record.Condition, nil
-}
-
-func (d *boxDecoder) encryptedCaveatId(id caveatId) ([]byte, error) {
-	if d.key == nil {
-		return nil, fmt.Errorf("no public key for caveat id decryption")
-	}
-	if !bytes.Equal(d.key.Public.Key[:], id.ThirdPartyPublicKey.Key[:]) {
-		return nil, fmt.Errorf("public key mismatch")
-	}
 	var nonce [NonceLen]byte
-	if len(id.Nonce) != len(nonce) {
-		return nil, fmt.Errorf("bad nonce length")
-	}
-	copy(nonce[:], id.Nonce)
+	copy(nonce[:], id[:NonceLen])
+	id = id[NonceLen:]
 
-	sealed, err := base64.StdEncoding.DecodeString(id.Id)
-	if err != nil {
-		return nil, fmt.Errorf("cannot base64-decode encrypted caveat id: %v", err)
-	}
-	out, ok := box.Open(nil, sealed, &nonce, id.FirstPartyPublicKey.boxKey(), d.key.Private.boxKey())
+	data, ok := box.Open(nil, id, &nonce, peerPublicKey.boxKey(), key.Private.boxKey())
 	if !ok {
-		return nil, fmt.Errorf("decryption of public-key encrypted caveat id %#v failed", id)
+		return caveatInfo{}, errgo.Newf("cannot decrypt caveat id")
 	}
-	return out, nil
+	ci, err := decodeSecretPartV0(data)
+	if err != nil {
+		return caveatInfo{}, errgo.Notef(err, "invalid secret part")
+	}
+	ci.peerPublicKey = &peerPublicKey
+	return ci, nil
+}
+
+func decodeSecretPartV0(data []byte) (caveatInfo, error) {
+	if len(data) < 1 {
+		return caveatInfo{}, errgo.New("secret part too short")
+	}
+
+	version, data := data[0], data[1:]
+	if version != 0 {
+		return caveatInfo{}, errgo.Newf("unsupported secret part version %d", version)
+	}
+
+	l, n := binary.Uvarint(data)
+	if n <= 0 || uint64(n)+l > uint64(len(data)) {
+		return caveatInfo{}, errgo.Newf("invalid root key length")
+	}
+	data = data[n:]
+
+	return caveatInfo{
+		rootKey:   data[:l],
+		condition: string(data[l:]),
+	}, nil
 }
