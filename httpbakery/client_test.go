@@ -51,7 +51,7 @@ func (s *ClientSuite) TestSingleServiceFirstParty(c *gc.C) {
 	defer ts.Close()
 
 	// Mint a macaroon for the target service.
-	serverMacaroon, err := svc.NewMacaroon(nil, nil, nil)
+	serverMacaroon, err := svc.NewMacaroon(nil)
 	c.Assert(err, gc.IsNil)
 	c.Assert(serverMacaroon.Location(), gc.Equals, "loc")
 	err = svc.AddCaveat(serverMacaroon, checkers.Caveat{
@@ -85,7 +85,7 @@ func (s *ClientSuite) TestSingleServiceFirstPartyWithHeader(c *gc.C) {
 	defer ts.Close()
 
 	// Mint a macaroon for the target service.
-	serverMacaroon, err := svc.NewMacaroon(nil, nil, nil)
+	serverMacaroon, err := svc.NewMacaroon(nil)
 	c.Assert(err, gc.IsNil)
 	c.Assert(serverMacaroon.Location(), gc.Equals, "loc")
 	err = svc.AddCaveat(serverMacaroon, checkers.Caveat{
@@ -734,9 +734,9 @@ func (s *ClientSuite) TestMacaroonsForURL(c *gc.C) {
 	// Create a target service.
 	svc := newService("loc", nil)
 
-	m1, err := svc.NewMacaroon([]byte("id1"), []byte("key1"), nil)
+	m1, err := svc.NewMacaroon(nil)
 	c.Assert(err, gc.IsNil)
-	m2, err := svc.NewMacaroon([]byte("id2"), []byte("key2"), nil)
+	m2, err := svc.NewMacaroon(nil)
 	c.Assert(err, gc.IsNil)
 
 	u1 := mustParseURL("http://0.1.2.3/")
@@ -763,7 +763,7 @@ func (s *ClientSuite) TestMacaroonsForURL(c *gc.C) {
 	mss := httpbakery.MacaroonsForURL(jar, u1)
 	c.Assert(mss, gc.HasLen, 1)
 	c.Assert(mss[0], gc.HasLen, 1)
-	c.Assert(string(mss[0][0].Id()), gc.Equals, "id1")
+	c.Assert(mss[0][0].Id(), jc.DeepEquals, m1.Id())
 
 	mss = httpbakery.MacaroonsForURL(jar, u2)
 
@@ -774,8 +774,8 @@ func (s *ClientSuite) TestMacaroonsForURL(c *gc.C) {
 		c.Assert(err, gc.IsNil)
 	}
 	c.Assert(checked, jc.DeepEquals, map[string]int{
-		"id1": 1,
-		"id2": 1,
+		string(m1.Id()): 1,
+		string(m2.Id()): 1,
 	})
 }
 
@@ -856,10 +856,11 @@ func (s *ClientSuite) TestHandleError(c *gc.C) {
 	}))
 	defer srv.Close()
 
-	m, err := svc.NewMacaroon(nil, nil, []checkers.Caveat{{
+	m, err := svc.NewMacaroon([]checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
 	}})
+
 	c.Assert(err, gc.IsNil)
 
 	u, err := url.Parse(srv.URL + "/bar")
@@ -908,9 +909,10 @@ func (s *ClientSuite) TestHandleErrorDifferentError(c *gc.C) {
 func (s *ClientSuite) TestNewCookieExpires(c *gc.C) {
 	t := time.Now().Add(24 * time.Hour)
 	svc := newService("loc", nil)
-	m, err := svc.NewMacaroon(nil, nil, []checkers.Caveat{
+	m, err := svc.NewMacaroon([]checkers.Caveat{
 		checkers.TimeBeforeCaveat(t),
 	})
+
 	c.Assert(err, gc.IsNil)
 	cookie, err := httpbakery.NewCookie(macaroon.Slice{m})
 	c.Assert(err, gc.IsNil)
@@ -1086,7 +1088,7 @@ func newDischargeRequiredError(hp serverHandlerParams, checkErr error, req *http
 	if hp.caveats != nil {
 		caveats = append(caveats, hp.caveats()...)
 	}
-	m, err := hp.service.NewMacaroon(nil, nil, caveats)
+	m, err := hp.service.NewMacaroon(caveats)
 	if err != nil {
 		panic(fmt.Errorf("cannot make new macaroon: %v", err))
 	}

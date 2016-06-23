@@ -39,10 +39,11 @@ func (s *suite) TestDischargerSimple(c *gc.C) {
 		Locator:  d,
 	})
 	c.Assert(err, gc.IsNil)
-	m, err := svc.NewMacaroon(nil, nil, []checkers.Caveat{{
+	m, err := svc.NewMacaroon([]checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
 	}})
+
 	c.Assert(err, gc.IsNil)
 	ms, err := s.client.DischargeAll(m)
 	c.Assert(err, gc.IsNil)
@@ -83,10 +84,11 @@ func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 		Locator:  locator,
 	})
 	c.Assert(err, gc.IsNil)
-	m, err := svc.NewMacaroon(nil, nil, []checkers.Caveat{{
+	m, err := svc.NewMacaroon([]checkers.Caveat{{
 		Location:  d2.Location(),
 		Condition: "true",
 	}})
+
 	c.Assert(err, gc.IsNil)
 
 	ms, err := s.client.DischargeAll(m)
@@ -156,10 +158,11 @@ func (s *suite) TestInteractiveDischarger(c *gc.C) {
 		Locator:  d,
 	})
 	c.Assert(err, gc.IsNil)
-	m, err := svc.NewMacaroon(nil, nil, []checkers.Caveat{{
+	m, err := svc.NewMacaroon([]checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
 	}})
+
 	c.Assert(err, gc.IsNil)
 	client := httpbakery.NewClient()
 	client.VisitWebPage = func(u *url.URL) error {
@@ -191,10 +194,11 @@ func (s *suite) TestLoginDischargerError(c *gc.C) {
 		Locator:  d,
 	})
 	c.Assert(err, gc.IsNil)
-	m, err := svc.NewMacaroon(nil, nil, []checkers.Caveat{{
+	m, err := svc.NewMacaroon([]checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
 	}})
+
 	c.Assert(err, gc.IsNil)
 	client := httpbakery.NewClient()
 	client.VisitWebPage = func(u *url.URL) error {
@@ -224,10 +228,11 @@ func (s *suite) TestInteractiveDischargerURL(c *gc.C) {
 		Locator:  d,
 	})
 	c.Assert(err, gc.IsNil)
-	m, err := svc.NewMacaroon(nil, nil, []checkers.Caveat{{
+	m, err := svc.NewMacaroon([]checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
 	}})
+
 	c.Assert(err, gc.IsNil)
 	client := httpbakery.NewClient()
 	client.VisitWebPage = func(u *url.URL) error {

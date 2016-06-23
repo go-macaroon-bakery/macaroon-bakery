@@ -80,12 +80,13 @@ func (h *handler) userHandler(p httprequest.Params) (interface{}, error) {
 		// Theoretically, we could just redirect the user to the
 		// login page, but that would p.Requestuire a different flow
 		// and it's not clear that it would be an advantage.
-		m, err := h.svc.NewMacaroon(nil, nil, []checkers.Caveat{{
+		m, err := h.svc.NewMacaroon([]checkers.Caveat{{
 			Location:  h.svc.Location(),
 			Condition: "member-of-group admin",
 		}, {
 			Condition: "operation change-user",
 		}})
+
 		if err != nil {
 			return nil, errgo.Notef(err, "cannot mint new macaroon")
 		}
@@ -166,9 +167,10 @@ func (h *handler) loginAttemptHandler(w http.ResponseWriter, req *http.Request) 
 	// to have a macaroon that they can use later to prove
 	// to us that they have logged in. We also add a cookie
 	// to hold the logged in user name.
-	m, err := h.svc.NewMacaroon(nil, nil, []checkers.Caveat{{
+	m, err := h.svc.NewMacaroon([]checkers.Caveat{{
 		Condition: "user-is " + user,
 	}})
+
 	// TODO(rog) when this fails, we should complete the rendezvous
 	// to cause the wait request to complete with an appropriate error.
 	if err != nil {

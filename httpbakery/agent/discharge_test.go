@@ -125,9 +125,10 @@ func (d *Discharger) login(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	m, err := d.Bakery.NewMacaroon(nil, nil, []checkers.Caveat{
+	m, err := d.Bakery.NewMacaroon([]checkers.Caveat{
 		bakery.LocalThirdPartyCaveat(al.PublicKey),
 	})
+
 	if err != nil {
 		d.WriteJSON(w, http.StatusInternalServerError, httpbakery.Error{
 			Message: fmt.Sprintf("cannot create macaroon: %s", err),

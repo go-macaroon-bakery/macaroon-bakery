@@ -76,7 +76,7 @@ func (rk rootKey) isValidWithPolicy(p Policy) bool {
 // NewRootKeys returns a root-keys cache that
 // is limited in size to approximately the given size.
 //
-// The NewStorageMethod returns a storage implementation
+// The NewStorage method returns a storage implementation
 // that uses a specific mongo collection and storage
 // policy.
 func NewRootKeys(maxCacheSize int) *RootKeys {
@@ -107,13 +107,13 @@ type Policy struct {
 // Root keys will be generated and stored following the
 // given storage policy.
 //
-// It is expected that all collections passed to a given RootKey's
+// It is expected that all collections passed to a given Storage's
 // NewStorage method should refer to the same underlying collection.
-func (s *RootKeys) NewStorage(c *mgo.Collection, policy Policy) bakery.RootKeyStorage {
+func (s *RootKeys) NewStorage(c *mgo.Collection, policy Policy) bakery.Storage {
 	if policy.GenerateInterval == 0 {
 		policy.GenerateInterval = policy.ExpiryDuration
 	}
-	return &rootKeyStorage{
+	return &storage{
 		keys:   s,
 		coll:   c,
 		policy: policy,
@@ -208,14 +208,14 @@ func (s *RootKeys) setCurrent(policy Policy, key rootKey) {
 	s.current[policy] = key
 }
 
-type rootKeyStorage struct {
+type storage struct {
 	keys   *RootKeys
 	policy Policy
 	coll   *mgo.Collection
 }
 
 // Get implements bakery.RootKeyStorage.Get.
-func (s *rootKeyStorage) Get(id []byte) ([]byte, error) {
+func (s *storage) Get(id []byte) ([]byte, error) {
 	s.keys.mu.Lock()
 	defer s.keys.mu.Unlock()
 
@@ -226,7 +226,7 @@ func (s *rootKeyStorage) Get(id []byte) ([]byte, error) {
 	return key.RootKey, nil
 }
 
-func (s *rootKeyStorage) getFromMongo(id []byte) (rootKey, error) {
+func (s *storage) getFromMongo(id []byte) (rootKey, error) {
 	var key rootKey
 	err := mgoCollectionFindId(s.coll, id).One(&key)
 	if err != nil {
@@ -242,7 +242,7 @@ func (s *rootKeyStorage) getFromMongo(id []byte) (rootKey, error) {
 // getLegacyFromMongo gets a value from the old version of the
 // root key document which used a string key rather than a []byte
 // key.
-func (s *rootKeyStorage) getLegacyFromMongo(id string) (rootKey, error) {
+func (s *storage) getLegacyFromMongo(id string) (rootKey, error) {
 	var key rootKey
 	err := mgoCollectionFindId(s.coll, id).One(&key)
 	if err != nil {
@@ -257,7 +257,7 @@ func (s *rootKeyStorage) getLegacyFromMongo(id string) (rootKey, error) {
 // RootKey implements bakery.RootKeyStorage.RootKey by
 // returning an existing key from the cache when compatible
 // with the current policy.
-func (s *rootKeyStorage) RootKey() ([]byte, []byte, error) {
+func (s *storage) RootKey() ([]byte, []byte, error) {
 	if key := s.rootKeyFromCache(); key.isValid() {
 		return key.RootKey, key.Id, nil
 	}
@@ -268,7 +268,7 @@ func (s *rootKeyStorage) RootKey() ([]byte, []byte, error) {
 	// we don't mind if there are more keys than necessary.
 	//
 	// Note that this query mirrors the logic found in
-	// rootKeyStorage.rootKeyFromCache.
+	// storage.rootKeyFromCache.
 	now := timeNow()
 	var key rootKey
 	err := s.coll.Find(bson.D{{
@@ -289,7 +289,7 @@ func (s *rootKeyStorage) RootKey() ([]byte, []byte, error) {
 		if err != nil {
 			return nil, nil, errgo.Notef(err, "cannot generate key")
 		}
-		logger.Infof("new root key id %q", key.Id)
+		logger.Infof("new root key id %q; created %v; expires %v", key.Id, key.Created, key.Expires)
 		if err := s.coll.Insert(key); err != nil {
 			return nil, nil, errgo.Notef(err, "cannot create root key")
 		}
@@ -304,7 +304,7 @@ func (s *rootKeyStorage) RootKey() ([]byte, []byte, error) {
 // rootKeyFromCache returns a root key from the cached keys.
 // If no keys are found that are valid for s.policy, it returns
 // the zero key.
-func (s *rootKeyStorage) rootKeyFromCache() rootKey {
+func (s *storage) rootKeyFromCache() rootKey {
 	s.keys.mu.Lock()
 	defer s.keys.mu.Unlock()
 	if k, ok := s.keys.current[s.policy]; ok && k.isValidWithPolicy(s.policy) {
@@ -326,7 +326,7 @@ func (s *rootKeyStorage) rootKeyFromCache() rootKey {
 	return rootKey{}
 }
 
-func (s *rootKeyStorage) generateKey() (rootKey, error) {
+func (s *storage) generateKey() (rootKey, error) {
 	newKey, err := randomBytes(24)
 	if err != nil {
 		return rootKey{}, err
