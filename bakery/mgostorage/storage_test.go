@@ -6,11 +6,11 @@ import (
 
 	"github.com/juju/testing"
 	gc "gopkg.in/check.v1"
-	"gopkg.in/macaroon.v1"
+	"gopkg.in/macaroon.v2-unstable"
 
-	"gopkg.in/macaroon-bakery.v1/bakery"
-	"gopkg.in/macaroon-bakery.v1/bakery/checkers"
-	"gopkg.in/macaroon-bakery.v1/bakery/mgostorage"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/mgostorage"
 )
 
 type StorageSuite struct {
@@ -108,7 +108,7 @@ func (s *StorageSuite) TestCreateMacaroon(c *gc.C) {
 	c.Assert(service, gc.NotNil)
 
 	m, err := service.NewMacaroon(
-		"123",
+		[]byte("123"),
 		[]byte("abc"),
 		[]checkers.Caveat{checkers.Caveat{Location: "", Condition: "is-authorised bob"}},
 	)

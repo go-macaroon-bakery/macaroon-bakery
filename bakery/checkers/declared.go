@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"gopkg.in/errgo.v1"
-	"gopkg.in/macaroon.v1"
+	"gopkg.in/macaroon.v2-unstable"
 )
 
 // DeclaredCaveat returns a "declared" caveat asserting that the given key is
@@ -84,7 +84,7 @@ func InferDeclared(ms macaroon.Slice) Declared {
 			if cav.Location != "" {
 				continue
 			}
-			name, rest, err := ParseCaveat(cav.Id)
+			name, rest, err := ParseCaveat(string(cav.Id))
 			if err != nil {
 				continue
 			}
