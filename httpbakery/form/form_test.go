@@ -142,10 +142,11 @@ func (s *formSuite) TestFormLogin(c *gc.C) {
 	for i, test := range formLoginTests {
 		c.Logf("test %d: %s", i, test.about)
 		d.dischargeOptions = test.opts
-		m, err := svc.NewMacaroon(nil, nil, []checkers.Caveat{{
+		m, err := svc.NewMacaroon([]checkers.Caveat{{
 			Location:  d.discharger.Location(),
 			Condition: "test condition",
 		}})
+
 		c.Assert(err, gc.Equals, nil)
 		client := httpbakery.NewClient()
 		filler := defaultFiller
@@ -200,10 +201,11 @@ func (s *formSuite) TestFormTitle(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	for i, test := range formTitleTests {
 		c.Logf("test %d: %s", i, test.host)
-		m, err := svc.NewMacaroon(nil, nil, []checkers.Caveat{{
+		m, err := svc.NewMacaroon([]checkers.Caveat{{
 			Location:  "https://" + test.host,
 			Condition: "test condition",
 		}})
+
 		c.Assert(err, gc.Equals, nil)
 		client := httpbakery.NewClient()
 		c.Logf("match %v; replace with %v", test.host, d.discharger.Location())

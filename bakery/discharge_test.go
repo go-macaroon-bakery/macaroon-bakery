@@ -71,9 +71,10 @@ func (*DischargeSuite) TestDischargeAllLocalDischarge(c *gc.C) {
 	clientKey, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
 
-	m, err := svc.NewMacaroon(nil, nil, []checkers.Caveat{
+	m, err := svc.NewMacaroon([]checkers.Caveat{
 		bakery.LocalThirdPartyCaveat(&clientKey.Public),
 	})
+
 	c.Assert(err, gc.IsNil)
 
 	ms, err := bakery.DischargeAllWithKey(m, noDischarge(c), clientKey)

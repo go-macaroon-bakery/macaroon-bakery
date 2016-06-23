@@ -26,9 +26,7 @@ var uuidGen = fastuuid.MustNewGenerator()
 // to check authorization.
 type Service struct {
 	location string
-	store    storage
-	rkStore  RootKeyStorage
-	checker  FirstPartyChecker
+	store    Storage
 	key      *KeyPair
 	locator  PublicKeyLocator
 }
@@ -43,12 +41,6 @@ type NewServiceParams struct {
 	// information locally. If it is nil,
 	// an in-memory storage will be used.
 	Store Storage
-
-	// RootKeyStore is used to store macaroon root keys. If this
-	// is non-nil, it will be used in preference to Store and it
-	// will not be possible to specify non-empty macaroon ids and
-	// root keys when calling NewMacaroon.
-	RootKeyStore RootKeyStorage
 
 	// Key is the public key pair used by the service for
 	// third-party caveat encryption.
@@ -71,11 +63,7 @@ func NewService(p NewServiceParams) (*Service, error) {
 	svc := &Service{
 		location: p.Location,
 		locator:  p.Locator,
-	}
-	if p.RootKeyStore != nil {
-		svc.rkStore = p.RootKeyStore
-	} else {
-		svc.store = storage{p.Store}
+		store:    p.Store,
 	}
 
 	var err error
@@ -92,17 +80,15 @@ func NewService(p NewServiceParams) (*Service, error) {
 	return svc, nil
 }
 
-// WithRootKeyStore returns a copy of service where macaroon creation and
-// lookup uses the given root key store to look up and create macaroon root
+// WithStore returns a copy of service where macaroon creation and
+// lookup uses the given store to look up and create macaroon root
 // keys.
 //
 // When NewMacaroon is called on the returned Service,
 // it must always be called with an empty id and rootKey.
-func (svc *Service) WithRootKeyStore(store RootKeyStorage) *Service {
+func (svc *Service) WithStore(store Storage) *Service {
 	svc1 := *svc
-	svc1.rkStore = store
-	// Make sure the old store cannot be used.
-	svc1.store.store = nil
+	svc1.store = store
 	return &svc1
 }
 
@@ -112,10 +98,7 @@ func (svc *Service) WithRootKeyStore(store RootKeyStorage) *Service {
 // was created with WithRootKeyStorage), it
 // returns nil.
 func (svc *Service) Store() Storage {
-	if svc.rkStore != nil {
-		return nil
-	}
-	return svc.store.store
+	return svc.store
 }
 
 // Location returns the service's configured macaroon location.
@@ -143,21 +126,15 @@ func (svc *Service) Check(ms macaroon.Slice, checker FirstPartyChecker) error {
 		}
 	}
 	id := ms[0].Id()
-	if svc.rkStore != nil {
-		// We're using a RootKeyStore - hack off the
-		// uuid at the end of the id.
-		if i := bytes.LastIndexByte(id, '-'); i >= 0 {
-			id = id[0:i]
-		}
+	// Trim the UUID at the end of the id.
+	// This is the UUID that's added when creating macaroons
+	// to make all macaroons unique even if they're using the
+	// same root key.
+	if i := bytes.LastIndexByte(id, '-'); i >= 0 {
+		id = id[0:i]
 	}
 
-	var rootKey []byte
-	var err error
-	if svc.rkStore != nil {
-		rootKey, err = svc.rkStore.Get(id)
-	} else {
-		rootKey, err = svc.store.Get(string(id))
-	}
+	rootKey, err := svc.store.Get(id)
 	if err != nil {
 		if errgo.Cause(err) == ErrNotFound {
 			// If the macaroon was not found, it is probably
@@ -232,14 +209,11 @@ func isVerificationError(err error) bool {
 	return ok
 }
 
-// NewMacaroon mints a new macaroon with the given id and caveats.
-// If the id is empty, a random id will be used.
-// If rootKey is nil, a random root key will be used.
-// The macaroon will be stored in the service's storage.
-// TODO swap the first two arguments so that they're
-// in the same order as macaroon.New.
-func (svc *Service) NewMacaroon(id, rootKey []byte, caveats []checkers.Caveat) (*macaroon.Macaroon, error) {
-	rootKey, id, err := svc.rootKey(rootKey, id)
+// NewMacaroon mints a new macaroon with the given caveats.
+// The root key for the macaroon will be obtained from
+// the service's Storage.
+func (svc *Service) NewMacaroon(caveats []checkers.Caveat) (*macaroon.Macaroon, error) {
+	rootKey, id, err := svc.rootKey()
 	if err != nil {
 		return nil, errgo.Mask(err)
 	}
@@ -252,45 +226,20 @@ func (svc *Service) NewMacaroon(id, rootKey []byte, caveats []checkers.Caveat) (
 			return nil, errgo.Notef(err, "cannot add caveat")
 		}
 	}
-	if svc.rkStore == nil {
-		if err := svc.store.Put(string(m.Id()), rootKey); err != nil {
-			return nil, errgo.Notef(err, "cannot save macaroon to store")
-		}
-	}
 	return m, nil
 }
 
-func (svc *Service) rootKey(rootKey, id []byte) ([]byte, []byte, error) {
-	if svc.rkStore != nil {
-		if len(rootKey) > 0 || len(id) > 0 {
-			return nil, nil, errgo.Newf("cannot choose root key or id when using RootKeyStore")
-		}
-		rootKey, id, err := svc.rkStore.RootKey()
-		if err != nil {
-			return nil, nil, errgo.Mask(err)
-		}
-		// Add a UUID to the end of the id so that even
-		// though we may be re-using the same underlying
-		// id and root key, all minted macaroons will have
-		// unique ids.
-		uuid := uuidGen.Next()
-		id = []byte(fmt.Sprintf("%s-%x", id, uuid[0:16]))
-		return rootKey, []byte(id), nil
+func (svc *Service) rootKey() ([]byte, []byte, error) {
+	rootKey, id, err := svc.store.RootKey()
+	if err != nil {
+		return nil, nil, errgo.Mask(err)
 	}
-	if rootKey == nil {
-		newRootKey, err := randomBytes(24)
-		if err != nil {
-			return nil, nil, fmt.Errorf("cannot generate root key for new macaroon: %v", err)
-		}
-		rootKey = newRootKey
-	}
-	if len(id) == 0 {
-		idBytes, err := randomBytes(24)
-		if err != nil {
-			return nil, nil, fmt.Errorf("cannot generate id for new macaroon: %v", err)
-		}
-		id = []byte(fmt.Sprintf("%x", idBytes))
-	}
+	// Add a UUID to the end of the id so that even
+	// though we may be re-using the same underlying
+	// id and root key, all minted macaroons will have
+	// unique ids.
+	uuid := uuidGen.Next()
+	id = []byte(fmt.Sprintf("%s-%x", id, uuid[0:16]))
 	return rootKey, []byte(id), nil
 }
 

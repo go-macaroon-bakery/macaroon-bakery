@@ -97,10 +97,11 @@ func (s *agentSuite) TestAgentLogin(c *gc.C) {
 		c.Assert(err, gc.IsNil)
 		err = agent.SetUpAuth(client, u, "test-user")
 		c.Assert(err, gc.IsNil)
-		m, err := s.bakery.NewMacaroon(nil, nil, []checkers.Caveat{{
+		m, err := s.bakery.NewMacaroon([]checkers.Caveat{{
 			Location:  s.discharger.URL,
 			Condition: "test condition",
 		}})
+
 		c.Assert(err, gc.IsNil)
 		ms, err := client.DischargeAll(m)
 		if test.expectError != "" {
@@ -126,10 +127,11 @@ func (s *agentSuite) TestSetUpAuthError(c *gc.C) {
 func (s *agentSuite) TestNoCookieError(c *gc.C) {
 	client := httpbakery.NewClient()
 	client.VisitWebPage = agent.VisitWebPage(client)
-	m, err := s.bakery.NewMacaroon(nil, nil, []checkers.Caveat{{
+	m, err := s.bakery.NewMacaroon([]checkers.Caveat{{
 		Location:  s.discharger.URL,
 		Condition: "test condition",
 	}})
+
 	c.Assert(err, gc.IsNil)
 	_, err = client.DischargeAll(m)
 	c.Assert(err, gc.ErrorMatches, "cannot get discharge from .*: cannot start interactive session: cannot perform agent login: no agent-login cookie found")

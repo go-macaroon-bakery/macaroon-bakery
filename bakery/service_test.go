@@ -33,7 +33,7 @@ func (s *ServiceSuite) TestSingleServiceFirstParty(c *gc.C) {
 	service, err := bakery.NewService(p)
 	c.Assert(err, gc.IsNil)
 
-	primary, err := service.NewMacaroon(nil, nil, nil)
+	primary, err := service.NewMacaroon(nil)
 	c.Assert(err, gc.IsNil)
 	c.Assert(primary.Location(), gc.Equals, "loc")
 	cav := checkers.Caveat{
@@ -64,7 +64,7 @@ func (s *ServiceSuite) TestMacaroonPaperFig6(c *gc.C) {
 	fs := newService(c, "fs-loc", locator)
 
 	// ts creates a macaroon.
-	tsMacaroon, err := ts.NewMacaroon(nil, nil, nil)
+	tsMacaroon, err := ts.NewMacaroon(nil)
 	c.Assert(err, gc.IsNil)
 
 	// ts somehow sends the macaroon to fs which adds a third party caveat to be discharged by as.
@@ -101,7 +101,7 @@ func (s *ServiceSuite) TestMacaroonPaperFig6FailsWithoutDischarges(c *gc.C) {
 	_ = newService(c, "as-loc", locator)
 
 	// ts creates a macaroon.
-	tsMacaroon, err := ts.NewMacaroon(nil, nil, nil)
+	tsMacaroon, err := ts.NewMacaroon(nil)
 	c.Assert(err, gc.IsNil)
 
 	// ts somehow sends the macaroon to fs which adds a third party caveat to be discharged by as.
@@ -122,7 +122,7 @@ func (s *ServiceSuite) TestMacaroonPaperFig6FailsWithBindingOnTamperedSignature(
 	fs := newService(c, "fs-loc", locator)
 
 	// ts creates a macaroon.
-	tsMacaroon, err := ts.NewMacaroon(nil, nil, nil)
+	tsMacaroon, err := ts.NewMacaroon(nil)
 	c.Assert(err, gc.IsNil)
 
 	// ts somehow sends the macaroon to fs which adds a third party caveat to be discharged by as.
@@ -156,12 +156,13 @@ func (s *ServiceSuite) TestNeedDeclared(c *gc.C) {
 
 	// firstParty mints a macaroon with a third-party caveat addressed
 	// to thirdParty with a need-declared caveat.
-	m, err := firstParty.NewMacaroon(nil, nil, []checkers.Caveat{
+	m, err := firstParty.NewMacaroon([]checkers.Caveat{
 		checkers.NeedDeclaredCaveat(checkers.Caveat{
 			Location:  "third",
 			Condition: "something",
 		}, "foo", "bar"),
 	})
+
 	c.Assert(err, gc.IsNil)
 
 	// The client asks for a discharge macaroon for each third party caveat.
@@ -239,7 +240,7 @@ func (s *ServiceSuite) TestDischargeTwoNeedDeclared(c *gc.C) {
 
 	// firstParty mints a macaroon with two third party caveats
 	// with overlapping attributes.
-	m, err := firstParty.NewMacaroon(nil, nil, []checkers.Caveat{
+	m, err := firstParty.NewMacaroon([]checkers.Caveat{
 		checkers.NeedDeclaredCaveat(checkers.Caveat{
 			Location:  "third",
 			Condition: "x",
@@ -249,6 +250,7 @@ func (s *ServiceSuite) TestDischargeTwoNeedDeclared(c *gc.C) {
 			Condition: "y",
 		}, "bar", "baz"),
 	})
+
 	c.Assert(err, gc.IsNil)
 
 	// The client asks for a discharge macaroon for each third party caveat.
@@ -303,10 +305,11 @@ func (s *ServiceSuite) TestDischargeMacaroonCannotBeUsedAsNormalMacaroon(c *gc.C
 	thirdParty := newService(c, "third", locator)
 
 	// First party mints a macaroon with a 3rd party caveat.
-	m, err := firstParty.NewMacaroon(nil, nil, []checkers.Caveat{{
+	m, err := firstParty.NewMacaroon([]checkers.Caveat{{
 		Location:  "third",
 		Condition: "true",
 	}})
+
 	c.Assert(err, gc.IsNil)
 
 	// Acquire the discharge macaroon, but don't bind it to the original.
@@ -322,8 +325,8 @@ func (s *ServiceSuite) TestDischargeMacaroonCannotBeUsedAsNormalMacaroon(c *gc.C
 
 func (*ServiceSuite) TestCheckAny(c *gc.C) {
 	svc := newService(c, "somewhere", nil)
-	newMacaroons := func(id string, caveats ...checkers.Caveat) macaroon.Slice {
-		m, err := svc.NewMacaroon([]byte(id), nil, caveats)
+	newMacaroons := func(caveats ...checkers.Caveat) macaroon.Slice {
+		m, err := svc.NewMacaroon(caveats)
 		c.Assert(err, gc.IsNil)
 		return macaroon.Slice{m}
 	}
@@ -333,7 +336,7 @@ func (*ServiceSuite) TestCheckAny(c *gc.C) {
 		assert         map[string]string
 		checker        checkers.Checker
 		expectDeclared map[string]string
-		expectId       string
+		expectIndex    int
 		expectError    string
 	}{{
 		about:       "no macaroons",
@@ -341,13 +344,12 @@ func (*ServiceSuite) TestCheckAny(c *gc.C) {
 	}, {
 		about: "one macaroon, no caveats",
 		macaroons: []macaroon.Slice{
-			newMacaroons("x1"),
+			newMacaroons(),
 		},
-		expectId: "x1",
 	}, {
 		about: "one macaroon, one unrecognized caveat",
 		macaroons: []macaroon.Slice{
-			newMacaroons("x2", checkers.Caveat{
+			newMacaroons(checkers.Caveat{
 				Condition: "bad",
 			}),
 		},
@@ -355,16 +357,16 @@ func (*ServiceSuite) TestCheckAny(c *gc.C) {
 	}, {
 		about: "two macaroons, only one ok",
 		macaroons: []macaroon.Slice{
-			newMacaroons("x3", checkers.Caveat{
+			newMacaroons(checkers.Caveat{
 				Condition: "bad",
 			}),
-			newMacaroons("y3"),
+			newMacaroons(),
 		},
-		expectId: "y3",
+		expectIndex: 1,
 	}, {
 		about: "macaroon with declared caveats",
 		macaroons: []macaroon.Slice{
-			newMacaroons("x4",
+			newMacaroons(
 				checkers.DeclaredCaveat("key1", "value1"),
 				checkers.DeclaredCaveat("key2", "value2"),
 			),
@@ -373,11 +375,10 @@ func (*ServiceSuite) TestCheckAny(c *gc.C) {
 			"key1": "value1",
 			"key2": "value2",
 		},
-		expectId: "x4",
 	}, {
 		about: "macaroon with declared values and asserted keys with wrong value",
 		macaroons: []macaroon.Slice{
-			newMacaroons("x5",
+			newMacaroons(
 				checkers.DeclaredCaveat("key1", "value1"),
 				checkers.DeclaredCaveat("key2", "value2"),
 			),
@@ -385,12 +386,11 @@ func (*ServiceSuite) TestCheckAny(c *gc.C) {
 		assert: map[string]string{
 			"key1": "valuex",
 		},
-		expectId:    "x5",
 		expectError: `verification failed: caveat "declared key1 value1" not satisfied: got key1="valuex", expected "value1"`,
 	}, {
 		about: "macaroon with declared values and asserted keys with correct value",
 		macaroons: []macaroon.Slice{
-			newMacaroons("x6",
+			newMacaroons(
 				checkers.DeclaredCaveat("key1", "value1"),
 				checkers.DeclaredCaveat("key2", "value2"),
 			),
@@ -402,7 +402,6 @@ func (*ServiceSuite) TestCheckAny(c *gc.C) {
 			"key1": "value1",
 			"key2": "value2",
 		},
-		expectId: "x6",
 	}}
 	for i, test := range tests {
 		c.Logf("test %d: %s", i, test.about)
@@ -422,26 +421,27 @@ func (*ServiceSuite) TestCheckAny(c *gc.C) {
 		}
 		c.Assert(err, gc.IsNil)
 		c.Assert(decl, jc.DeepEquals, test.expectDeclared)
-		c.Assert(string(ms[0].Id()), gc.Equals, test.expectId)
+		c.Assert(ms[0].Id(), jc.DeepEquals, test.macaroons[test.expectIndex][0].Id())
 	}
 }
 
-func (s *ServiceSuite) TestNewMacaroonWithRootKeyStorage(c *gc.C) {
+func (s *ServiceSuite) TestNewMacaroonWithExplicitStorage(c *gc.C) {
 	svc, err := bakery.NewService(bakery.NewServiceParams{
 		Location: "somewhere",
 	})
 	c.Assert(err, gc.IsNil)
 
-	store := bakery.NewMemRootKeyStorage()
+	store := bakery.NewMemStorage()
 	key, id, err := store.RootKey()
 	c.Assert(err, gc.IsNil)
 
-	svc = svc.WithRootKeyStore(store)
+	svc = svc.WithStore(store)
 
-	m, err := svc.NewMacaroon(nil, nil, []checkers.Caveat{{
+	m, err := svc.NewMacaroon([]checkers.Caveat{{
 		Location:  "",
 		Condition: "something",
 	}})
+
 	c.Assert(err, gc.IsNil)
 	c.Assert(m.Location(), gc.Equals, "somewhere")
 	id1 := string(m.Id())
@@ -459,10 +459,11 @@ func (s *ServiceSuite) TestNewMacaroonWithRootKeyStorage(c *gc.C) {
 
 	// Create another one and check that it re-uses the
 	// same key but has a different id.
-	m, err = svc.NewMacaroon(nil, nil, []checkers.Caveat{{
+	m, err = svc.NewMacaroon([]checkers.Caveat{{
 		Location:  "",
 		Condition: "something",
 	}})
+
 	c.Assert(err, gc.IsNil)
 	c.Assert(m.Location(), gc.Equals, "somewhere")
 	id2 := string(m.Id())
@@ -472,45 +473,25 @@ func (s *ServiceSuite) TestNewMacaroonWithRootKeyStorage(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 }
 
-func (s *ServiceSuite) TestNewMacaroonWithRootKeyStorageInParams(c *gc.C) {
-	store := bakery.NewMemRootKeyStorage()
+func (s *ServiceSuite) TestNewMacaroonWithStorageInParams(c *gc.C) {
+	store := bakery.NewMemStorage()
 	_, id, err := store.RootKey()
 	c.Assert(err, gc.IsNil)
 
 	// Check that we can create a bakery with the root key store
 	// in its parameters too.
 	svc, err := bakery.NewService(bakery.NewServiceParams{
-		Location:     "elsewhere",
-		RootKeyStore: store,
+		Location: "elsewhere",
+		Store:    store,
 	})
 	c.Assert(err, gc.IsNil)
 
-	m, err := svc.NewMacaroon(nil, nil, nil)
+	m, err := svc.NewMacaroon(nil)
 	c.Assert(err, gc.IsNil)
 	c.Assert(string(m.Id()), gc.Matches, string(id)+"-[0-9a-f]{32}")
 
 	err = svc.Check(macaroon.Slice{m}, checkers.New())
 	c.Assert(err, gc.IsNil)
-}
-
-func (s *ServiceSuite) TestNewMacaroonWithExplicitIdAndRootKeyStorage(c *gc.C) {
-	store := bakery.NewMemRootKeyStorage()
-
-	// Check that we can create a bakery with the root key store
-	// in its parameters too.
-	svc, err := bakery.NewService(bakery.NewServiceParams{
-		Location:     "somewhere",
-		RootKeyStore: store,
-	})
-	c.Assert(err, gc.IsNil)
-
-	m, err := svc.NewMacaroon([]byte("someid"), nil, nil)
-	c.Assert(err, gc.ErrorMatches, `cannot choose root key or id when using RootKeyStore`)
-	c.Assert(m, gc.IsNil)
-
-	m, err = svc.NewMacaroon(nil, []byte{1}, nil)
-	c.Assert(err, gc.ErrorMatches, `cannot choose root key or id when using RootKeyStore`)
-	c.Assert(m, gc.IsNil)
 }
 
 func newService(c *gc.C, location string, locator bakery.PublicKeyLocatorMap) *bakery.Service {

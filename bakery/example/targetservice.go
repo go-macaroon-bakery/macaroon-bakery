@@ -113,7 +113,7 @@ func (srv *targetServiceHandler) writeError(w http.ResponseWriter, req *http.Req
 			Condition: "operation " + operation,
 		}}
 	// Mint an appropriate macaroon and send it back to the client.
-	m, err := srv.svc.NewMacaroon(nil, nil, caveats)
+	m, err := srv.svc.NewMacaroon(caveats)
 	if err != nil {
 		fail(http.StatusInternalServerError, "cannot mint macaroon: %v", err)
 		return
