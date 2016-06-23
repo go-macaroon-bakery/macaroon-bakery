@@ -20,8 +20,9 @@ func authService(endpoint string, key *bakery.KeyPair) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	d := httpbakery.NewDischargerFromService(svc, httpbakery.ThirdPartyCaveatCheckerFunc(thirdPartyChecker))
 	mux := http.NewServeMux()
-	httpbakery.AddDischargeHandler(mux, "/", svc, thirdPartyChecker)
+	d.AddMuxHandlers(mux, "/")
 	return mux, nil
 }
 

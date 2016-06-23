@@ -59,7 +59,8 @@ func New(p Params) (http.Handler, error) {
 		place: &place{meeting.New()},
 	}
 	mux := http.NewServeMux()
-	httpbakery.AddDischargeHandler(mux, "/", svc, h.checkThirdPartyCaveat)
+	d := httpbakery.NewDischargerFromService(svc, h)
+	d.AddMuxHandlers(mux, "/")
 	mux.Handle("/user/", mkHandler(handleJSON(h.userHandler)))
 	mux.HandleFunc("/login", h.loginHandler)
 	mux.Handle("/question", mkHandler(handleJSON(h.questionHandler)))
@@ -193,8 +194,8 @@ func (h *handler) loginAttemptHandler(w http.ResponseWriter, req *http.Request) 
 	})
 }
 
-// checkThirdPartyCaveat is called by the httpbakery discharge handler.
-func (h *handler) checkThirdPartyCaveat(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+// CheckThirdPartyCaveat is called by the httpbakery discharge handler.
+func (h *handler) CheckThirdPartyCaveat(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 	return h.newContext(req, "").CheckThirdPartyCaveat(cav)
 }
 

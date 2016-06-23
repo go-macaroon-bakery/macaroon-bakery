@@ -464,8 +464,6 @@ func SetCookie(jar http.CookieJar, url *url.URL, ms macaroon.Slice) error {
 	if err != nil {
 		return errgo.Mask(err)
 	}
-	// TODO verify that setting this for the URL makes it available
-	// to all paths under that URL.
 	jar.SetCookies(url, []*http.Cookie{cookie})
 	return nil
 }
@@ -488,7 +486,7 @@ func appendURLElem(u, elem string) string {
 func (c *Client) AcquireDischarge(cav macaroon.Caveat) (*macaroon.Macaroon, error) {
 	var resp dischargeResponse
 	loc := appendURLElem(cav.Location, "discharge")
-	// TODO support base64 encoding of binary caveat ids.
+	// TODO use id64 field for encoding caveat id when it's  not valid UTF-8.
 	err := postFormJSON(
 		loc,
 		url.Values{
