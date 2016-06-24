@@ -1,6 +1,7 @@
 package httpbakery_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -8,6 +9,7 @@ import (
 	"net/url"
 
 	jujutesting "github.com/juju/testing"
+	jc "github.com/juju/testing/checkers"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
 
@@ -23,33 +25,40 @@ type KeyringSuite struct {
 var _ = gc.Suite(&KeyringSuite{})
 
 func (s *KeyringSuite) TestCachePrepopulated(c *gc.C) {
-	cache := bakery.NewPublicKeyRing()
+	cache := bakery.NewThirdPartyLocatorStore()
 	key, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
-	cache.AddPublicKeyForLocation("https://0.1.2.3/", true, &key.Public)
-	kr := httpbakery.NewPublicKeyRing(nil, cache)
-	pk, err := kr.PublicKeyForLocation("https://0.1.2.3/")
+	expectInfo := bakery.ThirdPartyInfo{
+		PublicKey: key.Public,
+		Version:   bakery.LatestVersion,
+	}
+	cache.AddInfo("https://0.1.2.3/", expectInfo)
+	kr := httpbakery.NewThirdPartyLocator(nil, cache)
+	info, err := kr.ThirdPartyInfo("https://0.1.2.3/")
 	c.Assert(err, gc.IsNil)
-	c.Assert(*pk, gc.Equals, key.Public)
+	c.Assert(info, jc.DeepEquals, expectInfo)
 }
 
 func (s *KeyringSuite) TestCacheMiss(c *gc.C) {
 	d := bakerytest.NewDischarger(nil, nil)
 	defer d.Close()
-	kr := httpbakery.NewPublicKeyRing(nil, nil)
+	kr := httpbakery.NewThirdPartyLocator(nil, nil)
 
-	expectPublicKey := d.Service.PublicKey()
-	pk, err := kr.PublicKeyForLocation(d.Location())
+	expectInfo := bakery.ThirdPartyInfo{
+		PublicKey: *d.Service.PublicKey(),
+		Version:   bakery.LatestVersion,
+	}
+	info, err := kr.ThirdPartyInfo(d.Location())
 	c.Assert(err, gc.IsNil)
-	c.Assert(*pk, gc.Equals, *expectPublicKey)
+	c.Assert(info, jc.DeepEquals, expectInfo)
 
 	// Close down the service and make sure that
 	// the key is cached.
 	d.Close()
 
-	pk, err = kr.PublicKeyForLocation(d.Location())
+	info, err = kr.ThirdPartyInfo(d.Location())
 	c.Assert(err, gc.IsNil)
-	c.Assert(*pk, gc.Equals, *expectPublicKey)
+	c.Assert(info, jc.DeepEquals, expectInfo)
 }
 
 func (s *KeyringSuite) TestInsecureURL(c *gc.C) {
@@ -63,70 +72,105 @@ func (s *KeyringSuite) TestInsecureURL(c *gc.C) {
 	defer srv.Close()
 
 	// Check that we are refused because it's an insecure URL.
-	kr := httpbakery.NewPublicKeyRing(nil, nil)
-	pk, err := kr.PublicKeyForLocation(srv.URL)
+	kr := httpbakery.NewThirdPartyLocator(nil, nil)
+	info, err := kr.ThirdPartyInfo(srv.URL)
 	c.Assert(err, gc.ErrorMatches, `untrusted discharge URL "http://.*"`)
-	c.Assert(pk, gc.IsNil)
+	c.Assert(info, jc.DeepEquals, bakery.ThirdPartyInfo{})
 
 	// Check that it does work when we've enabled AllowInsecure.
 	kr.AllowInsecure()
-	pk, err = kr.PublicKeyForLocation(srv.URL)
+	info, err = kr.ThirdPartyInfo(srv.URL)
 	c.Assert(err, gc.IsNil)
-	c.Assert(*pk, gc.Equals, *d.Service.PublicKey())
+	c.Assert(info, jc.DeepEquals, bakery.ThirdPartyInfo{
+		PublicKey: *d.Service.PublicKey(),
+		Version:   bakery.LatestVersion,
+	})
 }
 
 func (s *KeyringSuite) TestCustomHTTPClient(c *gc.C) {
 	client := &http.Client{
 		Transport: errorTransport{},
 	}
-	kr := httpbakery.NewPublicKeyRing(client, nil)
-	pk, err := kr.PublicKeyForLocation("https://0.1.2.3/")
-	c.Assert(err, gc.ErrorMatches, `cannot get public key from "https://0.1.2.3/publickey": Get https://0.1.2.3/publickey: custom round trip error`)
-	c.Assert(pk, gc.IsNil)
+	kr := httpbakery.NewThirdPartyLocator(client, nil)
+	info, err := kr.ThirdPartyInfo("https://0.1.2.3/")
+	c.Assert(err, gc.ErrorMatches, `Get https://0.1.2.3/discharge/info: custom round trip error`)
+	c.Assert(info, jc.DeepEquals, bakery.ThirdPartyInfo{})
 }
 
-func (s *KeyringSuite) TestPublicKey(c *gc.C) {
-	d := bakerytest.NewDischarger(nil, noCaveatChecker)
+func (s *KeyringSuite) TestThirdPartyInfoForLocation(c *gc.C) {
+	d := bakerytest.NewDischarger(nil, nil)
 	defer d.Close()
 	client := httpbakery.NewHTTPClient()
-	publicKey, err := httpbakery.PublicKeyForLocation(client, d.Location())
+	info, err := httpbakery.ThirdPartyInfoForLocation(client, d.Location())
 	c.Assert(err, gc.IsNil)
-	expectedKey := d.Service.PublicKey()
-	c.Assert(publicKey, gc.DeepEquals, expectedKey)
+	expectedInfo := bakery.ThirdPartyInfo{
+		PublicKey: *d.Service.PublicKey(),
+		Version:   bakery.LatestVersion,
+	}
+	c.Assert(info, gc.DeepEquals, expectedInfo)
 
 	// Check that it works with client==nil.
-	publicKey, err = httpbakery.PublicKeyForLocation(nil, d.Location())
+	info, err = httpbakery.ThirdPartyInfoForLocation(nil, d.Location())
 	c.Assert(err, gc.IsNil)
-	c.Assert(publicKey, gc.DeepEquals, expectedKey)
+	c.Assert(info, gc.DeepEquals, expectedInfo)
 }
 
-func (s *KeyringSuite) TestPublicKeyWrongURL(c *gc.C) {
+func (s *KeyringSuite) TestThirdPartyInfoForLocationWrongURL(c *gc.C) {
 	client := httpbakery.NewHTTPClient()
-	_, err := httpbakery.PublicKeyForLocation(client, "http://localhost:0")
+	_, err := httpbakery.ThirdPartyInfoForLocation(client, "http://localhost:0")
 	c.Assert(err, gc.ErrorMatches,
-		`cannot get public key from "http://localhost:0/publickey": Get http://localhost:0/publickey: dial tcp 127.0.0.1:0: .*connection refused`)
+		`Get http://localhost:0/discharge/info: dial tcp 127.0.0.1:0: .*connection refused`)
 }
 
-func (s *KeyringSuite) TestPublicKeyReturnsInvalidJSON(c *gc.C) {
+func (s *KeyringSuite) TestThirdPartyInfoForLocationReturnsInvalidJSON(c *gc.C) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "BADJSON")
 	}))
 	defer ts.Close()
 	client := httpbakery.NewHTTPClient()
-	_, err := httpbakery.PublicKeyForLocation(client, ts.URL)
+	_, err := httpbakery.ThirdPartyInfoForLocation(client, ts.URL)
 	c.Assert(err, gc.ErrorMatches,
-		fmt.Sprintf(`failed to decode response from "%s/publickey": invalid character 'B' looking for beginning of value`, ts.URL))
+		fmt.Sprintf(`unexpected content type text/plain; want application/json; content: BADJSON`))
 }
 
-func (s *KeyringSuite) TestPublicKeyReturnsStatusInternalServerError(c *gc.C) {
+func (s *KeyringSuite) TestThirdPartyInfoForLocationReturnsStatusInternalServerError(c *gc.C) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer ts.Close()
 	client := httpbakery.NewHTTPClient()
-	_, err := httpbakery.PublicKeyForLocation(client, ts.URL)
+	_, err := httpbakery.ThirdPartyInfoForLocation(client, ts.URL)
 	c.Assert(err, gc.ErrorMatches,
-		fmt.Sprintf(`cannot get public key from "%s/publickey": got status 500 Internal Server Error`, ts.URL))
+		fmt.Sprintf(`GET %s/discharge/info: cannot unmarshal error response \(status 500 Internal Server Error\): unexpected content type text/plain; want application/json; content: `, ts.URL))
+}
+
+func (s *KeyringSuite) TestThirdPartyInfoForLocationFallbackToOldVersion(c *gc.C) {
+	// Start a bakerytest discharger so we benefit from its TLS-verification-skip logic.
+	d := bakerytest.NewDischarger(nil, nil)
+	defer d.Close()
+
+	key, err := bakery.GenerateKey()
+	c.Assert(err, gc.IsNil)
+
+	// Start a server which serves the publickey endpoint only.
+	mux := http.NewServeMux()
+	server := httptest.NewTLSServer(mux)
+	mux.HandleFunc("/publickey", func(w http.ResponseWriter, req *http.Request) {
+		c.Check(req.Method, gc.Equals, "GET")
+		data, err := json.Marshal(&httpbakery.PublicKeyResponse{
+			PublicKey: &key.Public,
+		})
+		c.Check(err, gc.IsNil)
+		w.Write(data)
+	})
+	info, err := httpbakery.ThirdPartyInfoForLocation(httpbakery.NewHTTPClient(), server.URL)
+	c.ExpectFailure("third party public key fallback doesn't currently work")
+	c.Assert(err, gc.IsNil)
+	expectedInfo := bakery.ThirdPartyInfo{
+		PublicKey: *d.Service.PublicKey(),
+		Version:   bakery.Version1,
+	}
+	c.Assert(info, gc.DeepEquals, expectedInfo)
 }
 
 type errorTransport struct{}

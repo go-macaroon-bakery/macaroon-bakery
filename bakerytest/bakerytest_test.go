@@ -26,12 +26,8 @@ func (s *suite) SetUpTest(c *gc.C) {
 
 var _ = gc.Suite(&suite{})
 
-func noCaveatChecker(_ *http.Request, cond, arg string) ([]checkers.Caveat, error) {
-	return nil, nil
-}
-
 func (s *suite) TestDischargerSimple(c *gc.C) {
-	d := bakerytest.NewDischarger(nil, noCaveatChecker)
+	d := bakerytest.NewDischarger(nil, nil)
 	defer d.Close()
 
 	svc, err := bakery.NewService(bakery.NewServiceParams{
@@ -39,7 +35,7 @@ func (s *suite) TestDischargerSimple(c *gc.C) {
 		Locator:  d,
 	})
 	c.Assert(err, gc.IsNil)
-	m, err := svc.NewMacaroon([]checkers.Caveat{{
+	m, err := svc.NewMacaroon(bakery.LatestVersion, []checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
 	}})
@@ -58,33 +54,38 @@ var failChecker = bakery.FirstPartyCheckerFunc(func(s string) error {
 })
 
 func (s *suite) TestDischargerTwoLevels(c *gc.C) {
-	d1checker := func(_ *http.Request, cond, arg string) ([]checkers.Caveat, error) {
+	d1checker := func(cond, arg string) ([]checkers.Caveat, error) {
 		if cond != "xtrue" {
 			return nil, fmt.Errorf("caveat refused")
 		}
 		return nil, nil
 	}
-	d1 := bakerytest.NewDischarger(nil, d1checker)
+	d1 := bakerytest.NewDischarger(nil, bakerytest.ConditionParser(d1checker))
 	defer d1.Close()
-	d2checker := func(_ *http.Request, cond, arg string) ([]checkers.Caveat, error) {
+	d2checker := func(cond, arg string) ([]checkers.Caveat, error) {
 		return []checkers.Caveat{{
 			Location:  d1.Location(),
 			Condition: "x" + cond,
 		}}, nil
 	}
-	d2 := bakerytest.NewDischarger(d1, d2checker)
+	d2 := bakerytest.NewDischarger(d1, bakerytest.ConditionParser(d2checker))
 	defer d2.Close()
-	locator := bakery.PublicKeyLocatorMap{
-		d1.Location(): d1.Service.PublicKey(),
-		d2.Location(): d2.Service.PublicKey(),
-	}
+	locator := bakery.NewThirdPartyLocatorStore()
+	locator.AddInfo(d1.Location(), bakery.ThirdPartyInfo{
+		PublicKey: *d1.Service.PublicKey(),
+		Version:   bakery.LatestVersion,
+	})
+	locator.AddInfo(d2.Location(), bakery.ThirdPartyInfo{
+		PublicKey: *d2.Service.PublicKey(),
+		Version:   bakery.LatestVersion,
+	})
 	c.Logf("map: %s", locator)
 	svc, err := bakery.NewService(bakery.NewServiceParams{
 		Location: "here",
 		Locator:  locator,
 	})
 	c.Assert(err, gc.IsNil)
-	m, err := svc.NewMacaroon([]checkers.Caveat{{
+	m, err := svc.NewMacaroon(bakery.LatestVersion, []checkers.Caveat{{
 		Location:  d2.Location(),
 		Condition: "true",
 	}})
@@ -110,8 +111,8 @@ func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 }
 
 func (s *suite) TestInsecureSkipVerifyRestoration(c *gc.C) {
-	d1 := bakerytest.NewDischarger(nil, noCaveatChecker)
-	d2 := bakerytest.NewDischarger(nil, noCaveatChecker)
+	d1 := bakerytest.NewDischarger(nil, nil)
+	d2 := bakerytest.NewDischarger(nil, nil)
 	d2.Close()
 	c.Assert(http.DefaultTransport.(*http.Transport).TLSClientConfig.InsecureSkipVerify, gc.Equals, true)
 	d1.Close()
@@ -120,7 +121,7 @@ func (s *suite) TestInsecureSkipVerifyRestoration(c *gc.C) {
 	// When InsecureSkipVerify is already true, it should not
 	// be restored to false.
 	http.DefaultTransport.(*http.Transport).TLSClientConfig.InsecureSkipVerify = true
-	d3 := bakerytest.NewDischarger(nil, noCaveatChecker)
+	d3 := bakerytest.NewDischarger(nil, nil)
 	d3.Close()
 
 	c.Assert(http.DefaultTransport.(*http.Transport).TLSClientConfig.InsecureSkipVerify, gc.Equals, true)
@@ -131,7 +132,7 @@ func (s *suite) TestConcurrentDischargers(c *gc.C) {
 	for i := 0; i < 5; i++ {
 		wg.Add(1)
 		go func() {
-			d := bakerytest.NewDischarger(nil, noCaveatChecker)
+			d := bakerytest.NewDischarger(nil, nil)
 			d.Close()
 			wg.Done()
 		}()
@@ -158,7 +159,7 @@ func (s *suite) TestInteractiveDischarger(c *gc.C) {
 		Locator:  d,
 	})
 	c.Assert(err, gc.IsNil)
-	m, err := svc.NewMacaroon([]checkers.Caveat{{
+	m, err := svc.NewMacaroon(bakery.LatestVersion, []checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
 	}})
@@ -194,7 +195,7 @@ func (s *suite) TestLoginDischargerError(c *gc.C) {
 		Locator:  d,
 	})
 	c.Assert(err, gc.IsNil)
-	m, err := svc.NewMacaroon([]checkers.Caveat{{
+	m, err := svc.NewMacaroon(bakery.LatestVersion, []checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
 	}})
@@ -228,7 +229,7 @@ func (s *suite) TestInteractiveDischargerURL(c *gc.C) {
 		Locator:  d,
 	})
 	c.Assert(err, gc.IsNil)
-	m, err := svc.NewMacaroon([]checkers.Caveat{{
+	m, err := svc.NewMacaroon(bakery.LatestVersion, []checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
 	}})

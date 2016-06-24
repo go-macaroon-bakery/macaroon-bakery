@@ -126,8 +126,9 @@ func (d *Discharger) login(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	m, err := d.Bakery.NewMacaroon([]checkers.Caveat{
-		bakery.LocalThirdPartyCaveat(al.PublicKey),
+	version := httpbakery.RequestVersion(r)
+	m, err := d.Bakery.NewMacaroon(version, []checkers.Caveat{
+		bakery.LocalThirdPartyCaveat(al.PublicKey, version),
 	})
 
 	if err != nil {

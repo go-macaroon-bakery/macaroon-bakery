@@ -18,6 +18,12 @@ import (
 	"gopkg.in/macaroon-bakery.v2-unstable/httpbakery"
 )
 
+// NoCaveatChecker is a third party caveat checker that
+// always allows any caveat and adds no third party caveats.
+var NoCaveatChecker = httpbakery.ThirdPartyCheckerFunc(func(req *http.Request, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+	return nil, nil
+})
+
 // Discharger is a third-party caveat discharger suitable
 // for testing. It listens on a local network port for
 // discharge requests. It should be shut down by calling
@@ -75,8 +81,6 @@ func stopSkipVerify() {
 
 // NewDischarger returns a new third party caveat discharger
 // which uses the given function to check caveats.
-// The cond and arg arguments to the function are as returned
-// by checkers.ParseCaveat.
 //
 // If locator is non-nil, it will be used to find public keys
 // for any third party caveats returned by the checker.
@@ -84,9 +88,11 @@ func stopSkipVerify() {
 // Calling this function has the side-effect of setting
 // InsecureSkipVerify in http.DefaultTransport.TLSClientConfig
 // until all the dischargers are closed.
+//
+// If checker is nil, NoCaveatChecker will be used.
 func NewDischarger(
-	locator bakery.PublicKeyLocator,
-	checker func(req *http.Request, cond, arg string) ([]checkers.Caveat, error),
+	locator bakery.ThirdPartyLocator,
+	checker httpbakery.ThirdPartyChecker,
 ) *Discharger {
 	mux := http.NewServeMux()
 	server := httptest.NewTLSServer(mux)
@@ -97,20 +103,29 @@ func NewDischarger(
 	if err != nil {
 		panic(err)
 	}
-	checker1 := func(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
-		cond, arg, err := checkers.ParseCaveat(cav.Condition)
-		if err != nil {
-			return nil, err
-		}
-		return checker(req, cond, arg)
+	if checker == nil {
+		checker = NoCaveatChecker
 	}
-	d := httpbakery.NewDischargerFromService(svc, httpbakery.ThirdPartyCaveatCheckerFunc(checker1))
+	d := httpbakery.NewDischargerFromService(svc, checker)
 	d.AddMuxHandlers(mux, "/")
 	startSkipVerify()
 	return &Discharger{
 		Service: svc,
 		server:  server,
 	}
+}
+
+// ConditionParser adapts the given function into a httpbakery.ThirdPartyChecker.
+// It parses the caveat's condition and calls the function with the result.
+func ConditionParser(check func(cond, arg string) ([]checkers.Caveat, error)) httpbakery.ThirdPartyChecker {
+	f := func(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+		cond, arg, err := checkers.ParseCaveat(cav.Condition)
+		if err != nil {
+			return nil, err
+		}
+		return check(cond, arg)
+	}
+	return httpbakery.ThirdPartyCheckerFunc(f)
 }
 
 // Close shuts down the server. It may be called more than
@@ -132,11 +147,14 @@ func (d *Discharger) Location() string {
 }
 
 // PublicKeyForLocation implements bakery.PublicKeyLocator.
-func (d *Discharger) PublicKeyForLocation(loc string) (*bakery.PublicKey, error) {
+func (d *Discharger) ThirdPartyInfo(loc string) (bakery.ThirdPartyInfo, error) {
 	if loc == d.Location() {
-		return d.Service.PublicKey(), nil
+		return bakery.ThirdPartyInfo{
+			PublicKey: *d.Service.PublicKey(),
+			Version:   bakery.LatestVersion,
+		}, nil
 	}
-	return nil, bakery.ErrNotFound
+	return bakery.ThirdPartyInfo{}, bakery.ErrNotFound
 }
 
 type dischargeResult struct {
@@ -198,7 +216,7 @@ type InteractiveDischarger struct {
 // until all the dischargers are closed.
 //
 // The returned InteractiveDischarger must be closed when finished with.
-func NewInteractiveDischarger(locator bakery.PublicKeyLocator, visitHandler http.Handler) *InteractiveDischarger {
+func NewInteractiveDischarger(locator bakery.ThirdPartyLocator, visitHandler http.Handler) *InteractiveDischarger {
 	d := &InteractiveDischarger{
 		Mux:     http.NewServeMux(),
 		waiting: map[string]discharge{},

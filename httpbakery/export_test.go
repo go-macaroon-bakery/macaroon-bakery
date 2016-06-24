@@ -1,0 +1,3 @@
+package httpbakery
+
+type PublicKeyResponse publicKeyResponse

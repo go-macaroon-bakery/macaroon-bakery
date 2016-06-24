@@ -7,6 +7,8 @@ import (
 	"github.com/juju/httprequest"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2-unstable"
+
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 )
 
 // ErrorCode holds an error code that classifies
@@ -47,19 +49,8 @@ type Error struct {
 
 	// version holds the protocol version that was used
 	// to create the error (see NewDischargeRequiredErrorWithVersion).
-	version version
+	version bakery.Version
 }
-
-// version represents a version of the bakery protocol. It is jused
-// to determine the kind of response to send when there is a
-// discharge-required error.
-type version int
-
-const (
-	version0      version = 0
-	version1      version = 1
-	latestVersion         = version1
-)
 
 // ErrorInfo holds additional information provided
 // by an error.
@@ -126,9 +117,9 @@ func ErrorToResponse(err error) (int, interface{}) {
 		status = http.StatusBadRequest
 	case ErrDischargeRequired, ErrInteractionRequired:
 		switch errorBody.version {
-		case version0:
+		case bakery.Version0:
 			status = http.StatusProxyAuthRequired
-		case version1:
+		case bakery.Version1, bakery.Version2:
 			status = http.StatusUnauthorized
 			body = httprequest.CustomHeader{
 				Body:          body,
@@ -208,7 +199,7 @@ func WriteDischargeRequiredErrorForRequest(w http.ResponseWriter, m *macaroon.Ma
 // macaroon as a cookie this will be the path associated with the
 // cookie. See ErrorInfo.MacaroonPath for more information.
 func NewDischargeRequiredError(m *macaroon.Macaroon, path string, originalErr error) error {
-	return newDischargeRequiredErrorWithVersion(m, path, originalErr, version0)
+	return NewDischargeRequiredErrorWithVersion(m, path, originalErr, bakery.Version0)
 }
 
 // NewInteractionRequiredError returns an error of type *Error
@@ -226,7 +217,7 @@ func NewInteractionRequiredError(visitURL, waitURL string, originalErr error, re
 	}
 	return &Error{
 		Message: originalErr.Error(),
-		version: versionFromRequest(req),
+		version: RequestVersion(req),
 		Code:    ErrInteractionRequired,
 		Info: &ErrorInfo{
 			VisitURL: visitURL,
@@ -248,15 +239,18 @@ func NewInteractionRequiredError(visitURL, waitURL string, originalErr error, re
 //	err := NewDischargeRequiredErrorForRequest(...)
 //	err.(*httpbakery.Error).Info.CookieNameSuffix = cookieName
 func NewDischargeRequiredErrorForRequest(m *macaroon.Macaroon, path string, originalErr error, req *http.Request) error {
-	v := versionFromRequest(req)
-	return newDischargeRequiredErrorWithVersion(m, path, originalErr, v)
+	v := RequestVersion(req)
+	return NewDischargeRequiredErrorWithVersion(m, path, originalErr, v)
 }
 
-// newDischargeRequiredErrorWithVersion is the internal version of NewDischargeRequiredErrorForRequest.
-func newDischargeRequiredErrorWithVersion(m *macaroon.Macaroon, path string, originalErr error, v version) error {
+// NewDischargeRequiredErrorWithVersion is like NewDischargeRequiredErrorForRequest
+// except that instead of inferring the client version from
+// the request, the version is explicit.
+func NewDischargeRequiredErrorWithVersion(m *macaroon.Macaroon, path string, originalErr error, v bakery.Version) error {
 	if originalErr == nil {
 		originalErr = ErrDischargeRequired
 	}
+	logger.Infof("creating discharge-required error for version %v", v)
 	return &Error{
 		Message: originalErr.Error(),
 		version: v,
@@ -275,24 +269,30 @@ func newDischargeRequiredErrorWithVersion(m *macaroon.Macaroon, path string, ori
 // header set to "Macaroon".
 const BakeryProtocolHeader = "Bakery-Protocol-Version"
 
-// versionFromRequest determines the bakery protocol version from a client
-// request. If the protocol cannot be determined, or is invalid,
-// the original version of the protocol is used.
-func versionFromRequest(req *http.Request) version {
+// RequestVersion determines the bakery protocol version from a client
+// request. If the protocol cannot be determined, or is invalid, the
+// original version of the protocol is used. If a later version is
+// found, the latest known version is used, which is OK because versions
+// are backwardly compatible.
+//
+// TODO as there are no known version 0 clients, default to version 1
+// instead.
+func RequestVersion(req *http.Request) bakery.Version {
 	vs := req.Header.Get(BakeryProtocolHeader)
 	if vs == "" {
 		// No header - use backward compatibility mode.
-		return version0
+		return bakery.Version0
 	}
-	v, err := strconv.Atoi(vs)
-	if err != nil || version(v) < 0 {
+	x, err := strconv.Atoi(vs)
+	if err != nil || x < 0 {
 		// Badly formed header - use backward compatibility mode.
-		return version0
+		return bakery.Version0
 	}
-	if version(v) > latestVersion {
+	v := bakery.Version(x)
+	if v > bakery.LatestVersion {
 		// Later version than we know about - use the
 		// latest version that we can.
-		return latestVersion
+		return bakery.LatestVersion
 	}
-	return version(v)
+	return v
 }

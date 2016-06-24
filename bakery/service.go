@@ -7,7 +7,9 @@ package bakery
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/base64"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/juju/loggo"
@@ -22,13 +24,37 @@ var logger = loggo.GetLogger("bakery")
 
 var uuidGen = fastuuid.MustNewGenerator()
 
+// Version represents a version of the bakery protocol.
+type Version int
+
+const (
+	// In version 0, discharge-required errors use status 407
+	Version0 Version = 0
+	// In version 1,  discharge-required errors use status 401.
+	Version1 Version = 1
+	// In version 2, binary macaroons and caveat ids are supported.
+	Version2      Version = 2
+	LatestVersion         = Version2
+)
+
+// MacaroonVersion returns the macaroon version that should
+// be used with the given bakery Version.
+func MacaroonVersion(v Version) macaroon.Version {
+	switch v {
+	case Version0, Version1:
+		return macaroon.V1
+	default:
+		return macaroon.V2
+	}
+}
+
 // Service represents a service which can use macaroons
 // to check authorization.
 type Service struct {
 	location string
 	store    Storage
 	key      *KeyPair
-	locator  PublicKeyLocator
+	locator  ThirdPartyLocator
 }
 
 // NewServiceParams holds the parameters for a NewService call.
@@ -51,7 +77,7 @@ type NewServiceParams struct {
 	// Locator provides public keys for third-party services by location when
 	// adding a third-party caveat.
 	// It may be nil, in which case, no third-party caveats can be created.
-	Locator PublicKeyLocator
+	Locator ThirdPartyLocator
 }
 
 // NewService returns a new service that can mint new
@@ -60,24 +86,29 @@ func NewService(p NewServiceParams) (*Service, error) {
 	if p.Store == nil {
 		p.Store = NewMemStorage()
 	}
-	svc := &Service{
-		location: p.Location,
-		locator:  p.Locator,
-		store:    p.Store,
-	}
-
-	var err error
 	if p.Key == nil {
+		var err error
 		p.Key, err = GenerateKey()
 		if err != nil {
 			return nil, err
 		}
 	}
-	if svc.locator == nil {
-		svc.locator = PublicKeyLocatorMap(nil)
+	if p.Locator == nil {
+		p.Locator = emptyLocator{}
 	}
-	svc.key = p.Key
+	svc := &Service{
+		location: p.Location,
+		locator:  p.Locator,
+		store:    p.Store,
+		key:      p.Key,
+	}
 	return svc, nil
+}
+
+type emptyLocator struct{}
+
+func (emptyLocator) ThirdPartyInfo(loc string) (ThirdPartyInfo, error) {
+	return ThirdPartyInfo{}, ErrNotFound
 }
 
 // WithStore returns a copy of service where macaroon creation and
@@ -107,7 +138,7 @@ func (svc *Service) Location() string {
 }
 
 // Locator returns the public key locator used by the service.
-func (svc *Service) Locator() PublicKeyLocator {
+func (svc *Service) Locator() ThirdPartyLocator {
 	return svc.locator
 }
 
@@ -136,25 +167,54 @@ func (svc *Service) Check(ms macaroon.Slice, checker FirstPartyChecker) error {
 		}
 	}
 	id := ms[0].Id()
-	// Trim the UUID at the end of the id.
-	// This is the UUID that's added when creating macaroons
-	// to make all macaroons unique even if they're using the
-	// same root key.
-	if i := bytes.LastIndexByte(id, '-'); i >= 0 {
-		id = id[0:i]
-	}
 
-	rootKey, err := svc.store.Get(id)
-	if err != nil {
-		if errgo.Cause(err) == ErrNotFound {
-			// If the macaroon was not found, it is probably
-			// because it's been removed after time-expiry,
-			// so return a verification error.
-			return &VerificationError{
-				Reason: errgo.New("macaroon not found in storage"),
+	base64Decoded := false
+	if id[0] == 'A' {
+		// The first byte is not a version number and it's 'A', which is the
+		// base64 encoding of the top 6 bits (all zero) of the version number 2,
+		// so we assume that it's the base64 encoding of a new-style
+		// macaroon id, so we base64 decode it.
+		//
+		// Note that old-style ids always start with an ASCII character >= 4
+		// (> 32 in fact) so this logic won't be triggered for those.
+		dec := make([]byte, base64.RawURLEncoding.DecodedLen(len(id)))
+		n, err := base64.RawURLEncoding.Decode(dec, id)
+		if err == nil {
+			// Set the id only on success - if it's a bad encoding, we'll get a not-found error
+			// which is fine because "not found" is a correct description of the issue - we
+			// can't find the root key for the given id.
+			id = dec[0:n]
+			base64Decoded = true
+		}
+	}
+	// Trim any extraneous information from the id before retrieving
+	// it from storage, including the UUID that's added when
+	// creating macaroons to make all macaroons unique even if
+	// they're using the same root key.
+	switch id[0] {
+	case byte(Version2):
+		// Skip the UUID at the start of the id.
+		id = id[1+16:]
+	default:
+		if !base64Decoded && isLowerCaseHexChar(id[0]) {
+			// It's an old-style id, probably with a hyphenated UUID.
+			// so trim that off.
+			if i := bytes.LastIndexByte(id, '-'); i >= 0 {
+				id = id[0:i]
 			}
 		}
-		return errgo.Notef(err, "cannot get macaroon")
+	}
+	rootKey, err := svc.store.Get(id)
+	if err != nil {
+		if errgo.Cause(err) != ErrNotFound {
+			return errgo.Notef(err, "cannot get macaroon")
+		}
+		// If the macaroon was not found, it is probably
+		// because it's been removed after time-expiry,
+		// so return a verification error.
+		return &VerificationError{
+			Reason: errgo.Newf("macaroon not found in storage"),
+		}
 	}
 	err = ms[0].Verify(rootKey, checker.CheckFirstPartyCaveat, ms[1:])
 	if err != nil {
@@ -165,13 +225,32 @@ func (svc *Service) Check(ms macaroon.Slice, checker FirstPartyChecker) error {
 	return nil
 }
 
-// CheckAnyM is like CheckAny except that on success it also returns
-// the set of macaroons that was successfully checked.
-// The "M" suffix is for backward compatibility reasons - in a
-// later bakery version, the signature of CheckAny will be
-// changed to return the macaroon slice and CheckAnyM will be
-// removed.
-func (svc *Service) CheckAnyM(mss []macaroon.Slice, assert map[string]string, checker checkers.Checker) (map[string]string, macaroon.Slice, error) {
+func isLowerCaseHexChar(c byte) bool {
+	switch {
+	case '0' <= c && c <= '9':
+		return true
+	case 'a' <= c && c <= 'f':
+		return true
+	}
+	return false
+}
+
+// CheckAny checks that the given slice of slices contains at least
+// one macaroon minted by the given service, using checker to check
+// any first party caveats. It returns an error with a
+// *bakery.VerificationError cause if the macaroon verification failed.
+//
+// The assert map holds any required attributes of "declared" attributes,
+// overriding any inferences made from the macaroons themselves.
+// It has a similar effect to adding a checkers.DeclaredCaveat
+// for each key and value, but the error message will be more
+// useful.
+//
+// It adds all the standard caveat checkers to the given checker.
+//
+// It returns any attributes declared in the successfully validated request
+// and the set of macaroons that was successfully checked.
+func (svc *Service) CheckAny(mss []macaroon.Slice, assert map[string]string, checker checkers.Checker) (map[string]string, macaroon.Slice, error) {
 	if len(mss) == 0 {
 		return nil, nil, &VerificationError{
 			Reason: errgo.Newf("no macaroons"),
@@ -195,39 +274,28 @@ func (svc *Service) CheckAnyM(mss []macaroon.Slice, assert map[string]string, ch
 	return nil, nil, errgo.Mask(err, isVerificationError)
 }
 
-// CheckAny checks that the given slice of slices contains at least
-// one macaroon minted by the given service, using checker to check
-// any first party caveats. It returns an error with a
-// *bakery.VerificationError cause if the macaroon verification failed.
-//
-// The assert map holds any required attributes of "declared" attributes,
-// overriding any inferences made from the macaroons themselves.
-// It has a similar effect to adding a checkers.DeclaredCaveat
-// for each key and value, but the error message will be more
-// useful.
-//
-// It adds all the standard caveat checkers to the given checker.
-//
-// It returns any attributes declared in the successfully validated request.
-func (svc *Service) CheckAny(mss []macaroon.Slice, assert map[string]string, checker checkers.Checker) (map[string]string, error) {
-	attrs, _, err := svc.CheckAnyM(mss, assert, checker)
-	return attrs, err
-}
-
 func isVerificationError(err error) bool {
 	_, ok := err.(*VerificationError)
 	return ok
 }
 
-// NewMacaroon mints a new macaroon with the given caveats.
+// NewMacaroon mints a new macaroon with the given caveats
+// and version.
 // The root key for the macaroon will be obtained from
 // the service's Storage.
-func (svc *Service) NewMacaroon(caveats []checkers.Caveat) (*macaroon.Macaroon, error) {
+func (svc *Service) NewMacaroon(version Version, caveats []checkers.Caveat) (*macaroon.Macaroon, error) {
 	rootKey, id, err := svc.rootKey()
 	if err != nil {
 		return nil, errgo.Mask(err)
 	}
-	m, err := macaroon.New(rootKey, id, svc.location)
+	if version < Version2 {
+		// The macaroon can't take a non-UTF-8 id, so encode
+		// it as base64 before using it.
+		id1 := make([]byte, base64.RawURLEncoding.EncodedLen(len(id)))
+		base64.RawURLEncoding.Encode(id1, id)
+		id = id1
+	}
+	m, err := macaroon.New(rootKey, id, svc.location, MacaroonVersion(version))
 	if err != nil {
 		return nil, errgo.Notef(err, "cannot bake macaroon")
 	}
@@ -248,18 +316,33 @@ func (svc *Service) rootKey() ([]byte, []byte, error) {
 	// though we may be re-using the same underlying
 	// id and root key, all minted macaroons will have
 	// unique ids.
+	//
+	// The format of a macaroon id is:
+	//
+	//	version[1 byte] = LatestVersion
+	//	uuid[16 bytes]
+	//	actual id [n bytes]
 	uuid := uuidGen.Next()
-	id = []byte(fmt.Sprintf("%s-%x", id, uuid[0:16]))
-	return rootKey, []byte(id), nil
+	finalId := make([]byte, 1+16+len(id))
+	finalId[0] = byte(LatestVersion)
+	copy(finalId[1:], uuid[:16])
+	copy(finalId[1+16:], id)
+	return rootKey, finalId, nil
 }
 
 // LocalThirdPartyCaveat returns a third-party caveat that, when added
 // to a macaroon with AddCaveat, results in a caveat
 // with the location "local", encrypted with the given public key.
 // This can be automatically discharged by DischargeAllWithKey.
-func LocalThirdPartyCaveat(key *PublicKey) checkers.Caveat {
+func LocalThirdPartyCaveat(key *PublicKey, version Version) checkers.Caveat {
+	var loc string
+	if version < Version2 {
+		loc = "local " + key.String()
+	} else {
+		loc = fmt.Sprintf("local %d %s", version, key)
+	}
 	return checkers.Caveat{
-		Location: "local " + key.String(),
+		Location: loc,
 	}
 }
 
@@ -284,18 +367,16 @@ func (svc *Service) AddCaveat(m *macaroon.Macaroon, cav checkers.Caveat) error {
 // resulting third-party caveat will encode the condition "true"
 // encrypted with that public key. See LocalThirdPartyCaveat
 // for a way of creating such caveats.
-func AddCaveat(key *KeyPair, loc PublicKeyLocator, m *macaroon.Macaroon, cav checkers.Caveat) error {
+func AddCaveat(key *KeyPair, loc ThirdPartyLocator, m *macaroon.Macaroon, cav checkers.Caveat) error {
 	if cav.Location == "" {
-		m.AddFirstPartyCaveat(cav.Condition)
+		if err := m.AddFirstPartyCaveat(cav.Condition); err != nil {
+			return errgo.Mask(err)
+		}
 		return nil
 	}
-	var thirdPartyPub *PublicKey
-	if strings.HasPrefix(cav.Location, "local ") {
-		var key PublicKey
-		if err := key.UnmarshalText([]byte(cav.Location[len("local "):])); err != nil {
-			return errgo.Notef(err, "cannot unmarshal client's public key in local third-party caveat")
-		}
-		thirdPartyPub = &key
+	var info ThirdPartyInfo
+	if localInfo, ok := parseLocalLocation(cav.Location); ok {
+		info = localInfo
 		cav.Location = "local"
 		if cav.Condition != "" {
 			return errgo.New("cannot specify caveat condition in local third-party caveat")
@@ -303,7 +384,7 @@ func AddCaveat(key *KeyPair, loc PublicKeyLocator, m *macaroon.Macaroon, cav che
 		cav.Condition = "true"
 	} else {
 		var err error
-		thirdPartyPub, err = loc.PublicKeyForLocation(cav.Location)
+		info, err = loc.ThirdPartyInfo(cav.Location)
 		if err != nil {
 			return errgo.Notef(err, "cannot find public key for location %q", cav.Location)
 		}
@@ -312,7 +393,11 @@ func AddCaveat(key *KeyPair, loc PublicKeyLocator, m *macaroon.Macaroon, cav che
 	if err != nil {
 		return errgo.Notef(err, "cannot generate third party secret")
 	}
-	id, err := encodeJSONCaveatId(cav.Condition, rootKey, thirdPartyPub, key)
+	if m.Version() < macaroon.V2 && info.Version >= Version2 {
+		// We can't use later version of caveat ids in earlier macaroons.
+		info.Version = Version1
+	}
+	id, err := encodeCaveatId(cav.Condition, rootKey, info, key)
 	if err != nil {
 		return errgo.Notef(err, "cannot create third party caveat id at %q", cav.Location)
 	}
@@ -322,13 +407,55 @@ func AddCaveat(key *KeyPair, loc PublicKeyLocator, m *macaroon.Macaroon, cav che
 	return nil
 }
 
+// parseLocalLocation parses a local caveat location as generated by
+// LocalThirdPartyCaveat. This is of the form:
+//
+//	local <version> <pubkey>
+//
+// where <version> is the bakery version of the client that we're
+// adding the local caveat for.
+//
+// It returns false if the location does not represent a local
+// caveat location.
+func parseLocalLocation(loc string) (ThirdPartyInfo, bool) {
+	if !strings.HasPrefix(loc, "local ") {
+		return ThirdPartyInfo{}, false
+	}
+	version := Version1
+	fields := strings.Fields(loc)
+	fields = fields[1:] // Skip "local"
+	switch len(fields) {
+	case 2:
+		v, err := strconv.Atoi(fields[0])
+		if err != nil {
+			return ThirdPartyInfo{}, false
+		}
+		version = Version(v)
+		fields = fields[1:]
+		fallthrough
+	case 1:
+		var key PublicKey
+		if err := key.UnmarshalText([]byte(fields[0])); err != nil {
+			return ThirdPartyInfo{}, false
+		}
+		return ThirdPartyInfo{
+			PublicKey: key,
+			Version:   version,
+		}, true
+	default:
+		return ThirdPartyInfo{}, false
+	}
+}
+
 // Discharge creates a macaroon that discharges the third party caveat with the
 // given id that should have been created earlier using key.Public. The
 // condition implicit in the id is checked for validity using checker. If
 // it is valid, a new macaroon is returned which discharges the caveat
 // along with any caveats returned from the checker.
+//
+// The macaroon is created with a version derived from the version
+// that was used to encode the id.
 func Discharge(key *KeyPair, checker ThirdPartyChecker, id []byte) (*macaroon.Macaroon, []checkers.Caveat, error) {
-	logger.Infof("server attempting to discharge %q", id)
 	cavInfo, err := decodeCaveatId(key, []byte(id))
 	if err != nil {
 		return nil, nil, errgo.Notef(err, "discharger cannot decode caveat id")
@@ -352,7 +479,7 @@ func Discharge(key *KeyPair, checker ThirdPartyChecker, id []byte) (*macaroon.Ma
 	// be stored persistently. Indeed, it would be a problem if
 	// we did, because then the macaroon could potentially be used
 	// for normal authorization with the third party.
-	m, err := macaroon.New(cavInfo.RootKey, id, "")
+	m, err := macaroon.New(cavInfo.RootKey, id, "", MacaroonVersion(cavInfo.Version))
 	if err != nil {
 		return nil, nil, errgo.Mask(err)
 	}
@@ -361,6 +488,8 @@ func Discharge(key *KeyPair, checker ThirdPartyChecker, id []byte) (*macaroon.Ma
 
 // Discharge calls Discharge with the service's key and uses the service
 // to add any returned caveats to the discharge macaroon.
+// The discharge macaroon will be created with a version
+// implied by the id.
 func (svc *Service) Discharge(checker ThirdPartyChecker, id []byte) (*macaroon.Macaroon, error) {
 	m, caveats, err := Discharge(svc.key, checker, id)
 	if err != nil {
@@ -465,6 +594,10 @@ type ThirdPartyCaveatInfo struct {
 	// should be given. This is often the same as the
 	// CaveatId field.
 	MacaroonId []byte
+
+	// Version holds the version that was used to encode
+	// the caveat id.
+	Version Version
 }
 
 // ThirdPartyChecker holds a function that checks third party caveats

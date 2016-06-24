@@ -37,11 +37,15 @@ func (s *agentSuite) SetUpSuite(c *gc.C) {
 		Bakery: bak,
 	}
 	s.server = s.discharger.Serve()
-	s.bakery, err = bakery.NewService(bakery.NewServiceParams{
-		Locator: bakery.PublicKeyLocatorMap{
-			s.discharger.URL: &key.Public,
-		},
+	locator := bakery.NewThirdPartyLocatorStore()
+	locator.AddInfo(s.discharger.URL, bakery.ThirdPartyInfo{
+		PublicKey: key.Public,
+		Version:   bakery.LatestVersion,
 	})
+	s.bakery, err = bakery.NewService(bakery.NewServiceParams{
+		Locator: locator,
+	})
+	c.Assert(err, gc.IsNil)
 }
 
 func (s *agentSuite) TearDownSuite(c *gc.C) {
@@ -97,7 +101,7 @@ func (s *agentSuite) TestAgentLogin(c *gc.C) {
 		c.Assert(err, gc.IsNil)
 		err = agent.SetUpAuth(client, u, "test-user")
 		c.Assert(err, gc.IsNil)
-		m, err := s.bakery.NewMacaroon([]checkers.Caveat{{
+		m, err := s.bakery.NewMacaroon(bakery.LatestVersion, []checkers.Caveat{{
 			Location:  s.discharger.URL,
 			Condition: "test condition",
 		}})
@@ -127,7 +131,7 @@ func (s *agentSuite) TestSetUpAuthError(c *gc.C) {
 func (s *agentSuite) TestNoCookieError(c *gc.C) {
 	client := httpbakery.NewClient()
 	client.VisitWebPage = agent.VisitWebPage(client)
-	m, err := s.bakery.NewMacaroon([]checkers.Caveat{{
+	m, err := s.bakery.NewMacaroon(bakery.LatestVersion, []checkers.Caveat{{
 		Location:  s.discharger.URL,
 		Condition: "test condition",
 	}})

@@ -3,8 +3,7 @@ package bakery
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"net/url"
-	"sync"
+	"strings"
 
 	"golang.org/x/crypto/nacl/box"
 	"gopkg.in/errgo.v1"
@@ -79,25 +78,55 @@ func (k *Key) UnmarshalText(text []byte) error {
 	return nil
 }
 
-// PublicKeyLocator is used to find the public key for a given
-// caveat or macaroon location.
-type PublicKeyLocator interface {
-	// PublicKeyForLocation returns the public key matching the caveat or
-	// macaroon location. It returns ErrNotFound if no match is found.
-	PublicKeyForLocation(loc string) (*PublicKey, error)
+// ThirdPartyInfo holds information on a given third party
+// discharge service.
+type ThirdPartyInfo struct {
+	// PublicKey holds the public key of the third party.
+	PublicKey PublicKey
+
+	// Version holds latest the bakery protocol version supported
+	// by the discharger.
+	Version Version
 }
 
-// PublicKeyLocatorMap implements PublicKeyLocator for a map.
-// Each entry in the map holds a public key value for
-// a location named by the map key.
-type PublicKeyLocatorMap map[string]*PublicKey
+// ThirdPartyLocator is used to find information on third
+// party discharge services.
+type ThirdPartyLocator interface {
+	// ThirdPartyInfo returns information on the third
+	// party at the given location. It returns ErrNotFound if no match is found.
+	ThirdPartyInfo(loc string) (ThirdPartyInfo, error)
+}
 
-// PublicKeyForLocation implements the PublicKeyLocator interface.
-func (m PublicKeyLocatorMap) PublicKeyForLocation(loc string) (*PublicKey, error) {
-	if pk, ok := m[loc]; ok {
-		return pk, nil
+// ThirdPartyLocatorMap implements a simple ThirdPartyLocator.
+// A trailing slash on locations is ignored.
+type ThirdPartyLocatorStore struct {
+	m map[string]ThirdPartyInfo
+}
+
+// NewThirdPartyLocatorStore returns a new instance of ThirdPartyLocatorStore
+// that stores locations in memory.
+func NewThirdPartyLocatorStore() *ThirdPartyLocatorStore {
+	return &ThirdPartyLocatorStore{
+		m: make(map[string]ThirdPartyInfo),
 	}
-	return nil, ErrNotFound
+}
+
+// AddInfo associates the given information with the
+// given location, ignoring any trailing slash.
+func (s *ThirdPartyLocatorStore) AddInfo(loc string, info ThirdPartyInfo) {
+	s.m[canonicalLocation(loc)] = info
+}
+
+func canonicalLocation(loc string) string {
+	return strings.TrimSuffix(loc, "/")
+}
+
+// ThirdPartyInfo implements the ThirdPartyLocator interface.
+func (s *ThirdPartyLocatorStore) ThirdPartyInfo(loc string) (ThirdPartyInfo, error) {
+	if info, ok := s.m[canonicalLocation(loc)]; ok {
+		return info, nil
+	}
+	return ThirdPartyInfo{}, ErrNotFound
 }
 
 // KeyPair holds a public/private pair of keys.
@@ -123,118 +152,4 @@ func GenerateKey() (*KeyPair, error) {
 // public key part of key.
 func (key *KeyPair) String() string {
 	return key.Public.String()
-}
-
-type publicKeyRecord struct {
-	url    *url.URL
-	prefix bool
-	key    PublicKey
-}
-
-// PublicKeyRing stores public keys for third-party services, accessible by
-// location string.
-type PublicKeyRing struct {
-	// mu guards the fields following it.
-	mu sync.Mutex
-
-	// TODO(rog) use a more efficient data structure
-	publicKeys []publicKeyRecord
-}
-
-// NewPublicKeyRing returns a new PublicKeyRing instance.
-func NewPublicKeyRing() *PublicKeyRing {
-	return &PublicKeyRing{}
-}
-
-// AddPublicKeyForLocation adds a public key to the keyring for the given
-// location. If prefix is true, then inexact locations will be allowed
-// (see PublicKeyForLocation). The matching is similar to that
-// of http.ServeMux, For example, http://foo.com/x/ matches http://foo.com/x/y
-// but http://foo.com/x does not.
-//
-// As a special case, http://foo.com is always treated the same as http://foo.com/.
-//
-// The scheme is not significant.
-//
-// It is safe to call methods concurrently on this type.
-// The loc argument should be a valid URL.
-func (kr *PublicKeyRing) AddPublicKeyForLocation(loc string, prefix bool, key *PublicKey) error {
-	url, err := url.Parse(loc)
-	if err != nil {
-		return errgo.Notef(err, "invalid location URL")
-	}
-	if url.Path == "" {
-		url.Path = "/"
-	}
-	kr.mu.Lock()
-	defer kr.mu.Unlock()
-	newr := publicKeyRecord{
-		url:    url,
-		prefix: prefix,
-		key:    *key,
-	}
-	for i := range kr.publicKeys {
-		k := &kr.publicKeys[i]
-		if k.url.Path == url.Path && k.url.Host == url.Host {
-			*k = newr
-			return nil
-		}
-	}
-	kr.publicKeys = append(kr.publicKeys, newr)
-	return nil
-}
-
-// PublicKeyForLocation implements the PublicKeyLocator interface,
-// by returning the public key most closely associated with loc.
-// If loc is not a valid URL, it returns ErrNotFound; otherwise
-// the host part of the URL must match a registered location.
-//
-// Of those registered locations with matching host parts,
-// longer paths take precedence over short ones.
-// The matching is similar to that of http.ServeMux, except there
-// must be a host part.
-func (kr *PublicKeyRing) PublicKeyForLocation(loc string) (*PublicKey, error) {
-	url, err := url.Parse(loc)
-	if err != nil {
-		return nil, ErrNotFound
-	}
-	if url.Path == "" {
-		url.Path = "/"
-	}
-	kr.mu.Lock()
-	defer kr.mu.Unlock()
-	n := 0
-	var found *PublicKey
-	for i := range kr.publicKeys {
-		k := &kr.publicKeys[i]
-		if !k.match(url) {
-			continue
-		}
-		if found == nil || len(k.url.Path) > n {
-			found = &k.key
-			n = len(k.url.Path)
-		}
-	}
-	if found == nil {
-		return nil, ErrNotFound
-	}
-	return found, nil
-}
-
-func (r *publicKeyRecord) match(url *url.URL) bool {
-	if url == nil {
-		return false
-	}
-	if url.Host != r.url.Host {
-		return false
-	}
-	if !r.prefix {
-		return url.Path == r.url.Path
-	}
-	pattern := r.url.Path
-	n := len(pattern)
-	if pattern[n-1] != '/' {
-		return pattern == url.Path
-	}
-	return len(url.Path) >= n && url.Path[0:n] == pattern
 }

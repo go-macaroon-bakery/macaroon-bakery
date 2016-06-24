@@ -21,8 +21,6 @@ type checkTest struct {
 	expectCause func(err error) bool
 }
 
-var isCaveatNotRecognized = errgo.Is(checkers.ErrCaveatNotRecognized)
-
 var checkerTests = []struct {
 	about   string
 	checker checkers.Checker

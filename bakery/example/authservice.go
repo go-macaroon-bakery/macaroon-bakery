@@ -15,12 +15,11 @@ func authService(endpoint string, key *bakery.KeyPair) (http.Handler, error) {
 	svc, err := bakery.NewService(bakery.NewServiceParams{
 		Location: endpoint,
 		Key:      key,
-		Locator:  bakery.NewPublicKeyRing(),
 	})
 	if err != nil {
 		return nil, err
 	}
-	d := httpbakery.NewDischargerFromService(svc, httpbakery.ThirdPartyCaveatCheckerFunc(thirdPartyChecker))
+	d := httpbakery.NewDischargerFromService(svc, httpbakery.ThirdPartyCheckerFunc(thirdPartyChecker))
 	mux := http.NewServeMux()
 	d.AddMuxHandlers(mux, "/")
 	return mux, nil
