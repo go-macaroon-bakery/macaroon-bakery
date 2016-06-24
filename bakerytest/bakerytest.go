@@ -104,7 +104,8 @@ func NewDischarger(
 		}
 		return checker(req, cond, arg)
 	}
-	httpbakery.AddDischargeHandler(mux, "/", svc, checker1)
+	d := httpbakery.NewDischargerFromService(svc, httpbakery.ThirdPartyCaveatCheckerFunc(checker1))
+	d.AddMuxHandlers(mux, "/")
 	startSkipVerify()
 	return &Discharger{
 		Service: svc,
@@ -212,7 +213,8 @@ func NewInteractiveDischarger(locator bakery.PublicKeyLocator, visitHandler http
 	if err != nil {
 		panic(err)
 	}
-	httpbakery.AddDischargeHandler(d.Mux, "/", svc, d.checker)
+	bd := httpbakery.NewDischargerFromService(svc, d)
+	bd.AddMuxHandlers(d.Mux, "/")
 	startSkipVerify()
 	d.Discharger = Discharger{
 		Service: svc,
@@ -221,7 +223,9 @@ func NewInteractiveDischarger(locator bakery.PublicKeyLocator, visitHandler http
 	return d
 }
 
-func (d *InteractiveDischarger) checker(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+// CheckThirdPartyCaveat implements httpbakery.ThirdPartyCaveatDischarger
+// by always returning an interaction-required error.
+func (d *InteractiveDischarger) CheckThirdPartyCaveat(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 	d.mu.Lock()
 	id := fmt.Sprintf("%d", d.id)
 	d.id++

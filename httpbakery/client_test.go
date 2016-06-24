@@ -235,21 +235,23 @@ func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
 	// create the services from leaf discharger to primary
 	// service so that each one can know the location
 	// to discharge at.
-	key2, h2 := newHTTPDischarger(locator, func(svc *bakery.Service, req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+	dsvc1 := newService("loc", locator)
+	key2, h2 := newHTTPDischarger(dsvc1, httpbakery.ThirdPartyCaveatCheckerFunc(func(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 		called[2]++
 		if cav.Condition != "is-ok" {
 			return nil, fmt.Errorf("unrecognized caveat at srv2")
 		}
 		return nil, nil
-	})
+	}))
 	srv2 := httptest.NewServer(h2)
 	locator.AddPublicKeyForLocation(srv2.URL, true, key2)
 
-	key1, h1 := newHTTPDischarger(locator, func(svc *bakery.Service, req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+	dsvc2 := newService("loc", locator)
+	key1, h1 := newHTTPDischarger(dsvc2, httpbakery.ThirdPartyCaveatCheckerFunc(func(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 		called[1]++
-		if _, err := httpbakery.CheckRequest(svc, req, nil, checkers.New()); err != nil {
+		if _, err := httpbakery.CheckRequest(dsvc2, req, nil, checkers.New()); err != nil {
 			return nil, newDischargeRequiredError(serverHandlerParams{
-				service:      svc,
+				service:      dsvc2,
 				authLocation: srv2.URL,
 			}, err, req)
 		}
@@ -257,7 +259,7 @@ func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
 			return nil, fmt.Errorf("unrecognized caveat at srv1")
 		}
 		return nil, nil
-	})
+	}))
 	srv1 := httptest.NewServer(h1)
 	locator.AddPublicKeyForLocation(srv1.URL, true, key1)
 
@@ -308,12 +310,10 @@ func (s *ClientSuite) TestVersion1Generates401Status(c *gc.C) {
 	c.Assert(resp.Header.Get("WWW-Authenticate"), gc.Equals, "Macaroon")
 }
 
-func newHTTPDischarger(locator bakery.PublicKeyLocator, checker func(svc *bakery.Service, req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error)) (*bakery.PublicKey, http.Handler) {
-	svc := newService("loc", locator)
+func newHTTPDischarger(svc *bakery.Service, checker httpbakery.ThirdPartyCaveatChecker) (*bakery.PublicKey, http.Handler) {
 	mux := http.NewServeMux()
-	httpbakery.AddDischargeHandler(mux, "/", svc, func(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
-		return checker(svc, req, cav)
-	})
+	d := httpbakery.NewDischargerFromService(svc, checker)
+	d.AddMuxHandlers(mux, "/")
 	return svc.PublicKey(), mux
 }
 

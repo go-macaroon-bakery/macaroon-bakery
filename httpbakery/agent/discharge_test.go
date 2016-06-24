@@ -34,7 +34,8 @@ type Discharger struct {
 
 func (d *Discharger) ServeMux() *http.ServeMux {
 	mux := http.NewServeMux()
-	httpbakery.AddDischargeHandler(mux, "/", d.Bakery, d.checker)
+	discharger := httpbakery.NewDischargerFromService(d.Bakery, d)
+	discharger.AddMuxHandlers(mux, "/")
 	mux.Handle("/login", http.HandlerFunc(d.login))
 	mux.Handle("/wait", http.HandlerFunc(d.wait))
 	mux.Handle("/", http.HandlerFunc(d.notfound))
@@ -89,7 +90,7 @@ func (d *Discharger) FinishWait(w http.ResponseWriter, r *http.Request, err erro
 	return
 }
 
-func (d *Discharger) checker(req *http.Request, ci *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+func (d *Discharger) CheckThirdPartyCaveat(req *http.Request, ci *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 	d.mu.Lock()
 	id := len(d.waiting)
 	d.waiting = append(d.waiting, discharge{ci.MacaroonId, make(chan error, 1)})

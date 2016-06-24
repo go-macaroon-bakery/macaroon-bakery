@@ -106,9 +106,19 @@ func (svc *Service) Location() string {
 	return svc.location
 }
 
+// Locator returns the public key locator used by the service.
+func (svc *Service) Locator() PublicKeyLocator {
+	return svc.locator
+}
+
 // PublicKey returns the service's public key.
 func (svc *Service) PublicKey() *PublicKey {
 	return &svc.key.Public
+}
+
+// Key returns the service's private/public key par.
+func (svc *Service) Key() *KeyPair {
+	return svc.key
 }
 
 // Check checks that the given macaroons verify
@@ -255,8 +265,17 @@ func LocalThirdPartyCaveat(key *PublicKey) checkers.Caveat {
 
 // AddCaveat adds a caveat to the given macaroon.
 //
-// If it's a third-party caveat, it uses the service's caveat-id encoder
-// to create the id of the new caveat.
+// It uses the service's key pair and locator to call
+// the AddCaveat function.
+func (svc *Service) AddCaveat(m *macaroon.Macaroon, cav checkers.Caveat) error {
+	return AddCaveat(svc.key, svc.locator, m, cav)
+}
+
+// AddCaveat adds a caveat to the given macaroon.
+//
+// If it's a third-party caveat, it encrypts it using
+// the given key pair and by looking
+// up the location using the given locator.
 //
 // As a special case, if the caveat's Location field has the prefix
 // "local " the caveat is added as a client self-discharge caveat
@@ -265,7 +284,7 @@ func LocalThirdPartyCaveat(key *PublicKey) checkers.Caveat {
 // resulting third-party caveat will encode the condition "true"
 // encrypted with that public key. See LocalThirdPartyCaveat
 // for a way of creating such caveats.
-func (svc *Service) AddCaveat(m *macaroon.Macaroon, cav checkers.Caveat) error {
+func AddCaveat(key *KeyPair, loc PublicKeyLocator, m *macaroon.Macaroon, cav checkers.Caveat) error {
 	if cav.Location == "" {
 		m.AddFirstPartyCaveat(cav.Condition)
 		return nil
@@ -284,7 +303,7 @@ func (svc *Service) AddCaveat(m *macaroon.Macaroon, cav checkers.Caveat) error {
 		cav.Condition = "true"
 	} else {
 		var err error
-		thirdPartyPub, err = svc.locator.PublicKeyForLocation(cav.Location)
+		thirdPartyPub, err = loc.PublicKeyForLocation(cav.Location)
 		if err != nil {
 			return errgo.Notef(err, "cannot find public key for location %q", cav.Location)
 		}
@@ -293,7 +312,7 @@ func (svc *Service) AddCaveat(m *macaroon.Macaroon, cav checkers.Caveat) error {
 	if err != nil {
 		return errgo.Notef(err, "cannot generate third party secret")
 	}
-	id, err := encodeJSONCaveatId(cav.Condition, rootKey, thirdPartyPub, svc.key)
+	id, err := encodeJSONCaveatId(cav.Condition, rootKey, thirdPartyPub, key)
 	if err != nil {
 		return errgo.Notef(err, "cannot create third party caveat id at %q", cav.Location)
 	}
@@ -418,12 +437,6 @@ type VerificationError struct {
 func (e *VerificationError) Error() string {
 	return fmt.Sprintf("verification failed: %v", e.Reason)
 }
-
-// TODO(rog) consider possible options for checkers:
-// - first and third party checkers could be merged, but
-// then there would have to be a runtime check
-// that when used to check first-party caveats, the
-// checker does not return third-party caveats.
 
 // ThirdPartyCaveatInfo holds the information decoded from
 // a third party caveat id.
