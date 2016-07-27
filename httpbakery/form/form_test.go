@@ -142,7 +142,7 @@ func (s *formSuite) TestFormLogin(c *gc.C) {
 	for i, test := range formLoginTests {
 		c.Logf("test %d: %s", i, test.about)
 		d.dischargeOptions = test.opts
-		m, err := svc.NewMacaroon([]checkers.Caveat{{
+		m, err := svc.NewMacaroon(bakery.LatestVersion, []checkers.Caveat{{
 			Location:  d.discharger.Location(),
 			Condition: "test condition",
 		}})
@@ -201,7 +201,7 @@ func (s *formSuite) TestFormTitle(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	for i, test := range formTitleTests {
 		c.Logf("test %d: %s", i, test.host)
-		m, err := svc.NewMacaroon([]checkers.Caveat{{
+		m, err := svc.NewMacaroon(bakery.LatestVersion, []checkers.Caveat{{
 			Location:  "https://" + test.host,
 			Condition: "test condition",
 		}})
@@ -334,11 +334,11 @@ var defaultFiller = fillerFunc(func(esform.Form) (map[string]interface{}, error)
 
 type testLocator struct {
 	loc     string
-	locator bakery.PublicKeyLocator
+	locator bakery.ThirdPartyLocator
 }
 
-func (l testLocator) PublicKeyForLocation(loc string) (*bakery.PublicKey, error) {
-	return l.locator.PublicKeyForLocation(l.loc)
+func (l testLocator) ThirdPartyInfo(loc string) (bakery.ThirdPartyInfo, error) {
+	return l.locator.ThirdPartyInfo(l.loc)
 }
 
 type titleTestFiller struct {

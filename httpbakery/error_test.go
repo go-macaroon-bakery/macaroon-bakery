@@ -20,7 +20,7 @@ type ErrorSuite struct{}
 var _ = gc.Suite(&ErrorSuite{})
 
 func (s *ErrorSuite) TestWriteDischargeRequiredError(c *gc.C) {
-	m, err := macaroon.New([]byte("secret"), []byte("id"), "a location")
+	m, err := macaroon.New([]byte("secret"), []byte("id"), "a location", macaroon.V1)
 	c.Assert(err, gc.IsNil)
 	tests := []struct {
 		about            string

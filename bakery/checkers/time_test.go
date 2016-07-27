@@ -157,7 +157,7 @@ func (s *timeSuite) TestMacaroonsExpireTime(c *gc.C) {
 }
 
 func mustNewMacaroon(cavs ...string) *macaroon.Macaroon {
-	m, err := macaroon.New(nil, nil, "")
+	m, err := macaroon.New(nil, nil, "", macaroon.LatestVersion)
 	if err != nil {
 		panic(err)
 	}

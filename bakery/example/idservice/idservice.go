@@ -81,7 +81,7 @@ func (h *handler) userHandler(p httprequest.Params) (interface{}, error) {
 		// Theoretically, we could just redirect the user to the
 		// login page, but that would p.Requestuire a different flow
 		// and it's not clear that it would be an advantage.
-		m, err := h.svc.NewMacaroon([]checkers.Caveat{{
+		m, err := h.svc.NewMacaroon(httpbakery.RequestVersion(p.Request), []checkers.Caveat{{
 			Location:  h.svc.Location(),
 			Condition: "member-of-group admin",
 		}, {
@@ -91,13 +91,10 @@ func (h *handler) userHandler(p httprequest.Params) (interface{}, error) {
 		if err != nil {
 			return nil, errgo.Notef(err, "cannot mint new macaroon")
 		}
-		return nil, &httpbakery.Error{
-			Message: err.Error(),
-			Code:    httpbakery.ErrDischargeRequired,
-			Info: &httpbakery.ErrorInfo{
-				Macaroon: m,
-			},
-		}
+
+		return nil, httpbakery.NewDischargeRequiredErrorForRequest(
+			m, "", err, p.Request,
+		)
 	}
 	// PUT /user/$user - create new user
 	// PUT /user/$user/group-membership - change group membership of user
@@ -168,7 +165,7 @@ func (h *handler) loginAttemptHandler(w http.ResponseWriter, req *http.Request) 
 	// to have a macaroon that they can use later to prove
 	// to us that they have logged in. We also add a cookie
 	// to hold the logged in user name.
-	m, err := h.svc.NewMacaroon([]checkers.Caveat{{
+	m, err := h.svc.NewMacaroon(httpbakery.RequestVersion(req), []checkers.Caveat{{
 		Condition: "user-is " + user,
 	}})
 

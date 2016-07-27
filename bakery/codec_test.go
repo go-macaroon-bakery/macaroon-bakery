@@ -24,8 +24,8 @@ func (s *codecSuite) SetUpTest(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 }
 
-func (s *codecSuite) TestJSONRoundTrip(c *gc.C) {
-	cid, err := encodeJSONCaveatId(
+func (s *codecSuite) TestV1RoundTrip(c *gc.C) {
+	cid, err := encodeCaveatIdV1(
 		"is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
 
 	c.Assert(err, gc.IsNil)
@@ -39,11 +39,12 @@ func (s *codecSuite) TestJSONRoundTrip(c *gc.C) {
 		CaveatId:            cid,
 		MacaroonId:          cid,
 		ThirdPartyKeyPair:   *s.thirdPartyKey,
+		Version:             Version1,
 	})
 }
 
-func (s *codecSuite) TestV0RoundTrip(c *gc.C) {
-	cid, err := encodeCaveatIdV0("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
+func (s *codecSuite) TestV2RoundTrip(c *gc.C) {
+	cid, err := encodeCaveatIdV2("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
 
 	c.Assert(err, gc.IsNil)
 
@@ -56,6 +57,7 @@ func (s *codecSuite) TestV0RoundTrip(c *gc.C) {
 		CaveatId:            cid,
 		MacaroonId:          cid,
 		ThirdPartyKeyPair:   *s.thirdPartyKey,
+		Version:             Version2,
 	})
 }
 
@@ -69,13 +71,13 @@ func (s *codecSuite) TestCaveatIdBadVersion(c *gc.C) {
 	c.Assert(err, gc.ErrorMatches, "caveat id has unsupported version 1")
 }
 
-func (s *codecSuite) TestV0TooShort(c *gc.C) {
-	_, err := decodeCaveatId(s.thirdPartyKey, []byte{0})
+func (s *codecSuite) TestV2TooShort(c *gc.C) {
+	_, err := decodeCaveatId(s.thirdPartyKey, []byte{2})
 	c.Assert(err, gc.ErrorMatches, "caveat id too short")
 }
 
-func (s *codecSuite) TestV0BadKey(c *gc.C) {
-	cid, err := encodeCaveatIdV0("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
+func (s *codecSuite) TestV2BadKey(c *gc.C) {
+	cid, err := encodeCaveatIdV2("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
 
 	c.Assert(err, gc.IsNil)
 	cid[1] ^= 1
@@ -84,8 +86,8 @@ func (s *codecSuite) TestV0BadKey(c *gc.C) {
 	c.Assert(err, gc.ErrorMatches, "public key mismatch")
 }
 
-func (s *codecSuite) TestV0DecryptionError(c *gc.C) {
-	cid, err := encodeCaveatIdV0("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
+func (s *codecSuite) TestV2DecryptionError(c *gc.C) {
+	cid, err := encodeCaveatIdV2("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
 
 	c.Assert(err, gc.IsNil)
 	cid[5] ^= 1
@@ -94,27 +96,27 @@ func (s *codecSuite) TestV0DecryptionError(c *gc.C) {
 	c.Assert(err, gc.ErrorMatches, "cannot decrypt caveat id")
 }
 
-func (s *codecSuite) TestV0EmptySecretPart(c *gc.C) {
-	cid, err := encodeCaveatIdV0("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
+func (s *codecSuite) TestV2EmptySecretPart(c *gc.C) {
+	cid, err := encodeCaveatIdV2("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
 
 	c.Assert(err, gc.IsNil)
-	cid = s.replaceV0SecretPart(cid, []byte{})
+	cid = s.replaceV2SecretPart(cid, []byte{})
 
 	_, err = decodeCaveatId(s.thirdPartyKey, cid)
 	c.Assert(err, gc.ErrorMatches, "invalid secret part: secret part too short")
 }
 
-func (s *codecSuite) TestV0BadSecretPartVersion(c *gc.C) {
-	cid, err := encodeCaveatIdV0("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
+func (s *codecSuite) TestV2BadSecretPartVersion(c *gc.C) {
+	cid, err := encodeCaveatIdV2("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
 	c.Assert(err, gc.IsNil)
-	cid = s.replaceV0SecretPart(cid, []byte{1})
+	cid = s.replaceV2SecretPart(cid, []byte{1})
 
 	_, err = decodeCaveatId(s.thirdPartyKey, cid)
 	c.Assert(err, gc.ErrorMatches, "invalid secret part: unsupported secret part version 1")
 }
 
-func (s *codecSuite) TestV0EmptyRootKey(c *gc.C) {
-	cid, err := encodeCaveatIdV0("is-authenticated-user", []byte{}, &s.thirdPartyKey.Public, s.firstPartyKey)
+func (s *codecSuite) TestV2EmptyRootKey(c *gc.C) {
+	cid, err := encodeCaveatIdV2("is-authenticated-user", []byte{}, &s.thirdPartyKey.Public, s.firstPartyKey)
 	c.Assert(err, gc.IsNil)
 
 	res, err := decodeCaveatId(s.thirdPartyKey, cid)
@@ -126,11 +128,12 @@ func (s *codecSuite) TestV0EmptyRootKey(c *gc.C) {
 		CaveatId:            cid,
 		MacaroonId:          cid,
 		ThirdPartyKeyPair:   *s.thirdPartyKey,
+		Version:             Version2,
 	})
 }
 
-func (s *codecSuite) TestV0LongRootKey(c *gc.C) {
-	cid, err := encodeCaveatIdV0("is-authenticated-user", bytes.Repeat([]byte{0}, 65536), &s.thirdPartyKey.Public, s.firstPartyKey)
+func (s *codecSuite) TestV2LongRootKey(c *gc.C) {
+	cid, err := encodeCaveatIdV2("is-authenticated-user", bytes.Repeat([]byte{0}, 65536), &s.thirdPartyKey.Public, s.firstPartyKey)
 	c.Assert(err, gc.IsNil)
 
 	res, err := decodeCaveatId(s.thirdPartyKey, cid)
@@ -142,10 +145,11 @@ func (s *codecSuite) TestV0LongRootKey(c *gc.C) {
 		CaveatId:            cid,
 		MacaroonId:          cid,
 		ThirdPartyKeyPair:   *s.thirdPartyKey,
+		Version:             Version2,
 	})
 }
 
-func (s *codecSuite) replaceV0SecretPart(cid, replacement []byte) []byte {
+func (s *codecSuite) replaceV2SecretPart(cid, replacement []byte) []byte {
 	cid = cid[:1+publicKeyPrefixLen+KeyLen+NonceLen]
 	var nonce [NonceLen]byte
 	copy(nonce[:], cid[1+publicKeyPrefixLen+KeyLen:])

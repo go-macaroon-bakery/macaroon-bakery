@@ -1,105 +1,113 @@
 package httpbakery
 
 import (
-	"encoding/json"
-	"io/ioutil"
 	"net/http"
 	"net/url"
-	"strings"
 
+	"github.com/juju/httprequest"
 	"gopkg.in/errgo.v1"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 )
 
-// NewPublicKeyRing returns a new public keyring that uses
-// the given client to find public keys and uses the
-// given cache as a backing. If cache is nil, a new
-// cache will be created. If client is nil, http.DefaultClient will
-// be used.
-func NewPublicKeyRing(client *http.Client, cache *bakery.PublicKeyRing) *PublicKeyRing {
+// NewThirdPartyLocator returns a new third party
+// locator that uses the given client to find
+// information about third parties and
+// uses the given cache as a backing.
+//
+// If cache is nil, a new cache will be created.
+//
+// If client is nil, http.DefaultClient will be used.
+func NewThirdPartyLocator(client httprequest.Doer, cache *bakery.ThirdPartyLocatorStore) *ThirdPartyLocator {
 	if cache == nil {
-		cache = bakery.NewPublicKeyRing()
+		cache = bakery.NewThirdPartyLocatorStore()
 	}
 	if client == nil {
 		client = http.DefaultClient
 	}
-	return &PublicKeyRing{
+	return &ThirdPartyLocator{
 		client: client,
 		cache:  cache,
 	}
 }
 
-// PublicKeyRing represents a public keyring that can interrogate
-// remote services for their public keys. By default it refuses
+// ThirdPartyLocator represents locator that can interrogate
+// third party discharge services for information. By default it refuses
 // to use insecure URLs.
-type PublicKeyRing struct {
-	client        *http.Client
+type ThirdPartyLocator struct {
+	client        httprequest.Doer
 	allowInsecure bool
-	cache         *bakery.PublicKeyRing
+	cache         *bakery.ThirdPartyLocatorStore
 }
 
 // AllowInsecure allows insecure URLs. This can be useful
 // for testing purposes.
-func (kr *PublicKeyRing) AllowInsecure() {
+func (kr *ThirdPartyLocator) AllowInsecure() {
 	kr.allowInsecure = true
 }
 
-// PublicKeyForLocation implements bakery.PublicKeyLocator
+// ThirdPartyLocator implements bakery.ThirdPartyLocator
 // by first looking in the backing cache and, if that fails,
-// making an HTTP request to the public key associated
+// making an HTTP request to find the information associated
 // with the given discharge location.
-func (kr *PublicKeyRing) PublicKeyForLocation(loc string) (*bakery.PublicKey, error) {
+func (kr *ThirdPartyLocator) ThirdPartyInfo(loc string) (bakery.ThirdPartyInfo, error) {
 	u, err := url.Parse(loc)
 	if err != nil {
-		return nil, errgo.Notef(err, "invalid discharge URL %q", loc)
+		return bakery.ThirdPartyInfo{}, errgo.Notef(err, "invalid discharge URL %q", loc)
 	}
 	if u.Scheme != "https" && !kr.allowInsecure {
-		return nil, errgo.Newf("untrusted discharge URL %q", loc)
+		return bakery.ThirdPartyInfo{}, errgo.Newf("untrusted discharge URL %q", loc)
 	}
-	k, err := kr.cache.PublicKeyForLocation(loc)
+	info, err := kr.cache.ThirdPartyInfo(loc)
 	if err == nil {
-		return k, nil
+		return info, nil
 	}
-	k, err = PublicKeyForLocation(kr.client, loc)
+	info, err = ThirdPartyInfoForLocation(kr.client, loc)
 	if err != nil {
-		return nil, errgo.Mask(err)
+		return bakery.ThirdPartyInfo{}, errgo.Mask(err)
 	}
-	if err := kr.cache.AddPublicKeyForLocation(loc, true, k); err != nil {
-		// Cannot happen in practice as it will only fail if
-		// loc is an invalid URL which we have already checked.
-		return nil, errgo.Notef(err, "cannot cache discharger URL %q", loc)
-	}
-	return k, nil
+	kr.cache.AddInfo(loc, info)
+	return info, nil
 }
 
-// PublicKeyForLocation returns the public key from a macaroon
-// discharge server running at the given location URL.
-// Note that this is insecure if an http: URL scheme is used.
-// If client is nil, http.DefaultClient will be used.
-func PublicKeyForLocation(client *http.Client, url string) (*bakery.PublicKey, error) {
-	if client == nil {
-		client = http.DefaultClient
-	}
-	url = strings.TrimSuffix(url, "/") + "/publickey"
-	resp, err := client.Get(url)
+// ThirdPartyInfoForLocation returns information on the third party
+// discharge server running at the given location URL. Note that this is
+// insecure if an http: URL scheme is used. If client is nil,
+// http.DefaultClient will be used.
+func ThirdPartyInfoForLocation(client httprequest.Doer, url string) (bakery.ThirdPartyInfo, error) {
+	dclient := newDischargeClient(url, client)
+	var resp *http.Response
+	// We use Call directly instead of calling dclient.DischargeInfo because currently
+	// httprequest doesn't provide an easy way of finding out the HTTP response
+	// code from the error when the error response isn't marshaled as JSON.
+	// TODO(rog) change httprequest to make this straightforward.
+	err := dclient.Client.Call(&dischargeInfoRequest{}, &resp)
 	if err != nil {
-		return nil, errgo.Notef(err, "cannot get public key from %q", url)
-	}
-	if resp.StatusCode != http.StatusOK {
-		return nil, errgo.Newf("cannot get public key from %q: got status %s", url, resp.Status)
+		return bakery.ThirdPartyInfo{}, errgo.Mask(err)
 	}
 	defer resp.Body.Close()
-	data, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, errgo.Notef(err, "failed to read response body from %q", url)
+	var info bakery.ThirdPartyInfo
+	switch resp.StatusCode {
+	case http.StatusOK:
+		var r dischargeInfoResponse
+		if err := httprequest.UnmarshalJSONResponse(resp, &r); err != nil {
+			return bakery.ThirdPartyInfo{}, errgo.Mask(err)
+		}
+		info.PublicKey = *r.PublicKey
+		info.Version = r.Version
+	case http.StatusNotFound:
+		// TODO(rog) this fallback does not work because
+		// httprequest.Client.Client doesn't return a
+		// response if there's an error. Fix httprequest to
+		// return a HTTPErrorResponse error when it
+		// can't unmarshal the error return.
+		pkResp, err := dclient.PublicKey(&publicKeyRequest{})
+		if err != nil {
+			return bakery.ThirdPartyInfo{}, errgo.Mask(err)
+		}
+		info.PublicKey = *pkResp.PublicKey
+	default:
+		return bakery.ThirdPartyInfo{}, errgo.Mask(dclient.Client.UnmarshalError(resp), errgo.Any)
 	}
-	var pubkey struct {
-		PublicKey *bakery.PublicKey
-	}
-	err = json.Unmarshal(data, &pubkey)
-	if err != nil {
-		return nil, errgo.Notef(err, "failed to decode response from %q", url)
-	}
-	return pubkey.PublicKey, nil
+	return info, nil
 }

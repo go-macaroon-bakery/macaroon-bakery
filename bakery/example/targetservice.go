@@ -29,7 +29,8 @@ func targetService(endpoint, authEndpoint string, authPK *bakery.PublicKey) (htt
 	if err != nil {
 		return nil, err
 	}
-	pkLocator := bakery.NewPublicKeyRing()
+	pkLocator := httpbakery.NewThirdPartyLocator(nil, nil)
+	pkLocator.AllowInsecure()
 	svc, err := bakery.NewService(bakery.NewServiceParams{
 		Key:      key,
 		Location: endpoint,
@@ -38,8 +39,6 @@ func targetService(endpoint, authEndpoint string, authPK *bakery.PublicKey) (htt
 	if err != nil {
 		return nil, err
 	}
-	log.Printf("adding public key for location %s: %v", authEndpoint, authPK)
-	pkLocator.AddPublicKeyForLocation(authEndpoint, true, authPK)
 	mux := http.NewServeMux()
 	srv := &targetServiceHandler{
 		svc:          svc,
@@ -113,7 +112,7 @@ func (srv *targetServiceHandler) writeError(w http.ResponseWriter, req *http.Req
 			Condition: "operation " + operation,
 		}}
 	// Mint an appropriate macaroon and send it back to the client.
-	m, err := srv.svc.NewMacaroon(caveats)
+	m, err := srv.svc.NewMacaroon(httpbakery.RequestVersion(req), caveats)
 	if err != nil {
 		fail(http.StatusInternalServerError, "cannot mint macaroon: %v", err)
 		return

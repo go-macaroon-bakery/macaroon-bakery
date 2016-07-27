@@ -2,6 +2,7 @@ package httpbakery
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"net/http"
 	"path"
@@ -15,8 +16,8 @@ import (
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
 )
 
-// ThirdPartyCaveatChecker is used to check third party caveats.
-type ThirdPartyCaveatChecker interface {
+// ThirdPartyChecker is used to check third party caveats.
+type ThirdPartyChecker interface {
 	// CheckThirdPartyCaveat is used to check whether a client
 	// making the given request should be allowed a discharge for
 	// the given caveat. On success, the caveat will be discharged,
@@ -29,18 +30,36 @@ type ThirdPartyCaveatChecker interface {
 	CheckThirdPartyCaveat(req *http.Request, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error)
 }
 
-// ThirdPartyCaveatCheckerFunc implements ThirdPartyCaveatChecker
+// ThirdPartyCheckerFunc implements ThirdPartyChecker
 // by calling a function.
-type ThirdPartyCaveatCheckerFunc func(req *http.Request, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error)
+type ThirdPartyCheckerFunc func(req *http.Request, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error)
 
-func (f ThirdPartyCaveatCheckerFunc) CheckThirdPartyCaveat(req *http.Request, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+func (f ThirdPartyCheckerFunc) CheckThirdPartyCaveat(req *http.Request, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 	return f(req, info)
+}
+
+// newDischargeClient returns a discharge client that addresses the
+// third party discharger at the given location URL and uses
+// the given client to make HTTP requests.
+//
+// If client is nil, http.DefaultClient is used.
+func newDischargeClient(location string, client httprequest.Doer) *dischargeClient {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	return &dischargeClient{
+		Client: httprequest.Client{
+			BaseURL:        location,
+			Doer:           client,
+			UnmarshalError: unmarshalError,
+		},
+	}
 }
 
 // Discharger holds parameters for creating a new Discharger.
 type DischargerParams struct {
 	// Checker is used to actually check the caveats.
-	Checker ThirdPartyCaveatChecker
+	Checker ThirdPartyChecker
 
 	// Key holds the key pair of the discharger.
 	Key *bakery.KeyPair
@@ -48,7 +67,7 @@ type DischargerParams struct {
 	// Locator is used to find public keys when adding
 	// third-party caveats on discharge macaroons.
 	// If this is nil, no third party caveats may be added.
-	Locator bakery.PublicKeyLocator
+	Locator bakery.ThirdPartyLocator
 
 	// ErrorToResponse is used to convert errors returned by the third
 	// party caveat checker to the form that will be JSON-marshaled
@@ -90,7 +109,7 @@ type Discharger struct {
 
 // NewDischargerFromService returns a new third-party caveat
 // discharger using the key and locator from the given service.
-func NewDischargerFromService(svc *bakery.Service, checker ThirdPartyCaveatChecker) *Discharger {
+func NewDischargerFromService(svc *bakery.Service, checker ThirdPartyChecker) *Discharger {
 	return NewDischarger(DischargerParams{
 		Checker: checker,
 		Key:     svc.Key(),
@@ -105,11 +124,17 @@ func NewDischarger(p DischargerParams) *Discharger {
 		p.ErrorToResponse = ErrorToResponse
 	}
 	if p.Locator == nil {
-		p.Locator = bakery.PublicKeyLocatorMap(nil)
+		p.Locator = emptyLocator{}
 	}
 	return &Discharger{
 		p: p,
 	}
+}
+
+type emptyLocator struct{}
+
+func (emptyLocator) ThirdPartyInfo(loc string) (bakery.ThirdPartyInfo, error) {
+	return bakery.ThirdPartyInfo{}, bakery.ErrNotFound
 }
 
 // AddMuxHandlers adds handlers to the given ServeMux to provide
@@ -133,6 +158,8 @@ func (d *Discharger) Handlers() []httprequest.Handler {
 	return httprequest.ErrorMapper(d.p.ErrorToResponse).Handlers(f)
 }
 
+//go:generate httprequest-generate-client gopkg.in/macaroon-bakery.v2-unstable/httpbakery dischargeHandler dischargeClient
+
 // dischargeHandler is the type used to define the httprequest handler
 // methods for a discharger.
 type dischargeHandler struct {
@@ -146,7 +173,11 @@ type dischargeHandler struct {
 type dischargeRequest struct {
 	httprequest.Route `httprequest:"POST /discharge"`
 	Id                string `httprequest:"id,form"`
-	//	Id64		string `httprequest:"id64,form"`
+	Id64              string `httprequest:"id64,form"`
+	// TODO(rog) If/when caveat ids can be passed
+	// around independently of the macaroons themselves,
+	// then this field could be used by a client to specify
+	// the id to give to the discharge macaroon.
 	// MacaroonId string `httprequest:"macaroon-id,form"`
 }
 
@@ -157,11 +188,21 @@ type dischargeResponse struct {
 
 // Discharge discharges a third party caveat.
 func (h dischargeHandler) Discharge(p httprequest.Params, r *dischargeRequest) (*dischargeResponse, error) {
+	var id []byte
+	if r.Id64 != "" {
+		var err error
+		id, err = base64.RawURLEncoding.DecodeString(r.Id64)
+		if err != nil {
+			return nil, errgo.Notef(err, "bad base64-encoded caveat id: %v", err)
+		}
+	} else {
+		id = []byte(r.Id)
+	}
 	m, caveats, err := bakery.Discharge(h.discharger.p.Key, bakery.ThirdPartyCheckerFunc(
 		func(cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 			return h.discharger.p.Checker.CheckThirdPartyCaveat(p.Request, cav)
 		},
-	), []byte(r.Id))
+	), id)
 	for _, cav := range caveats {
 		if err := bakery.AddCaveat(h.discharger.p.Key, h.discharger.p.Locator, m, cav); err != nil {
 			return nil, errgo.Mask(err)
@@ -183,10 +224,30 @@ type publicKeyResponse struct {
 	PublicKey *bakery.PublicKey
 }
 
+// publicKeyRequest specifies the /discharge/info endpoint.
+type dischargeInfoRequest struct {
+	httprequest.Route `httprequest:"GET /discharge/info"`
+}
+
+// dischargeInfoResponse is the response to a /discharge/info GET
+// request.
+type dischargeInfoResponse struct {
+	PublicKey *bakery.PublicKey
+	Version   bakery.Version
+}
+
 // PublicKey returns the public key of the discharge service.
 func (h dischargeHandler) PublicKey(*publicKeyRequest) (publicKeyResponse, error) {
 	return publicKeyResponse{
 		PublicKey: &h.discharger.p.Key.Public,
+	}, nil
+}
+
+// DischargeInfo returns information on the discharger.
+func (h dischargeHandler) DischargeInfo(*dischargeInfoRequest) (dischargeInfoResponse, error) {
+	return dischargeInfoResponse{
+		PublicKey: &h.discharger.p.Key.Public,
+		Version:   bakery.LatestVersion,
 	}, nil
 }
 

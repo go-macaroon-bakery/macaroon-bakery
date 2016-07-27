@@ -45,9 +45,7 @@ func (s *suite) SetUpSuite(c *gc.C) {
 			},
 			Service: bakery.NewServiceParams{
 				Location: endpoint,
-				Store:    bakery.NewMemStorage(),
 				Key:      key,
-				Locator:  bakery.NewPublicKeyRing(),
 			},
 		})
 	})

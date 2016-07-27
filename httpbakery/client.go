@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
+	"github.com/juju/httprequest"
 	"github.com/juju/loggo"
 	"golang.org/x/net/publicsuffix"
 	"gopkg.in/errgo.v1"
@@ -22,6 +23,8 @@ import (
 )
 
 var logger = loggo.GetLogger("httpbakery")
+
+var unmarshalError = httprequest.ErrorUnmarshaler(&Error{})
 
 // DischargeError represents the error when a third party discharge
 // is refused by a server.
@@ -267,7 +270,7 @@ func (c *Client) doWithBody(req *http.Request, body io.ReadSeeker, getError func
 	// See http://golang.org/issue/12796.
 	defer c.closeRequestBody(req)
 
-	req.Header.Set(BakeryProtocolHeader, fmt.Sprint(latestVersion))
+	req.Header.Set(BakeryProtocolHeader, fmt.Sprint(bakery.LatestVersion))
 	httpResp, err := c.Client.Do(req)
 	if err != nil {
 		return nil, errgo.Mask(err, errgo.Any)
@@ -399,8 +402,6 @@ func (c *Client) setRequestBody(req *http.Request, body io.ReadSeeker) error {
 	return nil
 }
 
-var errClosed = errgo.New("reader has been closed")
-
 // readStopper works around an issue with the net/http
 // package (see http://golang.org/issue/12796).
 // Because the first HTTP request might not have finished
@@ -442,6 +443,7 @@ func NewCookie(ms macaroon.Slice) (*http.Cookie, error) {
 	if len(ms) == 0 {
 		return nil, errgo.New("no macaroons in cookie")
 	}
+	// TODO(rog) marshal cookie as binary if version allows.
 	data, err := json.Marshal(ms)
 	if err != nil {
 		return nil, errgo.Notef(err, "cannot marshal macaroons")
@@ -484,17 +486,17 @@ func appendURLElem(u, elem string) string {
 // AcquireDischarge implements DischargeAcquirer by requesting a discharge
 // macaroon from the caveat location as an HTTP URL.
 func (c *Client) AcquireDischarge(cav macaroon.Caveat) (*macaroon.Macaroon, error) {
-	var resp dischargeResponse
-	loc := appendURLElem(cav.Location, "discharge")
-	// TODO use id64 field for encoding caveat id when it's  not valid UTF-8.
-	err := postFormJSON(
-		loc,
-		url.Values{
-			"id": {string(cav.Id)},
-		},
-		&resp,
-		c.postForm,
-	)
+	dclient := newDischargeClient(cav.Location, c)
+	var id, id64 string
+	if utf8.Valid(cav.Id) {
+		id = string(cav.Id)
+	} else {
+		id64 = base64.RawURLEncoding.EncodeToString(cav.Id)
+	}
+	resp, err := dclient.Discharge(&dischargeRequest{
+		Id:   id,
+		Id64: id64,
+	})
 	if err == nil {
 		return resp.Macaroon, nil
 	}
@@ -510,6 +512,10 @@ func (c *Client) AcquireDischarge(cav macaroon.Caveat) (*macaroon.Macaroon, erro
 	if cause.Info == nil {
 		return nil, errgo.Notef(err, "interaction-required response with no info")
 	}
+	// Make sure the location has a trailing slash so that
+	// the relative URL calculations work correctly even when
+	// cav.Location doesn't have a trailing slash.
+	loc := appendURLElem(cav.Location, "")
 	m, err := c.interact(loc, cause.Info.VisitURL, cause.Info.WaitURL)
 	if err != nil {
 		return nil, errgo.Mask(err, IsDischargeError, IsInteractionError)
@@ -517,8 +523,8 @@ func (c *Client) AcquireDischarge(cav macaroon.Caveat) (*macaroon.Macaroon, erro
 	return m, nil
 }
 
-// interact gathers a macaroon by directing the user to interact
-// with a web page.
+// interact gathers a macaroon by directing the user to interact with a
+// web page.
 func (c *Client) interact(location, visitURLStr, waitURLStr string) (*macaroon.Macaroon, error) {
 	visitURL, err := relativeURL(location, visitURLStr)
 	if err != nil {
@@ -568,47 +574,8 @@ func (c *Client) interact(location, visitURLStr, waitURLStr string) (*macaroon.M
 	return resp.Macaroon, nil
 }
 
-func (c *Client) postForm(url string, data url.Values) (*http.Response, error) {
-	return c.post(url, "application/x-www-form-urlencoded", strings.NewReader(data.Encode()))
-}
-
-func (c *Client) post(url string, bodyType string, body io.ReadSeeker) (resp *http.Response, err error) {
-	req, err := http.NewRequest("POST", url, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", bodyType)
-	// TODO(rog) see http.shouldRedirectPost
-	return c.DoWithBody(req, body)
-}
-
-// postFormJSON does an HTTP POST request to the given url with the given
-// values and unmarshals the response in the value pointed to be resp.
-// It uses the given postForm function to actually make the POST request.
-func postFormJSON(url string, vals url.Values, resp interface{}, postForm func(url string, vals url.Values) (*http.Response, error)) error {
-	logger.Debugf("postFormJSON to %s; vals: %#v", url, vals)
-	httpResp, err := postForm(url, vals)
-	if err != nil {
-		return errgo.NoteMask(err, fmt.Sprintf("cannot http POST to %q", url), errgo.Any)
-	}
-	defer httpResp.Body.Close()
-	data, err := ioutil.ReadAll(httpResp.Body)
-	if err != nil {
-		return errgo.Notef(err, "failed to read body from %q", url)
-	}
-	if httpResp.StatusCode != http.StatusOK {
-		var errResp Error
-		if err := json.Unmarshal(data, &errResp); err != nil {
-			// TODO better error here
-			return errgo.Notef(err, "POST %q failed with status %q; cannot parse body %q", url, httpResp.Status, data)
-		}
-		return &errResp
-	}
-	if err := json.Unmarshal(data, resp); err != nil {
-		return errgo.Notef(err, "cannot unmarshal response from %q", url)
-	}
-	return nil
-}
+// TODO(rog) move a lot of the code below into server.go, as it's
+// much more about server side than client side.
 
 // MacaroonsHeader is the key of the HTTP header that can be used to provide a
 // macaroon for request authorization.
@@ -655,6 +622,7 @@ func decodeMacaroonSlice(value string) (macaroon.Slice, error) {
 	if err != nil {
 		return nil, errgo.NoteMask(err, "cannot base64-decode macaroons")
 	}
+	// TODO(rog) accept binary encoded macaroon cookies.
 	var ms macaroon.Slice
 	if err := json.Unmarshal(data, &ms); err != nil {
 		return nil, errgo.NoteMask(err, "cannot unmarshal macaroons")
@@ -704,7 +672,7 @@ func CheckRequestM(svc *bakery.Service, req *http.Request, assert map[string]str
 		Checkers(req),
 		checkers.TimeBefore,
 	)
-	attrs, ms, err := svc.CheckAnyM(mss, assert, checker)
+	attrs, ms, err := svc.CheckAny(mss, assert, checker)
 	if err != nil {
 		return nil, nil, errgo.Mask(err, isVerificationError)
 	}
