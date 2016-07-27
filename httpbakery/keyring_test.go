@@ -1,13 +1,13 @@
 package httpbakery_test
 
 import (
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
 
+	"github.com/juju/httprequest"
 	jujutesting "github.com/juju/testing"
 	jc "github.com/juju/testing/checkers"
 	gc "gopkg.in/check.v1"
@@ -130,7 +130,7 @@ func (s *KeyringSuite) TestThirdPartyInfoForLocationReturnsInvalidJSON(c *gc.C) 
 	client := httpbakery.NewHTTPClient()
 	_, err := httpbakery.ThirdPartyInfoForLocation(client, ts.URL)
 	c.Assert(err, gc.ErrorMatches,
-		fmt.Sprintf(`unexpected content type text/plain; want application/json; content: BADJSON`))
+		fmt.Sprintf(`GET http://.*/discharge/info: unexpected content type text/plain; want application/json; content: BADJSON`))
 }
 
 func (s *KeyringSuite) TestThirdPartyInfoForLocationReturnsStatusInternalServerError(c *gc.C) {
@@ -157,20 +157,17 @@ func (s *KeyringSuite) TestThirdPartyInfoForLocationFallbackToOldVersion(c *gc.C
 	server := httptest.NewTLSServer(mux)
 	mux.HandleFunc("/publickey", func(w http.ResponseWriter, req *http.Request) {
 		c.Check(req.Method, gc.Equals, "GET")
-		data, err := json.Marshal(&httpbakery.PublicKeyResponse{
+		httprequest.WriteJSON(w, http.StatusOK, &httpbakery.PublicKeyResponse{
 			PublicKey: &key.Public,
 		})
-		c.Check(err, gc.IsNil)
-		w.Write(data)
 	})
 	info, err := httpbakery.ThirdPartyInfoForLocation(httpbakery.NewHTTPClient(), server.URL)
-	c.ExpectFailure("third party public key fallback doesn't currently work")
 	c.Assert(err, gc.IsNil)
 	expectedInfo := bakery.ThirdPartyInfo{
-		PublicKey: *d.Service.PublicKey(),
+		PublicKey: key.Public,
 		Version:   bakery.Version1,
 	}
-	c.Assert(info, gc.DeepEquals, expectedInfo)
+	c.Assert(info, jc.DeepEquals, expectedInfo)
 }
 
 type errorTransport struct{}
