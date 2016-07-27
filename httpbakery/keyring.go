@@ -76,38 +76,24 @@ func (kr *ThirdPartyLocator) ThirdPartyInfo(loc string) (bakery.ThirdPartyInfo, 
 // http.DefaultClient will be used.
 func ThirdPartyInfoForLocation(client httprequest.Doer, url string) (bakery.ThirdPartyInfo, error) {
 	dclient := newDischargeClient(url, client)
-	var resp *http.Response
-	// We use Call directly instead of calling dclient.DischargeInfo because currently
-	// httprequest doesn't provide an easy way of finding out the HTTP response
-	// code from the error when the error response isn't marshaled as JSON.
-	// TODO(rog) change httprequest to make this straightforward.
-	err := dclient.Client.Call(&dischargeInfoRequest{}, &resp)
+	info, err := dclient.DischargeInfo(&dischargeInfoRequest{})
+	if err == nil {
+		return bakery.ThirdPartyInfo{
+			PublicKey: *info.PublicKey,
+			Version:   info.Version,
+		}, nil
+	}
+	derr, ok := errgo.Cause(err).(*httprequest.DecodeResponseError)
+	if !ok || derr.Response.StatusCode != http.StatusNotFound {
+		return bakery.ThirdPartyInfo{}, errgo.Mask(err)
+	}
+	// The new endpoint isn't there, so try the old one.
+	pkResp, err := dclient.PublicKey(&publicKeyRequest{})
 	if err != nil {
 		return bakery.ThirdPartyInfo{}, errgo.Mask(err)
 	}
-	defer resp.Body.Close()
-	var info bakery.ThirdPartyInfo
-	switch resp.StatusCode {
-	case http.StatusOK:
-		var r dischargeInfoResponse
-		if err := httprequest.UnmarshalJSONResponse(resp, &r); err != nil {
-			return bakery.ThirdPartyInfo{}, errgo.Mask(err)
-		}
-		info.PublicKey = *r.PublicKey
-		info.Version = r.Version
-	case http.StatusNotFound:
-		// TODO(rog) this fallback does not work because
-		// httprequest.Client.Client doesn't return a
-		// response if there's an error. Fix httprequest to
-		// return a HTTPErrorResponse error when it
-		// can't unmarshal the error return.
-		pkResp, err := dclient.PublicKey(&publicKeyRequest{})
-		if err != nil {
-			return bakery.ThirdPartyInfo{}, errgo.Mask(err)
-		}
-		info.PublicKey = *pkResp.PublicKey
-	default:
-		return bakery.ThirdPartyInfo{}, errgo.Mask(dclient.Client.UnmarshalError(resp), errgo.Any)
-	}
-	return info, nil
+	return bakery.ThirdPartyInfo{
+		PublicKey: *pkResp.PublicKey,
+		Version:   bakery.Version1,
+	}, nil
 }
