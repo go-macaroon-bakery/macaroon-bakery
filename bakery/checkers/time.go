@@ -2,29 +2,47 @@ package checkers
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
+	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2-unstable"
 )
 
-var timeNow = time.Now
+// Clock represents a clock that can be faked for testing purposes.
+type Clock interface {
+	Now() time.Time
+}
 
-// TimeBefore is a checker that checks caveats
-// as created by TimeBeforeCaveat.
-var TimeBefore = CheckerFunc{
-	Condition_: CondTimeBefore,
-	Check_: func(_, cav string) error {
-		t, err := time.Parse(time.RFC3339Nano, cav)
-		if err != nil {
-			return errgo.Mask(err)
-		}
-		if !timeNow().Before(t) {
-			return fmt.Errorf("macaroon has expired")
-		}
-		return nil
-	},
+type timeKey struct{}
+
+func ContextWithClock(ctxt context.Context, clock Clock) context.Context {
+	if clock == nil {
+		return ctxt
+	}
+	return context.WithValue(ctxt, timeKey{}, clock)
+}
+
+func clockFromContext(ctxt context.Context) Clock {
+	c, _ := ctxt.Value(timeKey{}).(Clock)
+	return c
+}
+
+func checkTimeBefore(ctxt context.Context, _, arg string) error {
+	var now time.Time
+	if clock := clockFromContext(ctxt); clock != nil {
+		now = clock.Now()
+	} else {
+		now = time.Now()
+	}
+	t, err := time.Parse(time.RFC3339Nano, arg)
+	if err != nil {
+		return errgo.Mask(err)
+	}
+	if !now.Before(t) {
+		return fmt.Errorf("macaroon has expired")
+	}
+	return nil
 }
 
 // TimeBeforeCaveat returns a caveat that specifies that
@@ -35,15 +53,21 @@ func TimeBeforeCaveat(t time.Time) Caveat {
 
 // ExpiryTime returns the minimum time of any time-before caveats found
 // in the given slice and whether there were any such caveats found.
-func ExpiryTime(cavs []macaroon.Caveat) (time.Time, bool) {
+//
+// The ns parameter is used to determine the standard namespace prefix - if
+// the standard namespace is not found, the empty prefix is assumed.
+func ExpiryTime(ns *Namespace, cavs []macaroon.Caveat) (time.Time, bool) {
+	prefix, _ := ns.Resolve(StdNamespace)
+	timeBeforeCond := ConditionWithPrefix(prefix, CondTimeBefore)
 	var t time.Time
 	var expires bool
 	for _, cav := range cavs {
-		cond := string(cav.Id)
-		if !strings.HasPrefix(cond, CondTimeBefore) {
+		cav := string(cav.Id)
+		name, rest, _ := ParseCaveat(cav)
+		if name != timeBeforeCond {
 			continue
 		}
-		et, err := time.Parse(CondTimeBefore+" "+time.RFC3339Nano, cond)
+		et, err := time.Parse(time.RFC3339Nano, rest)
 		if err != nil {
 			continue
 		}
@@ -58,11 +82,11 @@ func ExpiryTime(cavs []macaroon.Caveat) (time.Time, bool) {
 // MacaroonsExpiryTime returns the minimum time of any time-before
 // caveats found in the given macaroons and whether there were
 // any such caveats found.
-func MacaroonsExpiryTime(ms macaroon.Slice) (time.Time, bool) {
+func MacaroonsExpiryTime(ns *Namespace, ms macaroon.Slice) (time.Time, bool) {
 	var t time.Time
 	var expires bool
 	for _, m := range ms {
-		if et, ex := ExpiryTime(m.Caveats()); ex {
+		if et, ex := ExpiryTime(ns, m.Caveats()); ex {
 			if !expires || et.Before(t) {
 				t = et
 				expires = true

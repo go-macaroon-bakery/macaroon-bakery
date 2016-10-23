@@ -85,7 +85,7 @@ var expireTimeTests = []struct {
 func (s *timeSuite) TestExpireTime(c *gc.C) {
 	for i, test := range expireTimeTests {
 		c.Logf("%d. %s", i, test.about)
-		t, expires := checkers.ExpiryTime(test.caveats)
+		t, expires := checkers.ExpiryTime(nil, test.caveats)
 		c.Assert(t.Equal(test.expectTime), gc.Equals, true, gc.Commentf("obtained: %s, expected: %s", t, test.expectTime))
 		c.Assert(expires, gc.Equals, test.expectExpires)
 	}
@@ -150,7 +150,7 @@ var macaroonsExpireTimeTests = []struct {
 func (s *timeSuite) TestMacaroonsExpireTime(c *gc.C) {
 	for i, test := range macaroonsExpireTimeTests {
 		c.Logf("%d. %s", i, test.about)
-		t, expires := checkers.MacaroonsExpiryTime(test.macaroons)
+		t, expires := checkers.MacaroonsExpiryTime(nil, test.macaroons)
 		c.Assert(t.Equal(test.expectTime), gc.Equals, true, gc.Commentf("obtained: %s, expected: %s", t, test.expectTime))
 		c.Assert(expires, gc.Equals, test.expectExpires)
 	}

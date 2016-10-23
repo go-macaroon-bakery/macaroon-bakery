@@ -13,6 +13,7 @@ import (
 
 	"github.com/juju/httprequest"
 	"github.com/juju/loggo"
+	"golang.org/x/net/context"
 	"golang.org/x/net/publicsuffix"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2-unstable"
@@ -310,7 +311,8 @@ func (c *Client) HandleError(reqURL *url.URL, err error) error {
 			cookiePath = reqURL.ResolveReference(relURL).Path
 		}
 	}
-	cookie, err := NewCookie(macaroons)
+	// TODO use a namespace taken from the error response.
+	cookie, err := NewCookie(nil, macaroons)
 	if err != nil {
 		return errgo.Notef(err, "cannot make cookie")
 	}
@@ -360,7 +362,10 @@ func parseURLPath(path string) (*url.URL, error) {
 // NewCookie takes a slice of macaroons and returns them
 // encoded as a cookie. The slice should contain a single primary
 // macaroon in its first element, and any discharges after that.
-func NewCookie(ms macaroon.Slice) (*http.Cookie, error) {
+//
+// The given namespace specifies the first party caveat namespace,
+// used for deriving the expiry time of the cookie.
+func NewCookie(ns *checkers.Namespace, ms macaroon.Slice) (*http.Cookie, error) {
 	if len(ms) == 0 {
 		return nil, errgo.New("no macaroons in cookie")
 	}
@@ -373,7 +378,7 @@ func NewCookie(ms macaroon.Slice) (*http.Cookie, error) {
 		Name:  fmt.Sprintf("macaroon-%x", ms[0].Signature()),
 		Value: base64.StdEncoding.EncodeToString(data),
 	}
-	cookie.Expires, _ = checkers.MacaroonsExpiryTime(ms)
+	cookie.Expires, _ = checkers.MacaroonsExpiryTime(ns, ms)
 	// TODO(rog) other fields.
 	return cookie, nil
 }
@@ -382,8 +387,11 @@ func NewCookie(ms macaroon.Slice) (*http.Cookie, error) {
 // that will holds the given macaroon slice. The macaroon slice should
 // contain a single primary macaroon in its first element, and any
 // discharges after that.
-func SetCookie(jar http.CookieJar, url *url.URL, ms macaroon.Slice) error {
-	cookie, err := NewCookie(ms)
+//
+// The given namespace specifies the first party caveat namespace,
+// used for deriving the expiry time of the cookie.
+func SetCookie(jar http.CookieJar, url *url.URL, ns *checkers.Namespace, ms macaroon.Slice) error {
+	cookie, err := NewCookie(ns, ms)
 	if err != nil {
 		return errgo.Mask(err)
 	}
@@ -561,6 +569,9 @@ func isVerificationError(err error) bool {
 // any first party caveats. It returns an error with a
 // *bakery.VerificationError cause if the macaroon verification failed.
 //
+// It assumes that checker implements the HTTP and standard caveat
+// checkers.
+//
 // The assert map holds any required attributes of "declared" attributes,
 // overriding any inferences made from the macaroons themselves.
 // It has a similar effect to adding a checkers.DeclaredCaveat
@@ -569,31 +580,17 @@ func isVerificationError(err error) bool {
 //
 // It adds all the standard caveat checkers to the given checker.
 //
-// It returns any attributes declared in the successfully validated request.
-func CheckRequest(svc *bakery.Service, req *http.Request, assert map[string]string, checker checkers.Checker) (map[string]string, error) {
-	attrs, _, err := CheckRequestM(svc, req, assert, checker)
-	return attrs, err
-}
-
-// CheckRequestM is like CheckRequest except that on success it also returns
-// the set of macaroons that was successfully checked.
-// The "M" suffix is for backward compatibility reasons - in a
-// later bakery version, the signature of CheckRequest will be
-// changed to return the macaroon slice and CheckRequestM will be
-// removed.
-func CheckRequestM(svc *bakery.Service, req *http.Request, assert map[string]string, checker checkers.Checker) (map[string]string, macaroon.Slice, error) {
+// It returns any attributes declared in the successfully validated request
+// and the macaroon that was successfully checked.
+func CheckRequest(ctxt context.Context, svc *bakery.Service, req *http.Request, assert map[string]string) (map[string]string, macaroon.Slice, error) {
 	mss := RequestMacaroons(req)
 	if len(mss) == 0 {
 		return nil, nil, &bakery.VerificationError{
 			Reason: errgo.Newf("no macaroon cookies in request"),
 		}
 	}
-	checker = checkers.New(
-		checker,
-		Checkers(req),
-		checkers.TimeBefore,
-	)
-	attrs, ms, err := svc.CheckAny(mss, assert, checker)
+	ctxt = ContextWithRequest(ctxt, req)
+	attrs, ms, err := svc.CheckAny(ctxt, mss, assert)
 	if err != nil {
 		return nil, nil, errgo.Mask(err, isVerificationError)
 	}

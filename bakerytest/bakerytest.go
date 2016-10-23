@@ -254,6 +254,8 @@ func (d *InteractiveDischarger) CheckThirdPartyCaveat(req *http.Request, cav *ba
 	return nil, httpbakery.NewInteractionRequiredError(visitURL, waitURL, nil, req)
 }
 
+var dischargeNamespace = httpbakery.NewChecker().Namespace()
+
 func (d *InteractiveDischarger) wait(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	d.mu.Lock()
@@ -291,6 +293,8 @@ func (d *InteractiveDischarger) wait(w http.ResponseWriter, r *http.Request) {
 				return cavs, nil
 			},
 		),
+		// TODO obtain the namespace from the client.
+		dischargeNamespace,
 		discharge.cavId,
 	)
 	if err != nil {

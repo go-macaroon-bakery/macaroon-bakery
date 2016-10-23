@@ -4,38 +4,87 @@ import (
 	"net"
 	"net/http"
 
+	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
 )
 
-type httpContext struct {
-	req *http.Request
+type httpRequestKey struct{}
+
+// ContextWithRequest returns the context with information from the
+// given request attached as context.  This is used by the httpbakery
+// checkers (see RegisterCheckers for details).
+func ContextWithRequest(ctxt context.Context, req *http.Request) context.Context {
+	return context.WithValue(ctxt, httpRequestKey{}, req)
 }
 
-// Checkers implements the standard HTTP-request checkers.
-// It does not include the "declared" checker, as that
-// must be added for each individual set of macaroons
-// that are checked.
-func Checkers(req *http.Request) checkers.Checker {
-	c := httpContext{req}
-	return checkers.Map{
-		checkers.CondClientIPAddr: c.clientIPAddr,
-		checkers.CondClientOrigin: c.clientOrigin,
+func requestFromContext(ctxt context.Context) *http.Request {
+	req, _ := ctxt.Value(httpRequestKey{}).(*http.Request)
+	return req
+}
+
+const (
+	// CondClientIPAddr holds the first party caveat condition
+	// that checks a client's IP address.
+	CondClientIPAddr = "client-ip-addr"
+
+	// CondClientOrigin holds the first party caveat condition that
+	// checks a client's origin header.
+	CondClientOrigin = "origin"
+)
+
+// CheckersNamespace holds the URI of the HTTP checkers schema.
+const CheckersNamespace = "http"
+
+var allCheckers = map[string]checkers.Func{
+	CondClientIPAddr: ipAddrCheck,
+	CondClientOrigin: clientOriginCheck,
+}
+
+// RegisterCheckers registers all the HTTP checkers with the given checker.
+// Current checkers include:
+//
+//	client-ip-addr <ip-address>
+//
+// The client-ip-addr caveat checks that the HTTP request has
+// the given remote IP address.
+//
+//
+//    origin <name>
+//
+// The origin caveat checks that the HTTP Origin header has
+// the given value.
+func RegisterCheckers(c *checkers.Checker) {
+	c.Namespace().Register(CheckersNamespace, "http")
+	for cond, check := range allCheckers {
+		c.Register(cond, CheckersNamespace, check)
 	}
 }
 
-// clientIPAddr implements the IP client address checker
+// NewChecker returns a new checker with the standard
+// and HTTP checkers registered in it.
+func NewChecker() *checkers.Checker {
+	c := checkers.New(nil)
+	RegisterCheckers(c)
+	return c
+}
+
+// ipAddrCheck implements the IP client address checker
 // for an HTTP request.
-func (c httpContext) clientIPAddr(_, addr string) error {
-	ip := net.ParseIP(addr)
+func ipAddrCheck(ctxt context.Context, cond, args string) error {
+	req := requestFromContext(ctxt)
+	if req == nil {
+		return errgo.Newf("no IP address found in context")
+	}
+	ip := net.ParseIP(args)
 	if ip == nil {
 		return errgo.Newf("cannot parse IP address in caveat")
 	}
-	if c.req.RemoteAddr == "" {
+	if req.RemoteAddr == "" {
 		return errgo.Newf("client has no remote address")
 	}
-	reqIP, err := requestIPAddr(c.req)
+	reqIP, err := requestIPAddr(req)
 	if err != nil {
 		return errgo.Mask(err)
 	}
@@ -45,10 +94,14 @@ func (c httpContext) clientIPAddr(_, addr string) error {
 	return nil
 }
 
-// clientOrigin implements the Origin header checker
+// clientOriginCheck implements the Origin header checker
 // for an HTTP request.
-func (c httpContext) clientOrigin(_, origin string) error {
-	if reqOrigin := c.req.Header.Get("Origin"); reqOrigin != origin {
+func clientOriginCheck(ctxt context.Context, cond, args string) error {
+	req := requestFromContext(ctxt)
+	if req == nil {
+		return errgo.Newf("no origin found in context")
+	}
+	if reqOrigin := req.Header.Get("Origin"); reqOrigin != args {
 		return errgo.Newf("request has invalid Origin header; got %q", reqOrigin)
 	}
 	return nil
@@ -64,7 +117,29 @@ func SameClientIPAddrCaveat(req *http.Request) checkers.Caveat {
 	if err != nil {
 		return checkers.ErrorCaveatf("%v", err)
 	}
-	return checkers.ClientIPAddrCaveat(ip)
+	return ClientIPAddrCaveat(ip)
+}
+
+// ClientIPAddrCaveat returns a caveat that will check whether the
+// client's IP address is as provided.
+func ClientIPAddrCaveat(addr net.IP) checkers.Caveat {
+	if len(addr) != net.IPv4len && len(addr) != net.IPv6len {
+		return checkers.ErrorCaveatf("bad IP address %d", []byte(addr))
+	}
+	return httpCaveat(CondClientIPAddr, addr.String())
+}
+
+// ClientOriginCaveat returns a caveat that will check whether the
+// client's Origin header in its HTTP request is as provided.
+func ClientOriginCaveat(origin string) checkers.Caveat {
+	return httpCaveat(CondClientOrigin, origin)
+}
+
+func httpCaveat(cond, arg string) checkers.Caveat {
+	return checkers.Caveat{
+		Condition: checkers.Condition(cond, arg),
+		Namespace: CheckersNamespace,
+	}
 }
 
 func requestIPAddr(req *http.Request) (net.IP, error) {

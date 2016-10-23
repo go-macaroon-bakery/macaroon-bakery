@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/juju/httprequest"
+	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
@@ -45,13 +46,9 @@ func (s *suite) TestDischargerSimple(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 2)
 
-	err = svc.Check(ms, failChecker)
+	err = svc.Check(context.Background(), ms)
 	c.Assert(err, gc.IsNil)
 }
-
-var failChecker = bakery.FirstPartyCheckerFunc(func(s string) error {
-	return fmt.Errorf("fail %s", s)
-})
 
 func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 	d1checker := func(cond, arg string) ([]checkers.Caveat, error) {
@@ -96,7 +93,7 @@ func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 3)
 
-	err = svc.Check(ms, failChecker)
+	err = svc.Check(context.Background(), ms)
 	c.Assert(err, gc.IsNil)
 
 	err = svc.AddCaveat(m, checkers.Caveat{
@@ -154,9 +151,11 @@ func (s *suite) TestInteractiveDischarger(c *gc.C) {
 	))
 	defer d.Close()
 
+	var r recordingChecker
 	svc, err := bakery.NewService(bakery.NewServiceParams{
 		Location: "here",
 		Locator:  d,
+		Checker:  &r,
 	})
 	c.Assert(err, gc.IsNil)
 	m, err := svc.NewMacaroon(bakery.LatestVersion, []checkers.Caveat{{
@@ -174,8 +173,7 @@ func (s *suite) TestInteractiveDischarger(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 2)
 
-	var r recordingChecker
-	err = svc.Check(ms, &r)
+	err = svc.Check(context.Background(), ms)
 	c.Assert(err, gc.IsNil)
 	c.Assert(r.caveats, gc.HasLen, 1)
 	c.Assert(r.caveats[0], gc.Equals, "test pass")
@@ -244,7 +242,7 @@ func (s *suite) TestInteractiveDischargerURL(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 2)
 
-	err = svc.Check(ms, failChecker)
+	err = svc.Check(context.Background(), ms)
 	c.Assert(err, gc.IsNil)
 }
 
@@ -252,7 +250,11 @@ type recordingChecker struct {
 	caveats []string
 }
 
-func (c *recordingChecker) CheckFirstPartyCaveat(caveat string) error {
+func (c *recordingChecker) CheckFirstPartyCaveat(ctxt context.Context, caveat string) error {
 	c.caveats = append(c.caveats, caveat)
+	return nil
+}
+
+func (c *recordingChecker) Namespace() *checkers.Namespace {
 	return nil
 }

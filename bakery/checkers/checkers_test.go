@@ -2,15 +2,14 @@ package checkers_test
 
 import (
 	"fmt"
-	"net"
 	"time"
 
 	jc "github.com/juju/testing/checkers"
+	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2-unstable"
 
-	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
 )
 
@@ -18,17 +17,21 @@ type CheckersSuite struct{}
 
 var _ = gc.Suite(&CheckersSuite{})
 
-// Freeze time for the tests.
-var now = func() time.Time {
-	now, err := time.Parse(time.RFC3339Nano, "2006-01-02T15:04:05.123Z")
-	if err != nil {
-		panic(err)
-	}
-	*checkers.TimeNow = func() time.Time {
-		return now
-	}
+// A frozen time for the tests.
+var now = time.Date(2006, time.January, 2, 15, 4, 5, int(123*time.Millisecond), time.UTC)
+
+// testClock is a Clock implementation that always returns the above time.
+type testClock struct{}
+
+func (testClock) Now() time.Time {
 	return now
-}()
+}
+
+// FirstPartyCaveatChecker is declared here so we can avoid a cyclic
+// dependency on the bakery.
+type FirstPartyCaveatChecker interface {
+	CheckFirstPartyCaveat(ctxt context.Context, caveat string) error
+}
 
 type checkTest struct {
 	caveat      string
@@ -39,12 +42,11 @@ type checkTest struct {
 var isCaveatNotRecognized = errgo.Is(checkers.ErrCaveatNotRecognized)
 
 var checkerTests = []struct {
-	about   string
-	checker bakery.FirstPartyChecker
-	checks  []checkTest
+	about      string
+	addContext func(context.Context) context.Context
+	checks     []checkTest
 }{{
-	about:   "empty MultiChecker",
-	checker: checkers.New(),
+	about: "nothing in context, no extra checkers",
 	checks: []checkTest{{
 		caveat:      "something",
 		expectError: `caveat "something" not satisfied: caveat not recognized`,
@@ -59,111 +61,21 @@ var checkerTests = []struct {
 		expectCause: isCaveatNotRecognized,
 	}},
 }, {
-	about: "MultiChecker with some values",
-	checker: checkers.New(
-		argChecker("a", "aval"),
-		argChecker("b", "bval"),
-	),
+	about: "one failed caveat",
 	checks: []checkTest{{
-		caveat: "a aval",
+		caveat: "t:a aval",
 	}, {
-		caveat: "b bval",
+		caveat: "t:b bval",
 	}, {
-		caveat:      "a wrong",
-		expectError: `caveat "a wrong" not satisfied: wrong arg`,
+		caveat:      "t:a wrong",
+		expectError: `caveat "t:a wrong" not satisfied: wrong arg`,
 		expectCause: errgo.Is(errWrongArg),
 	}},
 }, {
-	about: "MultiChecker with several of the same condition",
-	checker: checkers.New(
-		argChecker("a", "aval"),
-		argChecker("a", "bval"),
-	),
-	checks: []checkTest{{
-		caveat:      "a aval",
-		expectError: `caveat "a aval" not satisfied: wrong arg`,
-		expectCause: errgo.Is(errWrongArg),
-	}, {
-		caveat:      "a bval",
-		expectError: `caveat "a bval" not satisfied: wrong arg`,
-		expectCause: errgo.Is(errWrongArg),
-	}},
-}, {
-	about: "nested MultiChecker",
-	checker: checkers.New(
-		argChecker("a", "aval"),
-		argChecker("b", "bval"),
-		checkers.New(
-			argChecker("c", "cval"),
-			checkers.New(
-				argChecker("d", "dval"),
-			),
-			argChecker("e", "eval"),
-		),
-	),
-	checks: []checkTest{{
-		caveat: "a aval",
-	}, {
-		caveat: "b bval",
-	}, {
-		caveat: "c cval",
-	}, {
-		caveat: "d dval",
-	}, {
-		caveat: "e eval",
-	}, {
-		caveat:      "a wrong",
-		expectError: `caveat "a wrong" not satisfied: wrong arg`,
-		expectCause: errgo.Is(errWrongArg),
-	}, {
-		caveat:      "c wrong",
-		expectError: `caveat "c wrong" not satisfied: wrong arg`,
-		expectCause: errgo.Is(errWrongArg),
-	}, {
-		caveat:      "d wrong",
-		expectError: `caveat "d wrong" not satisfied: wrong arg`,
-		expectCause: errgo.Is(errWrongArg),
-	}, {
-		caveat:      "f something",
-		expectError: `caveat "f something" not satisfied: caveat not recognized`,
-		expectCause: isCaveatNotRecognized,
-	}},
-}, {
-	about: "Map with no items",
-	checker: checkers.New(
-		checkers.Map{},
-	),
-	checks: []checkTest{{
-		caveat:      "a aval",
-		expectError: `caveat "a aval" not satisfied: caveat not recognized`,
-		expectCause: isCaveatNotRecognized,
-	}},
-}, {
-	about: "Map with some values",
-	checker: checkers.New(
-		checkers.Map{
-			"a": argChecker("a", "aval").Check,
-			"b": argChecker("b", "bval").Check,
-		},
-	),
-	checks: []checkTest{{
-		caveat: "a aval",
-	}, {
-		caveat: "b bval",
-	}, {
-		caveat:      "a wrong",
-		expectError: `caveat "a wrong" not satisfied: wrong arg`,
-		expectCause: errgo.Is(errWrongArg),
-	}, {
-		caveat:      "b wrong",
-		expectError: `caveat "b wrong" not satisfied: wrong arg`,
-		expectCause: errgo.Is(errWrongArg),
-	}},
-}, {
-	about: "time within limit",
-	checker: checkers.New(
-		checkers.TimeBefore,
-	),
+	about: "time from clock",
+	addContext: func(ctxt context.Context) context.Context {
+		return checkers.ContextWithClock(ctxt, testClock{})
+	},
 	checks: []checkTest{{
 		caveat: checkers.TimeBeforeCaveat(now.Add(1)).Condition,
 	}, {
@@ -180,8 +92,15 @@ var checkerTests = []struct {
 		expectError: `caveat "time-before 2006-01-02T15:04:05.123Z " not satisfied: parsing time "2006-01-02T15:04:05.123Z ": extra text:  `,
 	}},
 }, {
-	about:   "declared, no entries",
-	checker: checkers.New(checkers.Declared{}),
+	about: "real time",
+	checks: []checkTest{{
+		caveat:      checkers.TimeBeforeCaveat(time.Date(2010, time.January, 1, 0, 0, 0, 0, time.UTC)).Condition,
+		expectError: `caveat "time-before 2010-01-01T00:00:00Z" not satisfied: macaroon has expired`,
+	}, {
+		caveat: checkers.TimeBeforeCaveat(time.Date(3000, time.January, 1, 0, 0, 0, 0, time.UTC)).Condition,
+	}},
+}, {
+	about: "declared, no entries",
 	checks: []checkTest{{
 		caveat:      checkers.DeclaredCaveat("a", "aval").Condition,
 		expectError: `caveat "declared a aval" not satisfied: got a=null, expected "aval"`,
@@ -191,11 +110,13 @@ var checkerTests = []struct {
 	}},
 }, {
 	about: "declared, some entries",
-	checker: checkers.New(checkers.Declared{
-		"a":   "aval",
-		"b":   "bval",
-		"spc": " a b",
-	}),
+	addContext: func(ctxt context.Context) context.Context {
+		return checkers.ContextWithDeclared(ctxt, map[string]string{
+			"a":   "aval",
+			"b":   "bval",
+			"spc": " a b",
+		})
+	},
 	checks: []checkTest{{
 		caveat: checkers.DeclaredCaveat("a", "aval").Condition,
 	}, {
@@ -219,47 +140,44 @@ var checkerTests = []struct {
 		expectError: `caveat "error invalid caveat 'declared' key \\"a b\\"" not satisfied: bad caveat`,
 	}},
 }, {
-	about:   "error caveat",
-	checker: checkers.New(),
+	about: "error caveat",
 	checks: []checkTest{{
 		caveat:      checkers.ErrorCaveatf("").Condition,
-		expectError: `caveat "error " not satisfied: bad caveat`,
+		expectError: `caveat "error" not satisfied: bad caveat`,
 	}, {
 		caveat:      checkers.ErrorCaveatf("something %d", 134).Condition,
 		expectError: `caveat "error something 134" not satisfied: bad caveat`,
-	}},
-}, {
-	about:   "error caveat overrides other",
-	checker: checkers.New(argChecker("error", "something")),
-	checks: []checkTest{{
-		caveat:      checkers.ErrorCaveatf("something").Condition,
-		expectError: `caveat "error something" not satisfied: bad caveat`,
 	}},
 }}
 
 var errWrongArg = errgo.New("wrong arg")
 
-func argChecker(expectCond, checkArg string) checkers.Checker {
-	return checkers.CheckerFunc{
-		Condition_: expectCond,
-		Check_: func(cond, arg string) error {
-			if cond != expectCond {
-				panic(fmt.Errorf("got condition %q want %q", cond, expectCond))
-			}
-			if arg != checkArg {
-				return errWrongArg
-			}
-			return nil
-		},
+// argChecker returns a checker function that checks
+// that the caveat condition is checkArg.
+func argChecker(c *gc.C, expectCond, checkArg string) checkers.Func {
+	return func(_ context.Context, cond, arg string) error {
+		c.Assert(cond, gc.Equals, expectCond)
+		if arg != checkArg {
+			return errWrongArg
+		}
+		return nil
 	}
 }
 
 func (s *CheckersSuite) TestCheckers(c *gc.C) {
+	checker := checkers.New(nil)
+	checker.Namespace().Register("testns", "t")
+	checker.Register("a", "testns", argChecker(c, "t:a", "aval"))
+	checker.Register("b", "testns", argChecker(c, "t:b", "bval"))
 	for i, test := range checkerTests {
 		c.Logf("test %d: %s", i, test.about)
+		ctxt := context.Background()
+		if test.addContext != nil {
+			ctxt = test.addContext(ctxt)
+		}
 		for j, check := range test.checks {
 			c.Logf("\tcheck %d", j)
-			err := test.checker.CheckFirstPartyCaveat(check.caveat)
+			err := checker.CheckFirstPartyCaveat(ctxt, check.caveat)
 			if check.expectError != "" {
 				c.Assert(err, gc.ErrorMatches, check.expectError)
 				if check.expectCause == nil {
@@ -273,49 +191,20 @@ func (s *CheckersSuite) TestCheckers(c *gc.C) {
 	}
 }
 
-func (s *CheckersSuite) TestClientIPAddrCaveat(c *gc.C) {
-	cav := checkers.ClientIPAddrCaveat(net.IP{127, 0, 0, 1})
-	c.Assert(cav, gc.Equals, checkers.Caveat{
-		Condition: "client-ip-addr 127.0.0.1",
-	})
-	cav = checkers.ClientIPAddrCaveat(net.ParseIP("2001:4860:0:2001::68"))
-	c.Assert(cav, gc.Equals, checkers.Caveat{
-		Condition: "client-ip-addr 2001:4860:0:2001::68",
-	})
-	cav = checkers.ClientIPAddrCaveat(nil)
-	c.Assert(cav, gc.Equals, checkers.Caveat{
-		Condition: "error bad IP address []",
-	})
-	cav = checkers.ClientIPAddrCaveat(net.IP{123, 3})
-	c.Assert(cav, gc.Equals, checkers.Caveat{
-		Condition: "error bad IP address [123 3]",
-	})
-}
-
-func (s *CheckersSuite) TestClientOriginCaveat(c *gc.C) {
-	cav := checkers.ClientOriginCaveat("")
-	c.Assert(cav, gc.Equals, checkers.Caveat{
-		Condition: "origin ",
-	})
-	cav = checkers.ClientOriginCaveat("somewhere")
-	c.Assert(cav, gc.Equals, checkers.Caveat{
-		Condition: "origin somewhere",
-	})
-}
-
 var inferDeclaredTests = []struct {
-	about   string
-	caveats [][]checkers.Caveat
-	expect  checkers.Declared
+	about     string
+	caveats   [][]checkers.Caveat
+	expect    map[string]string
+	namespace map[string]string
 }{{
 	about:  "no macaroons",
-	expect: checkers.Declared{},
+	expect: map[string]string{},
 }, {
 	about: "single macaroon with one declaration",
 	caveats: [][]checkers.Caveat{{{
 		Condition: "declared foo bar",
 	}}},
-	expect: checkers.Declared{
+	expect: map[string]string{
 		"foo": "bar",
 	},
 }, {
@@ -323,13 +212,13 @@ var inferDeclaredTests = []struct {
 	caveats: [][]checkers.Caveat{{{
 		Condition: "declared foo",
 	}}},
-	expect: checkers.Declared{},
+	expect: map[string]string{},
 }, {
 	about: "spaces in value",
 	caveats: [][]checkers.Caveat{{{
 		Condition: "declared foo bar bloggs",
 	}}},
-	expect: checkers.Declared{
+	expect: map[string]string{
 		"foo": "bar bloggs",
 	},
 }, {
@@ -337,7 +226,7 @@ var inferDeclaredTests = []struct {
 	caveats: [][]checkers.Caveat{{{
 		Condition: "declaredccf foo",
 	}}},
-	expect: checkers.Declared{},
+	expect: map[string]string{},
 }, {
 	about: "several macaroons with different declares",
 	caveats: [][]checkers.Caveat{{
@@ -347,7 +236,7 @@ var inferDeclaredTests = []struct {
 		checkers.DeclaredCaveat("c", "cval"),
 		checkers.DeclaredCaveat("d", "dval"),
 	}},
-	expect: checkers.Declared{
+	expect: map[string]string{
 		"a": "aval",
 		"b": "bval",
 		"c": "cval",
@@ -365,7 +254,7 @@ var inferDeclaredTests = []struct {
 		checkers.DeclaredCaveat("c", "cval"),
 		checkers.DeclaredCaveat("d", "dval"),
 	}},
-	expect: checkers.Declared{
+	expect: map[string]string{
 		"a": "aval",
 		"b": "bval",
 		"c": "cval",
@@ -383,7 +272,7 @@ var inferDeclaredTests = []struct {
 		checkers.DeclaredCaveat("c", "cval"),
 		checkers.DeclaredCaveat("d", "dval"),
 	}},
-	expect: checkers.Declared{
+	expect: map[string]string{
 		"c": "cval",
 		"d": "dval",
 	},
@@ -395,7 +284,7 @@ var inferDeclaredTests = []struct {
 	},
 		checkers.DeclaredCaveat("a", "aval"),
 	}},
-	expect: checkers.Declared{
+	expect: map[string]string{
 		"a": "aval",
 	},
 }, {
@@ -405,19 +294,46 @@ var inferDeclaredTests = []struct {
 	},
 		checkers.DeclaredCaveat("a", "aval"),
 	}},
-	expect: checkers.Declared{
+	expect: map[string]string{
+		"a": "aval",
+	},
+}, {
+	about: "infer with namespace",
+	namespace: map[string]string{
+		checkers.StdNamespace: "",
+		"testns":              "t",
+	},
+	caveats: [][]checkers.Caveat{{
+		checkers.DeclaredCaveat("a", "aval"),
+		// A declared caveat from a different namespace doesn't
+		// interfere.
+		caveatWithNamespace(checkers.DeclaredCaveat("a", "bval"), "testns"),
+	}},
+	expect: map[string]string{
 		"a": "aval",
 	},
 }}
 
+func caveatWithNamespace(cav checkers.Caveat, uri string) checkers.Caveat {
+	cav.Namespace = uri
+	return cav
+}
+
 func (*CheckersSuite) TestInferDeclared(c *gc.C) {
 	for i, test := range inferDeclaredTests {
+		if test.namespace == nil {
+			test.namespace = map[string]string{
+				checkers.StdNamespace: "",
+			}
+		}
+		ns := checkers.NewNamespace(test.namespace)
 		c.Logf("test %d: %s", i, test.about)
 		ms := make(macaroon.Slice, len(test.caveats))
 		for i, caveats := range test.caveats {
 			m, err := macaroon.New(nil, []byte(fmt.Sprint(i)), "", macaroon.LatestVersion)
 			c.Assert(err, gc.IsNil)
 			for _, cav := range caveats {
+				cav = ns.ResolveCaveat(cav)
 				if cav.Location == "" {
 					m.AddFirstPartyCaveat(cav.Condition)
 				} else {
@@ -426,112 +342,62 @@ func (*CheckersSuite) TestInferDeclared(c *gc.C) {
 			}
 			ms[i] = m
 		}
-		c.Assert(checkers.InferDeclared(ms), jc.DeepEquals, test.expect)
-	}
-}
-
-var operationCheckerTests = []struct {
-	about       string
-	caveat      checkers.Caveat
-	oc          checkers.OperationChecker
-	expectError string
-}{{
-	about:  "allowed operation",
-	caveat: checkers.AllowCaveat("op1", "op2", "op3"),
-	oc:     checkers.OperationChecker("op1"),
-}, {
-	about:  "not denied oc",
-	caveat: checkers.DenyCaveat("op1", "op2", "op3"),
-	oc:     checkers.OperationChecker("op4"),
-}, {
-	about:       "not allowed oc",
-	caveat:      checkers.AllowCaveat("op1", "op2", "op3"),
-	oc:          checkers.OperationChecker("op4"),
-	expectError: "op4 not allowed",
-}, {
-	about:       "denied oc",
-	caveat:      checkers.DenyCaveat("op1", "op2", "op3"),
-	oc:          checkers.OperationChecker("op1"),
-	expectError: "op1 not allowed",
-}, {
-	about:       "unrecognised caveat",
-	caveat:      checkers.ErrorCaveatf("unrecognized"),
-	oc:          checkers.OperationChecker("op1"),
-	expectError: "caveat not recognized",
-}, {
-	about:  "empty deny caveat",
-	caveat: checkers.DenyCaveat(),
-	oc:     checkers.OperationChecker("op1"),
-}}
-
-func (*CheckersSuite) TestOperationChecker(c *gc.C) {
-	for i, test := range operationCheckerTests {
-		c.Logf("%d: %s", i, test.about)
-		cond, arg, err := checkers.ParseCaveat(test.caveat.Condition)
-		c.Assert(err, gc.IsNil)
-		c.Assert(test.oc.Condition(), gc.Equals, "")
-		err = test.oc.Check(cond, arg)
-		if test.expectError == "" {
-			c.Assert(err, gc.IsNil)
-			continue
-		}
-		c.Assert(err, gc.ErrorMatches, test.expectError)
+		c.Assert(checkers.InferDeclared(nil, ms), jc.DeepEquals, test.expect)
 	}
 }
 
 var operationsCheckerTests = []struct {
 	about       string
 	caveat      checkers.Caveat
-	oc          checkers.OperationsChecker
+	ops         []string
 	expectError string
 }{{
 	about:  "all allowed",
 	caveat: checkers.AllowCaveat("op1", "op2", "op4", "op3"),
-	oc:     checkers.OperationsChecker{"op1", "op3", "op2"},
+	ops:    []string{"op1", "op3", "op2"},
 }, {
 	about:  "none denied",
 	caveat: checkers.DenyCaveat("op1", "op2"),
-	oc:     checkers.OperationsChecker{"op3", "op4"},
+	ops:    []string{"op3", "op4"},
 }, {
 	about:       "one not allowed",
 	caveat:      checkers.AllowCaveat("op1", "op2"),
-	oc:          checkers.OperationsChecker{"op1", "op3"},
+	ops:         []string{"op1", "op3"},
 	expectError: `op3 not allowed`,
 }, {
 	about:       "one denied",
 	caveat:      checkers.DenyCaveat("op1", "op2"),
-	oc:          checkers.OperationsChecker{"op4", "op5", "op2"},
+	ops:         []string{"op4", "op5", "op2"},
 	expectError: `op2 not allowed`,
 }, {
 	about:       "no operations, allow caveat",
 	caveat:      checkers.AllowCaveat("op1"),
-	oc:          checkers.OperationsChecker{},
+	ops:         []string{},
 	expectError: `op1 not allowed`,
 }, {
 	about:  "no operations, deny caveat",
 	caveat: checkers.DenyCaveat("op1"),
-	oc:     checkers.OperationsChecker{},
+	ops:    []string{},
 }, {
 	about: "no operations, empty allow caveat",
 	caveat: checkers.Caveat{
 		Condition: checkers.CondAllow,
 	},
-	oc:          checkers.OperationsChecker{},
+	ops:         []string{},
 	expectError: `no operations allowed`,
 }}
 
 func (*CheckersSuite) TestOperationsChecker(c *gc.C) {
+	checker := checkers.New(nil)
 	for i, test := range operationsCheckerTests {
 		c.Logf("%d: %s", i, test.about)
-		cond, arg, err := checkers.ParseCaveat(test.caveat.Condition)
-		c.Assert(err, gc.IsNil)
-		c.Assert(test.oc.Condition(), gc.Equals, "")
-		err = test.oc.Check(cond, arg)
+		ctxt := checkers.ContextWithOperations(context.Background(), test.ops...)
+		err := checker.CheckFirstPartyCaveat(ctxt, test.caveat.Condition)
 		if test.expectError == "" {
 			c.Assert(err, gc.IsNil)
 			continue
 		}
-		c.Assert(err, gc.ErrorMatches, test.expectError)
+		c.Assert(err, gc.ErrorMatches, ".*: "+test.expectError)
 	}
 }
 
@@ -558,4 +424,114 @@ func (*CheckersSuite) TestOperationErrorCaveatTest(c *gc.C) {
 		c.Logf("%d: %s", i, test.about)
 		c.Assert(test.caveat.Condition, gc.Matches, test.expectCondition)
 	}
+}
+
+func (*CheckersSuite) TestRegisterNilFuncPanics(c *gc.C) {
+	checker := checkers.New(nil)
+	c.Assert(func() {
+		checker.Register("x", checkers.StdNamespace, nil)
+	}, gc.PanicMatches, `nil check function registered for namespace ".*" when registering condition "x"`)
+}
+
+func (*CheckersSuite) TestRegisterNoRegisteredNamespace(c *gc.C) {
+	checker := checkers.New(nil)
+	c.Assert(func() {
+		checker.Register("x", "testns", succeed)
+	}, gc.PanicMatches, `no prefix registered for namespace "testns" when registering condition "x"`)
+}
+
+func (*CheckersSuite) TestRegisterEmptyPrefixConditionWithColon(c *gc.C) {
+	checker := checkers.New(nil)
+	checker.Namespace().Register("testns", "")
+	c.Assert(func() {
+		checker.Register("x:y", "testns", succeed)
+	}, gc.PanicMatches, `caveat condition "x:y" in namespace "testns" contains a colon but its prefix is empty`)
+}
+
+func (*CheckersSuite) TestRegisterTwiceSameNamespace(c *gc.C) {
+	checker := checkers.New(nil)
+	checker.Namespace().Register("testns", "t")
+	checker.Register("x", "testns", succeed)
+	c.Assert(func() {
+		checker.Register("x", "testns", succeed)
+	}, gc.PanicMatches, `checker for "t:x" \(namespace "testns"\) already registered in namespace "testns"`)
+}
+
+func (*CheckersSuite) TestRegisterTwiceDifferentNamespace(c *gc.C) {
+	checker := checkers.New(nil)
+	checker.Namespace().Register("testns", "t")
+	checker.Namespace().Register("otherns", "t")
+	checker.Register("x", "testns", succeed)
+	c.Assert(func() {
+		checker.Register("x", "otherns", succeed)
+	}, gc.PanicMatches, `checker for "t:x" \(namespace "otherns"\) already registered in namespace "testns"`)
+}
+
+func (*CheckersSuite) TestCheckerInfo(c *gc.C) {
+	checker := checkers.NewEmpty(nil)
+	checker.Namespace().Register("one", "t")
+	checker.Namespace().Register("two", "t")
+	checker.Namespace().Register("three", "")
+	checker.Namespace().Register("four", "s")
+
+	var calledVal string
+	register := func(name, ns string) {
+		checker.Register(name, ns, func(ctxt context.Context, cond, arg string) error {
+			calledVal = name + " " + ns
+			return nil
+		})
+	}
+	register("x", "one")
+	register("y", "one")
+	register("z", "two")
+	register("a", "two")
+	register("something", "three")
+	register("other", "three")
+	register("xxx", "four")
+
+	expect := []checkers.CheckerInfo{{
+		Namespace: "four",
+		Name:      "xxx",
+		Prefix:    "s",
+	}, {
+		Namespace: "one",
+		Name:      "x",
+		Prefix:    "t",
+	}, {
+		Namespace: "one",
+		Name:      "y",
+		Prefix:    "t",
+	}, {
+		Namespace: "three",
+		Name:      "other",
+		Prefix:    "",
+	}, {
+		Namespace: "three",
+		Name:      "something",
+		Prefix:    "",
+	}, {
+		Namespace: "two",
+		Name:      "a",
+		Prefix:    "t",
+	}, {
+		Namespace: "two",
+		Name:      "z",
+		Prefix:    "t",
+	}}
+	infos := checker.Info()
+	// We can't use DeepEqual on functions so check that the right functions are
+	// there by calling them, then set them to nil.
+	c.Assert(infos, gc.HasLen, len(expect))
+	for i := range infos {
+		info := &infos[i]
+		calledVal = ""
+		info.Check(nil, "", "")
+		c.Check(calledVal, gc.Equals, expect[i].Name+" "+expect[i].Namespace, gc.Commentf("index %d", i))
+		info.Check = nil
+	}
+	c.Assert(infos, jc.DeepEquals, expect)
+}
+
+func succeed(ctxt context.Context, cond, arg string) error {
+	return nil
 }

@@ -174,6 +174,9 @@ type dischargeRequest struct {
 	httprequest.Route `httprequest:"POST /discharge"`
 	Id                string `httprequest:"id,form"`
 	Id64              string `httprequest:"id64,form"`
+
+	// TODO(rog) pass the namespace in here too.
+
 	// TODO(rog) If/when caveat ids can be passed
 	// around independently of the macaroons themselves,
 	// then this field could be used by a client to specify
@@ -185,6 +188,10 @@ type dischargeRequest struct {
 type dischargeResponse struct {
 	Macaroon *macaroon.Macaroon `json:",omitempty"`
 }
+
+// TODO remove the need for this by acquiring the namespace
+// from the discharge request.
+var dischargeNamespace = NewChecker().Namespace()
 
 // Discharge discharges a third party caveat.
 func (h dischargeHandler) Discharge(p httprequest.Params, r *dischargeRequest) (*dischargeResponse, error) {
@@ -203,13 +210,13 @@ func (h dischargeHandler) Discharge(p httprequest.Params, r *dischargeRequest) (
 			return h.discharger.p.Checker.CheckThirdPartyCaveat(p.Request, cav)
 		},
 	), id)
-	for _, cav := range caveats {
-		if err := bakery.AddCaveat(h.discharger.p.Key, h.discharger.p.Locator, m, cav); err != nil {
-			return nil, errgo.Mask(err)
-		}
-	}
 	if err != nil {
 		return nil, errgo.NoteMask(err, "cannot discharge", errgo.Any)
+	}
+	for _, cav := range caveats {
+		if err := bakery.AddCaveat(h.discharger.p.Key, h.discharger.p.Locator, m, cav, dischargeNamespace); err != nil {
+			return nil, errgo.Mask(err)
+		}
 	}
 	return &dischargeResponse{m}, nil
 }

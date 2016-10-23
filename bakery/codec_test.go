@@ -5,7 +5,6 @@ import (
 
 	jc "github.com/juju/testing/checkers"
 	"golang.org/x/crypto/nacl/box"
-
 	gc "gopkg.in/check.v1"
 )
 
