@@ -1,6 +1,7 @@
 package httpbakery_test
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -125,28 +126,16 @@ func (s *ClientSuite) TestRepeatedRequestWithBody(c *gc.C) {
 	}))
 	defer ts.Close()
 
-	// Create a client request.
-	req, err := http.NewRequest("POST", ts.URL, nil)
-	c.Assert(err, gc.IsNil)
-
-	// Make the request to the server.
-
-	// First try with a body in the request, which should be denied
-	// because we must use DoWithBody.
-	req.Body = ioutil.NopCloser(strings.NewReader("postbody"))
-	resp, err := httpbakery.NewClient().Do(req)
-	c.Assert(err, gc.ErrorMatches, "body unexpectedly provided in request - use DoWithBody")
-	c.Assert(resp, gc.IsNil)
-
-	// Then try with no authorization, so make sure that httpbakery.Do
+	// Try with no authorization, so make sure that httpbakery.Do
 	// really will retry the request.
-
-	req.Body = nil
 
 	bodyText := "postbody"
 	bodyReader := &readCounter{ReadSeeker: strings.NewReader(bodyText)}
 
-	resp, err = httpbakery.NewClient().DoWithBody(req, bodyReader)
+	req, err := http.NewRequest("POST", ts.URL, bodyReader)
+	c.Assert(err, gc.IsNil)
+
+	resp, err := httpbakery.NewClient().Do(req)
 	c.Assert(err, gc.IsNil)
 	defer resp.Body.Close()
 	assertResponse(c, resp, "done postbody")
@@ -225,6 +214,66 @@ func (s *ClientSuite) TestDoWithBodyFailsWithBodyInRequest(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	_, err = httpbakery.NewClient().DoWithBody(req, body)
 	c.Assert(err, gc.ErrorMatches, "body unexpectedly supplied in Request struct")
+}
+
+func (s *ClientSuite) TestDoClosesBody(c *gc.C) {
+	cn := closeNotifier{
+		closed: make(chan struct{}),
+	}
+	req, err := http.NewRequest("GET", "http://0.1.2.3/", cn)
+	c.Assert(err, gc.IsNil)
+
+	_, err = httpbakery.NewClient().Do(req)
+	c.Assert(err, gc.NotNil)
+
+	select {
+	case <-cn.closed:
+	case <-time.After(5 * time.Second):
+		c.Fatalf("timed out waiting for request body to be closed")
+	}
+}
+
+func (s *ClientSuite) TestWithNonSeekableBody(c *gc.C) {
+	r := bytes.NewBufferString("hello")
+	req, err := http.NewRequest("GET", "http://0.1.2.3/", r)
+	c.Assert(err, gc.IsNil)
+	_, err = httpbakery.NewClient().Do(req)
+	c.Assert(err, gc.ErrorMatches, `request body is not seekable`)
+}
+
+func (s *ClientSuite) TestWithNonSeekableCloserBody(c *gc.C) {
+	req, err := http.NewRequest("GET", "http://0.1.2.3/", readCloser{})
+	c.Assert(err, gc.IsNil)
+	_, err = httpbakery.NewClient().Do(req)
+	c.Assert(err, gc.ErrorMatches, `request body is not seekable`)
+}
+
+type readCloser struct {
+}
+
+func (r readCloser) Read(buf []byte) (int, error) {
+	return 0, io.EOF
+}
+
+func (r readCloser) Close() error {
+	return nil
+}
+
+type closeNotifier struct {
+	closed chan struct{}
+}
+
+func (r closeNotifier) Read(buf []byte) (int, error) {
+	return 0, io.EOF
+}
+
+func (r closeNotifier) Seek(offset int64, whence int) (int64, error) {
+	return 0, nil
+}
+
+func (r closeNotifier) Close() error {
+	close(r.closed)
+	return nil
 }
 
 func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
