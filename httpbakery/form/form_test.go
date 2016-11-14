@@ -56,13 +56,13 @@ var formLoginTests = []struct {
 	opts: dischargeOptions{
 		getError: true,
 	},
-	expectError: `cannot get discharge from ".*": cannot start interactive session: cannot get schema: GET .*: httprequest: test error`,
+	expectError: `cannot get discharge from ".*": cannot start interactive session: cannot get schema.*: test error`,
 }, {
 	about: "error submitting form",
 	opts: dischargeOptions{
 		postError: true,
 	},
-	expectError: `cannot get discharge from ".*": cannot start interactive session: cannot submit form: POST .*: httprequest: test error`,
+	expectError: `cannot get discharge from ".*": cannot start interactive session: cannot submit form.*: test error`,
 }, {
 	about: "no schema",
 	opts: dischargeOptions{
