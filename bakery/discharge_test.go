@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/juju/testing"
+	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/macaroon.v2-unstable"
 
@@ -84,7 +85,7 @@ func (*DischargeSuite) TestDischargeAllLocalDischarge(c *gc.C) {
 	ms, err := bakery.DischargeAllWithKey(m, noDischarge(c), clientKey)
 	c.Assert(err, gc.IsNil)
 
-	err = svc.Check(ms, checkers.New())
+	err = svc.Check(context.Background(), ms)
 	c.Assert(err, gc.IsNil)
 }
 
@@ -103,7 +104,7 @@ func (*DischargeSuite) TestDischargeAllLocalDischargeVersion1(c *gc.C) {
 	ms, err := bakery.DischargeAllWithKey(m, noDischarge(c), clientKey)
 	c.Assert(err, gc.IsNil)
 
-	err = svc.Check(ms, checkers.New())
+	err = svc.Check(context.Background(), ms)
 	c.Assert(err, gc.IsNil)
 }
 

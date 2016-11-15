@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"sync"
 
+	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2-unstable"
 
@@ -22,6 +23,8 @@ type discharge struct {
 	cavId []byte
 	c     chan error
 }
+
+var allCheckers = httpbakery.NewChecker()
 
 type Discharger struct {
 	Bakery       *bakery.Service
@@ -106,6 +109,8 @@ func (d *Discharger) CheckThirdPartyCaveat(req *http.Request, ci *bakery.ThirdPa
 }
 
 func (d *Discharger) login(w http.ResponseWriter, r *http.Request) {
+	// TODO take context from request.
+	ctxt := httpbakery.ContextWithRequest(context.TODO(), r)
 	r.ParseForm()
 	if d.LoginHandler != nil {
 		d.LoginHandler(d, w, r)
@@ -118,7 +123,7 @@ func (d *Discharger) login(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	_, err = httpbakery.CheckRequest(d.Bakery, r, nil, nil)
+	_, _, err = httpbakery.CheckRequest(ctxt, d.Bakery, r, nil)
 	if err == nil {
 		d.FinishWait(w, r, nil)
 		d.WriteJSON(w, http.StatusOK, agent.AgentResponse{
@@ -160,6 +165,7 @@ func (d *Discharger) wait(w http.ResponseWriter, r *http.Request) {
 				return nil, nil
 			},
 		),
+		nil,
 		d.waiting[id].cavId,
 	)
 	if err != nil {

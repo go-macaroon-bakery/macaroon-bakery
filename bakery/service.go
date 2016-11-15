@@ -14,6 +14,7 @@ import (
 
 	"github.com/juju/loggo"
 	"github.com/rogpeppe/fastuuid"
+	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2-unstable"
 
@@ -55,6 +56,7 @@ type Service struct {
 	store    Storage
 	key      *KeyPair
 	locator  ThirdPartyLocator
+	checker  FirstPartyCaveatChecker
 }
 
 // NewServiceParams holds the parameters for a NewService call.
@@ -78,6 +80,10 @@ type NewServiceParams struct {
 	// adding a third-party caveat.
 	// It may be nil, in which case, no third-party caveats can be created.
 	Locator ThirdPartyLocator
+
+	// Checker is used to check first party caveats.
+	// It defaults to checkers.New(nil).
+	Checker FirstPartyCaveatChecker
 }
 
 // NewService returns a new service that can mint new
@@ -96,11 +102,15 @@ func NewService(p NewServiceParams) (*Service, error) {
 	if p.Locator == nil {
 		p.Locator = emptyLocator{}
 	}
+	if p.Checker == nil {
+		p.Checker = checkers.New(nil)
+	}
 	svc := &Service{
 		location: p.Location,
 		locator:  p.Locator,
 		store:    p.Store,
 		key:      p.Key,
+		checker:  p.Checker,
 	}
 	return svc, nil
 }
@@ -142,6 +152,10 @@ func (svc *Service) Locator() ThirdPartyLocator {
 	return svc.locator
 }
 
+func (svc *Service) Namespace() *checkers.Namespace {
+	return svc.checker.Namespace()
+}
+
 // PublicKey returns the service's public key.
 func (svc *Service) PublicKey() *PublicKey {
 	return &svc.key.Public
@@ -160,7 +174,7 @@ func (svc *Service) Key() *KeyPair {
 // If there is a verification error, it returns a VerificationError that
 // describes the error (other errors might be returned in other
 // circumstances).
-func (svc *Service) Check(ms macaroon.Slice, checker FirstPartyChecker) error {
+func (svc *Service) Check(ctxt context.Context, ms macaroon.Slice) error {
 	if len(ms) == 0 {
 		return &VerificationError{
 			Reason: fmt.Errorf("no macaroons in slice"),
@@ -216,13 +230,19 @@ func (svc *Service) Check(ms macaroon.Slice, checker FirstPartyChecker) error {
 			Reason: errgo.Newf("macaroon not found in storage"),
 		}
 	}
-	err = ms[0].Verify(rootKey, checker.CheckFirstPartyCaveat, ms[1:])
+	err = ms[0].Verify(rootKey, svc.caveatChecker(ctxt), ms[1:])
 	if err != nil {
 		return &VerificationError{
 			Reason: err,
 		}
 	}
 	return nil
+}
+
+func (svc *Service) caveatChecker(ctxt context.Context) func(string) error {
+	return func(cav string) error {
+		return svc.checker.CheckFirstPartyCaveat(ctxt, cav)
+	}
 }
 
 func isLowerCaseHexChar(c byte) bool {
@@ -250,7 +270,7 @@ func isLowerCaseHexChar(c byte) bool {
 //
 // It returns any attributes declared in the successfully validated request
 // and the set of macaroons that was successfully checked.
-func (svc *Service) CheckAny(mss []macaroon.Slice, assert map[string]string, checker checkers.Checker) (map[string]string, macaroon.Slice, error) {
+func (svc *Service) CheckAny(ctxt context.Context, mss []macaroon.Slice, assert map[string]string) (map[string]string, macaroon.Slice, error) {
 	if len(mss) == 0 {
 		return nil, nil, &VerificationError{
 			Reason: errgo.Newf("no macaroons"),
@@ -260,11 +280,11 @@ func (svc *Service) CheckAny(mss []macaroon.Slice, assert map[string]string, che
 	// for each successfully validated macaroon slice?
 	var err error
 	for _, ms := range mss {
-		declared := checkers.InferDeclared(ms)
+		declared := checkers.InferDeclared(svc.checker.Namespace(), ms)
 		for key, val := range assert {
 			declared[key] = val
 		}
-		err = svc.Check(ms, checkers.New(declared, checker))
+		err = svc.Check(checkers.ContextWithDeclared(ctxt, declared), ms)
 		if err == nil {
 			return declared, ms, nil
 		}
@@ -351,7 +371,7 @@ func LocalThirdPartyCaveat(key *PublicKey, version Version) checkers.Caveat {
 // It uses the service's key pair and locator to call
 // the AddCaveat function.
 func (svc *Service) AddCaveat(m *macaroon.Macaroon, cav checkers.Caveat) error {
-	return AddCaveat(svc.key, svc.locator, m, cav)
+	return AddCaveat(svc.key, svc.locator, m, cav, svc.checker.Namespace())
 }
 
 // AddCaveat adds a caveat to the given macaroon.
@@ -367,9 +387,9 @@ func (svc *Service) AddCaveat(m *macaroon.Macaroon, cav checkers.Caveat) error {
 // resulting third-party caveat will encode the condition "true"
 // encrypted with that public key. See LocalThirdPartyCaveat
 // for a way of creating such caveats.
-func AddCaveat(key *KeyPair, loc ThirdPartyLocator, m *macaroon.Macaroon, cav checkers.Caveat) error {
+func AddCaveat(key *KeyPair, loc ThirdPartyLocator, m *macaroon.Macaroon, cav checkers.Caveat, ns *checkers.Namespace) error {
 	if cav.Location == "" {
-		if err := m.AddFirstPartyCaveat(cav.Condition); err != nil {
+		if err := m.AddFirstPartyCaveat(ns.ResolveCaveat(cav).Condition); err != nil {
 			return errgo.Mask(err)
 		}
 		return nil
@@ -490,13 +510,17 @@ func Discharge(key *KeyPair, checker ThirdPartyChecker, id []byte) (*macaroon.Ma
 // to add any returned caveats to the discharge macaroon.
 // The discharge macaroon will be created with a version
 // implied by the id.
-func (svc *Service) Discharge(checker ThirdPartyChecker, id []byte) (*macaroon.Macaroon, error) {
+func (svc *Service) Discharge(checker ThirdPartyChecker, ns *checkers.Namespace, id []byte) (*macaroon.Macaroon, error) {
 	m, caveats, err := Discharge(svc.key, checker, id)
 	if err != nil {
 		return nil, errgo.Mask(err, errgo.Any)
 	}
 	for _, cav := range caveats {
-		if err := svc.AddCaveat(m, cav); err != nil {
+		// Note that we don't use svc.AddCaveat to add the caveats
+		// because we want to use the namespace of the first party
+		// that we're discharging for, not the namespace of the
+		// discharging service.
+		if err := AddCaveat(svc.key, svc.locator, m, cav, ns); err != nil {
 			return nil, errgo.Notef(err, "cannot add caveat")
 		}
 	}
@@ -618,17 +642,17 @@ func (c ThirdPartyCheckerFunc) CheckThirdPartyCaveat(info *ThirdPartyCaveatInfo)
 	return c(info)
 }
 
-// FirstPartyChecker holds a function that checks first party caveats
-// for validity.
+// FirstPartyCaveatChecker is used to check first party caveats
+// for validity with respect to information in the provided context.
 //
 // If the caveat kind was not recognised, the checker should return
-// ErrCaveatNotRecognized.
-type FirstPartyChecker interface {
-	CheckFirstPartyCaveat(caveat string) error
-}
+// checkers.ErrCaveatNotRecognized.
+type FirstPartyCaveatChecker interface {
+	// CheckFirstPartyCaveat checks that the given caveat condition
+	// is valid with respect to the given context information.
+	CheckFirstPartyCaveat(ctxt context.Context, caveat string) error
 
-type FirstPartyCheckerFunc func(caveat string) error
-
-func (c FirstPartyCheckerFunc) CheckFirstPartyCaveat(caveat string) error {
-	return c(caveat)
+	// Namespace returns the namespace associated with the
+	// caveat checker.
+	Namespace() *checkers.Namespace
 }

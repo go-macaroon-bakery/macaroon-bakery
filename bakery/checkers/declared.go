@@ -3,9 +3,23 @@ package checkers
 import (
 	"strings"
 
+	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2-unstable"
 )
+
+type declaredKey struct{}
+
+// ContextWithDeclared returns a context with attached declared information,
+// as returned from InferDeclared.
+func ContextWithDeclared(ctxt context.Context, declared map[string]string) context.Context {
+	return context.WithValue(ctxt, declaredKey{}, declared)
+}
+
+func declaredFromContext(ctxt context.Context) map[string]string {
+	m, _ := ctxt.Value(declaredKey{}).(map[string]string)
+	return m
+}
 
 // DeclaredCaveat returns a "declared" caveat asserting that the given key is
 // set to the given value. If a macaroon has exactly one first party
@@ -26,6 +40,7 @@ func DeclaredCaveat(key string, value string) Caveat {
 // wraps the provided third party caveat and requires
 // that the third party must add "declared" caveats for
 // all the named keys.
+// TODO(rog) namespaces in third party caveats?
 func NeedDeclaredCaveat(cav Caveat, keys ...string) Caveat {
 	if cav.Location == "" {
 		return ErrorCaveatf("need-declared caveat is not third-party")
@@ -36,27 +51,13 @@ func NeedDeclaredCaveat(cav Caveat, keys ...string) Caveat {
 	}
 }
 
-// Declared implements a checker that will
-// check that any "declared" caveats have a matching
-// key for their value in the map.
-type Declared map[string]string
-
-// Condition implements Checker.Condition.
-func (c Declared) Condition() string {
-	return CondDeclared
-}
-
-// Check implements Checker.Check by checking that the given
-// argument holds a key in the map with a matching value.
-func (c Declared) Check(_, arg string) error {
-	// Note that we don't need to check the condition argument
-	// here because it has been specified explicitly in the
-	// return from the Condition method.
+func checkDeclared(ctxt context.Context, _, arg string) error {
 	parts := strings.SplitN(arg, " ", 2)
 	if len(parts) != 2 {
 		return errgo.Newf("declared caveat has no value")
 	}
-	val, ok := c[parts[0]]
+	attrs := declaredFromContext(ctxt)
+	val, ok := attrs[parts[0]]
 	if !ok {
 		return errgo.Newf("got %s=null, expected %q", parts[0], parts[1])
 	}
@@ -76,32 +77,44 @@ func (c Declared) Check(_, arg string) error {
 // different values, the information is omitted from the map.
 // When the caveats are later checked, this will cause the
 // check to fail.
-func InferDeclared(ms macaroon.Slice) Declared {
-	var conflicts []string
-	info := make(Declared)
+func InferDeclared(ns *Namespace, ms macaroon.Slice) map[string]string {
+	var conditions []string
 	for _, m := range ms {
 		for _, cav := range m.Caveats() {
-			if cav.Location != "" {
-				continue
+			if cav.Location == "" {
+				conditions = append(conditions, string(cav.Id))
 			}
-			name, rest, err := ParseCaveat(string(cav.Id))
-			if err != nil {
-				continue
-			}
-			if name != CondDeclared {
-				continue
-			}
-			parts := strings.SplitN(rest, " ", 2)
-			if len(parts) != 2 {
-				continue
-			}
-			key, val := parts[0], parts[1]
-			if oldVal, ok := info[key]; ok && oldVal != val {
-				conflicts = append(conflicts, key)
-				continue
-			}
-			info[key] = val
 		}
+	}
+	return InferDeclaredFromConditions(ns, conditions)
+}
+
+// InferDeclaredFromConditions is like InferDeclared except that
+// it is passed a set of first party caveat conditions rather than a set of macaroons.
+func InferDeclaredFromConditions(ns *Namespace, conds []string) map[string]string {
+	var conflicts []string
+	// If we can't resolve that standard namespace, then we'll look for
+	// just bare "declared" caveats which will work OK for legacy
+	// macaroons with no namespace.
+	prefix, _ := ns.Resolve(StdNamespace)
+	declaredCond := prefix + CondDeclared
+
+	info := make(map[string]string)
+	for _, cond := range conds {
+		name, rest, _ := ParseCaveat(cond)
+		if name != declaredCond {
+			continue
+		}
+		parts := strings.SplitN(rest, " ", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key, val := parts[0], parts[1]
+		if oldVal, ok := info[key]; ok && oldVal != val {
+			conflicts = append(conflicts, key)
+			continue
+		}
+		info[key] = val
 	}
 	for _, key := range conflicts {
 		delete(info, key)

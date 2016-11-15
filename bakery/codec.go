@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 
 	"golang.org/x/crypto/nacl/box"
-
 	"gopkg.in/errgo.v1"
 )
 

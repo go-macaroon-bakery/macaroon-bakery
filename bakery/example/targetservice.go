@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
@@ -35,6 +36,7 @@ func targetService(endpoint, authEndpoint string, authPK *bakery.PublicKey) (htt
 		Key:      key,
 		Location: endpoint,
 		Locator:  pkLocator,
+		Checker:  httpbakery.NewChecker(),
 	})
 	if err != nil {
 		return nil, err
@@ -50,8 +52,8 @@ func targetService(endpoint, authEndpoint string, authPK *bakery.PublicKey) (htt
 }
 
 func (srv *targetServiceHandler) serveGold(w http.ResponseWriter, req *http.Request) {
-	checker := srv.checkers(req, "gold")
-	if _, err := httpbakery.CheckRequest(srv.svc, req, nil, checker); err != nil {
+	ctxt := checkers.ContextWithOperations(context.TODO(), "gold")
+	if _, _, err := httpbakery.CheckRequest(ctxt, srv.svc, req, nil); err != nil {
 		srv.writeError(w, req, "gold", err)
 		return
 	}
@@ -59,25 +61,12 @@ func (srv *targetServiceHandler) serveGold(w http.ResponseWriter, req *http.Requ
 }
 
 func (srv *targetServiceHandler) serveSilver(w http.ResponseWriter, req *http.Request) {
-	checker := srv.checkers(req, "silver")
-	if _, err := httpbakery.CheckRequest(srv.svc, req, nil, checker); err != nil {
+	ctxt := checkers.ContextWithOperations(context.TODO(), "silver")
+	if _, _, err := httpbakery.CheckRequest(ctxt, srv.svc, req, nil); err != nil {
 		srv.writeError(w, req, "silver", err)
 		return
 	}
 	fmt.Fprintf(w, "every cloud has a silver lining")
-}
-
-// checkers implements the caveat checking for the service.
-func (svc *targetServiceHandler) checkers(req *http.Request, operation string) checkers.Checker {
-	return checkers.CheckerFunc{
-		Condition_: "operation",
-		Check_: func(_, op string) error {
-			if op != operation {
-				return fmt.Errorf("macaroon not valid for operation")
-			}
-			return nil
-		},
-	}
 }
 
 // writeError writes an error to w in response to req. If the error was
@@ -105,12 +94,12 @@ func (srv *targetServiceHandler) writeError(w http.ResponseWriter, req *http.Req
 	// Could special-case the operation here if desired.
 	caveats := []checkers.Caveat{
 		checkers.TimeBeforeCaveat(time.Now().Add(5 * time.Minute)),
+		checkers.AllowCaveat(operation),
 		{
 			Location:  srv.authEndpoint,
 			Condition: "access-allowed",
-		}, {
-			Condition: "operation " + operation,
-		}}
+		},
+	}
 	// Mint an appropriate macaroon and send it back to the client.
 	m, err := srv.svc.NewMacaroon(httpbakery.RequestVersion(req), caveats)
 	if err != nil {

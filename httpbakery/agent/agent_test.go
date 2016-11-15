@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 
+	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
 
@@ -113,11 +114,7 @@ func (s *agentSuite) TestAgentLogin(c *gc.C) {
 			continue
 		}
 		c.Assert(err, gc.IsNil)
-		err = s.bakery.Check(ms, bakery.FirstPartyCheckerFunc(
-			func(caveat string) error {
-				return nil
-			},
-		))
+		err = s.bakery.Check(context.Background(), ms)
 		c.Assert(err, gc.IsNil)
 	}
 }
