@@ -26,6 +26,11 @@ var logger = loggo.GetLogger("httpbakery")
 
 var unmarshalError = httprequest.ErrorUnmarshaler(&Error{})
 
+// maxDischargeRetries holds the maximum number of times that an HTTP
+// request will be retried after a third party caveat has been successfully
+// discharged.
+const maxDischargeRetries = 3
+
 // DischargeError represents the error when a third party discharge
 // is refused by a server.
 type DischargeError struct {
@@ -245,36 +250,46 @@ func (c *Client) do1(req *http.Request, getError func(resp *http.Response) error
 	rreq, ok := newRetryableRequest(req)
 	if !ok {
 		return nil, fmt.Errorf("request body is not seekable")
- 	}
+	}
 	defer rreq.close()
 
 	req.Header.Set(BakeryProtocolHeader, fmt.Sprint(bakery.LatestVersion))
-	if err := rreq.try(); err != nil {
+
+	// Make several attempts to do the request, because we might have
+	// to get through several layers of security. We only retry if
+	// we get a DischargeRequiredError and succeed in discharging
+	// the macaroon in it.
+	retry := 0
+	for {
+		resp, err := c.do2(rreq, getError)
+		if err == nil || !isDischargeRequiredError(err) {
+			return resp, errgo.Mask(err, errgo.Any)
+		}
+		if retry++; retry > maxDischargeRetries {
+			return nil, errgo.NoteMask(err, fmt.Sprintf("too many (%d) discharge requests", retry-1), errgo.Any)
+		}
+		if err1 := c.HandleError(req.URL, err); err1 != nil {
+			return nil, errgo.Mask(err1, errgo.Any)
+		}
+		logger.Infof("discharge succeeded; retry %d", retry)
+	}
+}
+
+func (c *Client) do2(req *retryableRequest, getError func(resp *http.Response) error) (*http.Response, error) {
+	if err := req.try(); err != nil {
 		return nil, errgo.Mask(err)
 	}
-	httpResp, err := c.Client.Do(rreq.req)
+	httpResp, err := c.Client.Do(req.req)
 	if err != nil {
 		return nil, errgo.Mask(err, errgo.Any)
 	}
 	err = getError(httpResp)
 	if err == nil {
+		logger.Infof("HTTP response OK (status %v)", httpResp.Status)
 		return httpResp, nil
 	}
 	httpResp.Body.Close()
-
-	if err := c.HandleError(req.URL, err); err != nil {
-		return nil, errgo.Mask(err, errgo.Any)
-	}
-
-	// Try again with our newly acquired discharge macaroons
-	if err := rreq.try(); err != nil {
-		return nil, errgo.Mask(err)
-	}
-	hresp, err := c.Client.Do(rreq.req)
-	if err != nil {
-		return nil, errgo.Mask(err, errgo.Any)
-	}
-	return hresp, nil
+	return nil, errgo.Mask(err, errgo.Any)
 }
 
 // HandleError tries to resolve the given error, which should be a

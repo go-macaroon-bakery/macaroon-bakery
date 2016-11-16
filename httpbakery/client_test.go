@@ -365,6 +365,83 @@ func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
 	c.Assert(called, gc.DeepEquals, [3]int{0, 2, 1})
 }
 
+func (s *ClientSuite) TestTwoDischargesRequired(c *gc.C) {
+	// Sometimes the first discharge won't be enough and we'll
+	// need to discharge another one to get through another
+	// layer of security.
+
+	dischargeCount := 0
+	checker := func(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+		c.Check(cav.Condition, gc.Equals, "is-ok")
+		dischargeCount++
+		return nil, nil
+	}
+	discharger := bakerytest.NewDischarger(nil, httpbakery.ThirdPartyCheckerFunc(checker))
+
+	srv := s.serverRequiringMultipleDischarges(httpbakery.MaxDischargeRetries, discharger)
+	defer srv.Close()
+
+	// Create a client request.
+	req, err := http.NewRequest("GET", srv.URL, nil)
+	c.Assert(err, gc.IsNil)
+
+	resp, err := httpbakery.NewClient().Do(req)
+	c.Assert(err, gc.IsNil)
+	defer resp.Body.Close()
+	c.Assert(resp.StatusCode, gc.Equals, http.StatusOK)
+	data, err := ioutil.ReadAll(resp.Body)
+	c.Assert(err, gc.IsNil)
+	c.Assert(string(data), gc.Equals, "ok")
+	c.Assert(dischargeCount, gc.Equals, httpbakery.MaxDischargeRetries)
+}
+
+func (s *ClientSuite) TestTooManyDischargesRequired(c *gc.C) {
+	checker := func(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+		return nil, nil
+	}
+	discharger := bakerytest.NewDischarger(nil, httpbakery.ThirdPartyCheckerFunc(checker))
+
+	srv := s.serverRequiringMultipleDischarges(httpbakery.MaxDischargeRetries+1, discharger)
+	defer srv.Close()
+
+	// Create a client request.
+	req, err := http.NewRequest("GET", srv.URL, nil)
+	c.Assert(err, gc.IsNil)
+
+	_, err = httpbakery.NewClient().Do(req)
+	c.Assert(err, gc.ErrorMatches, `too many \(3\) discharge requests: foo`)
+}
+
+// multiDischargeServer returns a server that will require multiple
+// discharges when accessing its endpoints. The parameter
+// holds the total number of discharges that will be required.
+func (s *ClientSuite) serverRequiringMultipleDischarges(n int, discharger *bakerytest.Discharger) *httptest.Server {
+	svc := newService("loc", discharger, nil)
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if _, _, err := httpbakery.CheckRequest(context.Background(), svc, req, nil); err == nil {
+			w.Write([]byte("ok"))
+			return
+		}
+		caveats := []checkers.Caveat{{
+			Location:  discharger.Location(),
+			Condition: "is-ok",
+		}}
+		if n--; n > 0 {
+			// We've got more attempts to go, so add a first party caveat that
+			// will cause the macaroon to fail verification and so trigger
+			// another discharge-required error.
+			caveats = append(caveats, checkers.Caveat{
+				Condition: fmt.Sprintf("error %d attempts left", n),
+			})
+		}
+		m, err := svc.NewMacaroon(bakery.LatestVersion, caveats)
+		if err != nil {
+			panic(fmt.Errorf("cannot make new macaroon: %v", err))
+		}
+		httpbakery.WriteDischargeRequiredErrorForRequest(w, m, "", errgo.New("foo"), req)
+	}))
+}
+
 func (s *ClientSuite) TestVersion0Generates407Status(c *gc.C) {
 	m, err := macaroon.New([]byte("root key"), []byte("id"), "location", macaroon.V1)
 	c.Assert(err, gc.IsNil)
@@ -1211,8 +1288,4 @@ func checkIsSomething(ctxt context.Context, _, arg string) error {
 		return fmt.Errorf(`%v doesn't match "something"`, arg)
 	}
 	return nil
-}
-
-func noCaveatChecker(_ *http.Request, cond, arg string) ([]checkers.Caveat, error) {
-	return nil, nil
 }

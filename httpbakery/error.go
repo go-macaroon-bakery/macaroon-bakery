@@ -296,3 +296,11 @@ func RequestVersion(req *http.Request) bakery.Version {
 	}
 	return v
 }
+
+func isDischargeRequiredError(err error) bool {
+	respErr, ok := errgo.Cause(err).(*Error)
+	if !ok {
+		return false
+	}
+	return respErr.Code == ErrDischargeRequired
+}
