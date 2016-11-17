@@ -3,6 +3,7 @@ package bakery
 import (
 	"fmt"
 
+	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2-unstable"
 
@@ -15,10 +16,11 @@ import (
 // with m as the first element, followed by all the discharge macaroons.
 // All the discharge macaroons will be bound to the primary macaroon.
 func DischargeAll(
+	ctxt context.Context,
 	m *macaroon.Macaroon,
 	getDischarge func(cav macaroon.Caveat) (*macaroon.Macaroon, error),
 ) (macaroon.Slice, error) {
-	return DischargeAllWithKey(m, getDischarge, nil)
+	return DischargeAllWithKey(ctxt, m, getDischarge, nil)
 }
 
 // DischargeAllWithKey is like DischargeAll except that the localKey
@@ -31,6 +33,7 @@ func DischargeAll(
 // When localKey is nil, DischargeAllWithKey is exactly the same as
 // DischargeAll.
 func DischargeAllWithKey(
+	ctxt context.Context,
 	m *macaroon.Macaroon,
 	getDischarge func(cav macaroon.Caveat) (*macaroon.Macaroon, error),
 	localKey *KeyPair,
@@ -53,7 +56,7 @@ func DischargeAllWithKey(
 		var dm *macaroon.Macaroon
 		var err error
 		if localKey != nil && cav.Location == "local" {
-			dm, _, err = Discharge(localKey, localDischargeChecker, cav.Id)
+			dm, _, err = Discharge(ctxt, localKey, localDischargeChecker, cav.Id)
 		} else {
 			dm, err = getDischarge(cav)
 		}
@@ -67,7 +70,7 @@ func DischargeAllWithKey(
 	return discharges, nil
 }
 
-var localDischargeChecker = ThirdPartyCheckerFunc(func(info *ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+var localDischargeChecker = ThirdPartyCheckerFunc(func(_ context.Context, info *ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 	if info.Condition != "true" {
 		return nil, checkers.ErrCaveatNotRecognized
 	}

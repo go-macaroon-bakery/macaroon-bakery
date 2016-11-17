@@ -10,6 +10,7 @@ import (
 	"github.com/juju/httprequest"
 	jujutesting "github.com/juju/testing"
 	jc "github.com/juju/testing/checkers"
+	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
 
@@ -25,7 +26,7 @@ type KeyringSuite struct {
 var _ = gc.Suite(&KeyringSuite{})
 
 func (s *KeyringSuite) TestCachePrepopulated(c *gc.C) {
-	cache := bakery.NewThirdPartyLocatorStore()
+	cache := bakery.NewThirdPartyStore()
 	key, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
 	expectInfo := bakery.ThirdPartyInfo{
@@ -34,7 +35,7 @@ func (s *KeyringSuite) TestCachePrepopulated(c *gc.C) {
 	}
 	cache.AddInfo("https://0.1.2.3/", expectInfo)
 	kr := httpbakery.NewThirdPartyLocator(nil, cache)
-	info, err := kr.ThirdPartyInfo("https://0.1.2.3/")
+	info, err := kr.ThirdPartyInfo(context.Background(), "https://0.1.2.3/")
 	c.Assert(err, gc.IsNil)
 	c.Assert(info, jc.DeepEquals, expectInfo)
 }
@@ -48,7 +49,7 @@ func (s *KeyringSuite) TestCacheMiss(c *gc.C) {
 		PublicKey: *d.Service.PublicKey(),
 		Version:   bakery.LatestVersion,
 	}
-	info, err := kr.ThirdPartyInfo(d.Location())
+	info, err := kr.ThirdPartyInfo(context.Background(), d.Location())
 	c.Assert(err, gc.IsNil)
 	c.Assert(info, jc.DeepEquals, expectInfo)
 
@@ -56,7 +57,7 @@ func (s *KeyringSuite) TestCacheMiss(c *gc.C) {
 	// the key is cached.
 	d.Close()
 
-	info, err = kr.ThirdPartyInfo(d.Location())
+	info, err = kr.ThirdPartyInfo(context.Background(), d.Location())
 	c.Assert(err, gc.IsNil)
 	c.Assert(info, jc.DeepEquals, expectInfo)
 }
@@ -73,13 +74,13 @@ func (s *KeyringSuite) TestInsecureURL(c *gc.C) {
 
 	// Check that we are refused because it's an insecure URL.
 	kr := httpbakery.NewThirdPartyLocator(nil, nil)
-	info, err := kr.ThirdPartyInfo(srv.URL)
+	info, err := kr.ThirdPartyInfo(context.Background(), srv.URL)
 	c.Assert(err, gc.ErrorMatches, `untrusted discharge URL "http://.*"`)
 	c.Assert(info, jc.DeepEquals, bakery.ThirdPartyInfo{})
 
 	// Check that it does work when we've enabled AllowInsecure.
 	kr.AllowInsecure()
-	info, err = kr.ThirdPartyInfo(srv.URL)
+	info, err = kr.ThirdPartyInfo(context.Background(), srv.URL)
 	c.Assert(err, gc.IsNil)
 	c.Assert(info, jc.DeepEquals, bakery.ThirdPartyInfo{
 		PublicKey: *d.Service.PublicKey(),
@@ -92,7 +93,7 @@ func (s *KeyringSuite) TestCustomHTTPClient(c *gc.C) {
 		Transport: errorTransport{},
 	}
 	kr := httpbakery.NewThirdPartyLocator(client, nil)
-	info, err := kr.ThirdPartyInfo("https://0.1.2.3/")
+	info, err := kr.ThirdPartyInfo(context.Background(), "https://0.1.2.3/")
 	c.Assert(err, gc.ErrorMatches, `Get https://0.1.2.3/discharge/info: custom round trip error`)
 	c.Assert(info, jc.DeepEquals, bakery.ThirdPartyInfo{})
 }

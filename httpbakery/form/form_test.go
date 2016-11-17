@@ -8,6 +8,7 @@ import (
 	"github.com/juju/httprequest"
 	jujutesting "github.com/juju/testing"
 	"github.com/juju/testing/httptesting"
+	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/juju/environschema.v1"
 	esform "gopkg.in/juju/environschema.v1/form"
@@ -337,8 +338,8 @@ type testLocator struct {
 	locator bakery.ThirdPartyLocator
 }
 
-func (l testLocator) ThirdPartyInfo(loc string) (bakery.ThirdPartyInfo, error) {
-	return l.locator.ThirdPartyInfo(l.loc)
+func (l testLocator) ThirdPartyInfo(ctxt context.Context, loc string) (bakery.ThirdPartyInfo, error) {
+	return l.locator.ThirdPartyInfo(ctxt, l.loc)
 }
 
 type titleTestFiller struct {

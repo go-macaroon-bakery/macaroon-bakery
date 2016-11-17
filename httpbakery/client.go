@@ -188,7 +188,7 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 // The returned macaroon slice will not be stored in the client
 // cookie jar (see SetCookie if you need to do that).
 func (c *Client) DischargeAll(m *macaroon.Macaroon) (macaroon.Slice, error) {
-	return bakery.DischargeAllWithKey(m, c.dischargeAcquirer().AcquireDischarge, c.Key)
+	return bakery.DischargeAllWithKey(context.TODO(), m, c.dischargeAcquirer().AcquireDischarge, c.Key)
 }
 
 func (c *Client) dischargeAcquirer() DischargeAcquirer {
@@ -313,7 +313,7 @@ func (c *Client) HandleError(reqURL *url.URL, err error) error {
 		return errgo.New("no macaroon found in discharge-required response")
 	}
 	mac := respErr.Info.Macaroon
-	macaroons, err := bakery.DischargeAllWithKey(mac, c.dischargeAcquirer().AcquireDischarge, c.Key)
+	macaroons, err := bakery.DischargeAllWithKey(context.TODO(), mac, c.dischargeAcquirer().AcquireDischarge, c.Key)
 	if err != nil {
 		return errgo.Mask(err, errgo.Any)
 	}

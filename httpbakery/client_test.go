@@ -229,7 +229,7 @@ func assertDischargeServerDischargesConditionForVersion(c *gc.C, cond string, ve
 
 	m, err := macaroon.New([]byte("root key"), []byte("id"), "location", version)
 	c.Assert(err, gc.IsNil)
-	err = bakery.AddCaveat(svcKey, discharger, m, checkers.Caveat{
+	err = bakery.AddCaveat(context.TODO(), svcKey, discharger, m, checkers.Caveat{
 		Location:  discharger.Location(),
 		Condition: cond,
 	}, nil)
@@ -302,7 +302,7 @@ func (r closeNotifier) Close() error {
 }
 
 func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
-	locator := bakery.NewThirdPartyLocatorStore()
+	locator := bakery.NewThirdPartyStore()
 
 	var called [3]int
 

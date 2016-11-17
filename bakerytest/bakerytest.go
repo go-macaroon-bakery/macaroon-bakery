@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/juju/httprequest"
+	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
@@ -147,7 +148,7 @@ func (d *Discharger) Location() string {
 }
 
 // PublicKeyForLocation implements bakery.PublicKeyLocator.
-func (d *Discharger) ThirdPartyInfo(loc string) (bakery.ThirdPartyInfo, error) {
+func (d *Discharger) ThirdPartyInfo(ctxt context.Context, loc string) (bakery.ThirdPartyInfo, error) {
 	if loc == d.Location() {
 		return bakery.ThirdPartyInfo{
 			PublicKey: *d.Service.PublicKey(),
@@ -289,7 +290,7 @@ func (d *InteractiveDischarger) wait(w http.ResponseWriter, r *http.Request) {
 	}
 	m, err := d.Service.Discharge(
 		bakery.ThirdPartyCheckerFunc(
-			func(cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+			func(_ context.Context, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 				return cavs, nil
 			},
 		),

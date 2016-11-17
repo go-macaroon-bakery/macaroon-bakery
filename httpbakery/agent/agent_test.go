@@ -38,7 +38,7 @@ func (s *agentSuite) SetUpSuite(c *gc.C) {
 		Bakery: bak,
 	}
 	s.server = s.discharger.Serve()
-	locator := bakery.NewThirdPartyLocatorStore()
+	locator := bakery.NewThirdPartyStore()
 	locator.AddInfo(s.discharger.URL, bakery.ThirdPartyInfo{
 		PublicKey: key.Public,
 		Version:   bakery.LatestVersion,

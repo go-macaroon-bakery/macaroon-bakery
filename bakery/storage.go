@@ -1,7 +1,6 @@
 package bakery
 
 import (
-	"errors"
 	"sync"
 )
 
@@ -23,10 +22,6 @@ type Storage interface {
 	// cycling is over time is advisable.
 	RootKey() (rootKey []byte, id []byte, err error)
 }
-
-// ErrNotFound is returned by Storage.Get implementations
-// to signal that an id has not been found.
-var ErrNotFound = errors.New("item not found")
 
 // NewMemStorage returns an implementation of
 // Storage that generates a single key and always
