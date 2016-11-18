@@ -2,6 +2,7 @@ package bakery
 
 import (
 	"golang.org/x/net/context"
+	"gopkg.in/errgo.v1"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
 )
@@ -41,4 +42,19 @@ type Identity interface {
 	// will be empty if the user was authenticated
 	// directly with the identity provider.
 	Domain() string
+}
+
+// noIdentities defines the null identity provider - it never returns any identities.
+type noIdentities struct{}
+
+// IdentityFromContext implements IdentityClient.IdentityFromContext by
+// never returning a declared identity or any caveats.
+func (noIdentities) IdentityFromContext(ctxt context.Context) (Identity, []checkers.Caveat, error) {
+	return nil, nil, nil
+}
+
+// DeclaredIdentity implements IdentityClient.DeclaredIdentity by
+// always returning an error.
+func (noIdentities) DeclaredIdentity(declared map[string]string) (Identity, error) {
+	return nil, errgo.Newf("no identity declared or possible")
 }

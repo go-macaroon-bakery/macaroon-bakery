@@ -46,10 +46,11 @@ func (s *KeyringSuite) TestCacheMiss(c *gc.C) {
 	kr := httpbakery.NewThirdPartyLocator(nil, nil)
 
 	expectInfo := bakery.ThirdPartyInfo{
-		PublicKey: *d.Service.PublicKey(),
+		PublicKey: d.Key.Public,
 		Version:   bakery.LatestVersion,
 	}
-	info, err := kr.ThirdPartyInfo(context.Background(), d.Location())
+	location := d.Location()
+	info, err := kr.ThirdPartyInfo(context.Background(), location)
 	c.Assert(err, gc.IsNil)
 	c.Assert(info, jc.DeepEquals, expectInfo)
 
@@ -57,7 +58,7 @@ func (s *KeyringSuite) TestCacheMiss(c *gc.C) {
 	// the key is cached.
 	d.Close()
 
-	info, err = kr.ThirdPartyInfo(context.Background(), d.Location())
+	info, err = kr.ThirdPartyInfo(context.Background(), location)
 	c.Assert(err, gc.IsNil)
 	c.Assert(info, jc.DeepEquals, expectInfo)
 }
@@ -83,7 +84,7 @@ func (s *KeyringSuite) TestInsecureURL(c *gc.C) {
 	info, err = kr.ThirdPartyInfo(context.Background(), srv.URL)
 	c.Assert(err, gc.IsNil)
 	c.Assert(info, jc.DeepEquals, bakery.ThirdPartyInfo{
-		PublicKey: *d.Service.PublicKey(),
+		PublicKey: d.Key.Public,
 		Version:   bakery.LatestVersion,
 	})
 }
@@ -105,7 +106,7 @@ func (s *KeyringSuite) TestThirdPartyInfoForLocation(c *gc.C) {
 	info, err := httpbakery.ThirdPartyInfoForLocation(client, d.Location())
 	c.Assert(err, gc.IsNil)
 	expectedInfo := bakery.ThirdPartyInfo{
-		PublicKey: *d.Service.PublicKey(),
+		PublicKey: d.Key.Public,
 		Version:   bakery.LatestVersion,
 	}
 	c.Assert(info, gc.DeepEquals, expectedInfo)

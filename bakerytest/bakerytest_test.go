@@ -6,10 +6,12 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"time"
 
 	"github.com/juju/httprequest"
 	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
+	"gopkg.in/macaroon.v2-unstable"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
@@ -27,26 +29,30 @@ func (s *suite) SetUpTest(c *gc.C) {
 
 var _ = gc.Suite(&suite{})
 
+var ages = time.Now().Add(time.Hour)
+
+var dischargeOp = bakery.Op{"thirdparty", "x"}
+
 func (s *suite) TestDischargerSimple(c *gc.C) {
 	d := bakerytest.NewDischarger(nil, nil)
 	defer d.Close()
 
-	svc, err := bakery.NewService(bakery.NewServiceParams{
+	b := bakery.New(bakery.BakeryParams{
 		Location: "here",
 		Locator:  d,
+		Key:      mustGenerateKey(),
 	})
-	c.Assert(err, gc.IsNil)
-	m, err := svc.NewMacaroon(bakery.LatestVersion, []checkers.Caveat{{
+	m, err := b.Oven.NewMacaroon(context.Background(), macaroon.LatestVersion, ages, []checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
-	}})
+	}}, dischargeOp)
 
 	c.Assert(err, gc.IsNil)
 	ms, err := s.client.DischargeAll(m)
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 2)
 
-	err = svc.Check(context.Background(), ms)
+	_, err = b.Checker.Auth(ms).Allow(context.Background(), dischargeOp)
 	c.Assert(err, gc.IsNil)
 }
 
@@ -69,34 +75,33 @@ func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 	defer d2.Close()
 	locator := bakery.NewThirdPartyStore()
 	locator.AddInfo(d1.Location(), bakery.ThirdPartyInfo{
-		PublicKey: *d1.Service.PublicKey(),
+		PublicKey: d1.Key.Public,
 		Version:   bakery.LatestVersion,
 	})
 	locator.AddInfo(d2.Location(), bakery.ThirdPartyInfo{
-		PublicKey: *d2.Service.PublicKey(),
+		PublicKey: d2.Key.Public,
 		Version:   bakery.LatestVersion,
 	})
 	c.Logf("map: %s", locator)
-	svc, err := bakery.NewService(bakery.NewServiceParams{
+	b := bakery.New(bakery.BakeryParams{
 		Location: "here",
 		Locator:  locator,
+		Key:      mustGenerateKey(),
 	})
-	c.Assert(err, gc.IsNil)
-	m, err := svc.NewMacaroon(bakery.LatestVersion, []checkers.Caveat{{
+	m, err := b.Oven.NewMacaroon(context.Background(), macaroon.LatestVersion, ages, []checkers.Caveat{{
 		Location:  d2.Location(),
 		Condition: "true",
-	}})
-
+	}}, dischargeOp)
 	c.Assert(err, gc.IsNil)
 
 	ms, err := s.client.DischargeAll(m)
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 3)
 
-	err = svc.Check(context.Background(), ms)
+	_, err = b.Checker.Auth(ms).Allow(context.Background(), dischargeOp)
 	c.Assert(err, gc.IsNil)
 
-	err = svc.AddCaveat(m, checkers.Caveat{
+	err = b.Oven.AddCaveat(context.Background(), m, checkers.Caveat{
 		Location:  d2.Location(),
 		Condition: "nope",
 	})
@@ -152,16 +157,16 @@ func (s *suite) TestInteractiveDischarger(c *gc.C) {
 	defer d.Close()
 
 	var r recordingChecker
-	svc, err := bakery.NewService(bakery.NewServiceParams{
+	b := bakery.New(bakery.BakeryParams{
 		Location: "here",
 		Locator:  d,
 		Checker:  &r,
+		Key:      mustGenerateKey(),
 	})
-	c.Assert(err, gc.IsNil)
-	m, err := svc.NewMacaroon(bakery.LatestVersion, []checkers.Caveat{{
+	m, err := b.Oven.NewMacaroon(context.Background(), macaroon.LatestVersion, ages, []checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
-	}})
+	}}, dischargeOp)
 
 	c.Assert(err, gc.IsNil)
 	client := httpbakery.NewClient()
@@ -173,10 +178,12 @@ func (s *suite) TestInteractiveDischarger(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 2)
 
-	err = svc.Check(context.Background(), ms)
+	_, err = b.Checker.Auth(ms).Allow(context.Background(), dischargeOp)
 	c.Assert(err, gc.IsNil)
-	c.Assert(r.caveats, gc.HasLen, 1)
-	c.Assert(r.caveats[0], gc.Equals, "test pass")
+	// First caveat is time-before caveat added by NewMacaroon.
+	// Second is the one added by the discharger above.
+	c.Assert(r.caveats, gc.HasLen, 2)
+	c.Assert(r.caveats[1], gc.Equals, "test pass")
 }
 
 func (s *suite) TestLoginDischargerError(c *gc.C) {
@@ -188,15 +195,15 @@ func (s *suite) TestLoginDischargerError(c *gc.C) {
 	))
 	defer d.Close()
 
-	svc, err := bakery.NewService(bakery.NewServiceParams{
+	b := bakery.New(bakery.BakeryParams{
 		Location: "here",
 		Locator:  d,
+		Key:      mustGenerateKey(),
 	})
-	c.Assert(err, gc.IsNil)
-	m, err := svc.NewMacaroon(bakery.LatestVersion, []checkers.Caveat{{
+	m, err := b.Oven.NewMacaroon(context.Background(), macaroon.LatestVersion, ages, []checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
-	}})
+	}}, dischargeOp)
 
 	c.Assert(err, gc.IsNil)
 	client := httpbakery.NewClient()
@@ -222,15 +229,15 @@ func (s *suite) TestInteractiveDischargerURL(c *gc.C) {
 			d.FinishInteraction(w, r, nil, nil)
 		},
 	))
-	svc, err := bakery.NewService(bakery.NewServiceParams{
+	b := bakery.New(bakery.BakeryParams{
 		Location: "here",
 		Locator:  d,
+		Key:      mustGenerateKey(),
 	})
-	c.Assert(err, gc.IsNil)
-	m, err := svc.NewMacaroon(bakery.LatestVersion, []checkers.Caveat{{
+	m, err := b.Oven.NewMacaroon(context.Background(), macaroon.LatestVersion, ages, []checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
-	}})
+	}}, dischargeOp)
 
 	c.Assert(err, gc.IsNil)
 	client := httpbakery.NewClient()
@@ -242,7 +249,7 @@ func (s *suite) TestInteractiveDischargerURL(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 2)
 
-	err = svc.Check(context.Background(), ms)
+	_, err = b.Checker.Auth(ms).Allow(context.Background(), dischargeOp)
 	c.Assert(err, gc.IsNil)
 }
 
@@ -257,4 +264,12 @@ func (c *recordingChecker) CheckFirstPartyCaveat(ctxt context.Context, caveat st
 
 func (c *recordingChecker) Namespace() *checkers.Namespace {
 	return nil
+}
+
+func mustGenerateKey() *bakery.KeyPair {
+	key, err := bakery.GenerateKey()
+	if err != nil {
+		panic(err)
+	}
+	return key
 }

@@ -32,6 +32,28 @@ var testChecker = func() *checkers.Checker {
 	return c
 }()
 
+// newBakery returns a new Bakery instance using a new
+// key pair, and registers the key with the given locator if provided.
+//
+// It uses testChecker to check first party caveats.
+func newBakery(location string, locator *bakery.ThirdPartyStore) *bakery.Bakery {
+	key := mustGenerateKey()
+	p := bakery.BakeryParams{
+		Key:            key,
+		Checker:        testChecker,
+		Location:       location,
+		IdentityClient: oneIdentity{},
+	}
+	if locator != nil {
+		p.Locator = locator
+		locator.AddInfo(location, bakery.ThirdPartyInfo{
+			PublicKey: key.Public,
+			Version:   bakery.LatestVersion,
+		})
+	}
+	return bakery.New(p)
+}
+
 func noDischarge(c *gc.C) func(macaroon.Caveat) (*macaroon.Macaroon, error) {
 	return func(macaroon.Caveat) (*macaroon.Macaroon, error) {
 		c.Errorf("getDischarge called unexpectedly")
@@ -39,13 +61,18 @@ func noDischarge(c *gc.C) func(macaroon.Caveat) (*macaroon.Macaroon, error) {
 	}
 }
 
-type noIdentities struct{}
+// oneIdentity is an IdentityClient implementation that always
+// returns a single identity from DeclaredIdentity, allowing
+// Allow(LoginOp) to work even when there are no declaration
+// caveats (this is mostly to support the legacy tests which do their
+// own checking of declaration caveats.
+type oneIdentity struct{}
 
-func (noIdentities) IdentityFromContext(ctxt context.Context) (bakery.Identity, []checkers.Caveat, error) {
+func (oneIdentity) IdentityFromContext(ctxt context.Context) (bakery.Identity, []checkers.Caveat, error) {
 	return nil, nil, nil
 }
 
-func (noIdentities) DeclaredIdentity(declared map[string]string) (bakery.Identity, error) {
+func (oneIdentity) DeclaredIdentity(declared map[string]string) (bakery.Identity, error) {
 	return noone{}, nil
 }
 

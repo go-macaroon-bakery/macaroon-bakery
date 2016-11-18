@@ -1,4 +1,4 @@
-package mgostorage_test
+package mgorootkeystore_test
 
 import (
 	"testing"

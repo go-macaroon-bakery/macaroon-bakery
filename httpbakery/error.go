@@ -1,6 +1,7 @@
 package httpbakery
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 
@@ -119,14 +120,14 @@ func ErrorToResponse(err error) (int, interface{}) {
 		switch errorBody.version {
 		case bakery.Version0:
 			status = http.StatusProxyAuthRequired
-		case bakery.Version1, bakery.Version2:
+		case bakery.Version1, bakery.Version2, bakery.Version3:
 			status = http.StatusUnauthorized
 			body = httprequest.CustomHeader{
 				Body:          body,
 				SetHeaderFunc: setAuthenticateHeader,
 			}
 		default:
-			panic("out of range version number")
+			panic(fmt.Sprintf("out of range version number %v", errorBody.version))
 		}
 	}
 	return status, body

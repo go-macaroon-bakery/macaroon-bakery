@@ -579,39 +579,6 @@ func isVerificationError(err error) bool {
 	return ok
 }
 
-// CheckRequest checks that the given http request contains at least one
-// valid macaroon minted by the given service, using checker to check
-// any first party caveats. It returns an error with a
-// *bakery.VerificationError cause if the macaroon verification failed.
-//
-// It assumes that checker implements the HTTP and standard caveat
-// checkers.
-//
-// The assert map holds any required attributes of "declared" attributes,
-// overriding any inferences made from the macaroons themselves.
-// It has a similar effect to adding a checkers.DeclaredCaveat
-// for each key and value, but the error message will be more
-// useful.
-//
-// It adds all the standard caveat checkers to the given checker.
-//
-// It returns any attributes declared in the successfully validated request
-// and the macaroon that was successfully checked.
-func CheckRequest(ctxt context.Context, svc *bakery.Service, req *http.Request, assert map[string]string) (map[string]string, macaroon.Slice, error) {
-	mss := RequestMacaroons(req)
-	if len(mss) == 0 {
-		return nil, nil, &bakery.VerificationError{
-			Reason: errgo.Newf("no macaroon cookies in request"),
-		}
-	}
-	ctxt = ContextWithRequest(ctxt, req)
-	attrs, ms, err := svc.CheckAny(ctxt, mss, assert)
-	if err != nil {
-		return nil, nil, errgo.Mask(err, isVerificationError)
-	}
-	return attrs, ms, nil
-}
-
 type cookieLogger struct {
 	http.CookieJar
 }

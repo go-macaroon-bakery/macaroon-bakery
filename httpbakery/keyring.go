@@ -11,6 +11,8 @@ import (
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 )
 
+var _ bakery.ThirdPartyLocator = (*ThirdPartyLocator)(nil)
+
 // NewThirdPartyLocator returns a new third party
 // locator that uses the given client to find
 // information about third parties and
@@ -40,8 +42,6 @@ type ThirdPartyLocator struct {
 	allowInsecure bool
 	cache         *bakery.ThirdPartyStore
 }
-
-var _ bakery.ThirdPartyLocator = (*ThirdPartyLocator)(nil)
 
 // AllowInsecure allows insecure URLs. This can be useful
 // for testing purposes.

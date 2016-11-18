@@ -1,4 +1,4 @@
-package mgostorage
+package mgorootkeystore
 
 var (
 	TimeNow             = &timeNow

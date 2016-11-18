@@ -41,7 +41,7 @@ func (s *checkerSuite) TestAuthorizeWithOpenAccessAndNoMacaroons(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
 	auth := opAuthorizer{readOp("something"): {Everyone}}
-	ts := newCheckerService(auth, ids, locator)
+	ts := newService(auth, ids, locator)
 	client := newClient(locator)
 
 	authInfo, err := client.do(testContext, ts, readOp("something"))
@@ -56,7 +56,7 @@ func (s *checkerSuite) TestAuthorizationDenied(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
 	auth := bakery.ClosedAuthorizer
-	ts := newCheckerService(auth, ids, locator)
+	ts := newService(auth, ids, locator)
 	client := newClient(locator)
 
 	authInfo, err := client.do(asUser("bob"), ts, readOp("something"))
@@ -68,7 +68,7 @@ func (s *checkerSuite) TestAuthorizeWithAuthenticationRequired(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
 	auth := opAuthorizer{readOp("something"): {"bob"}}
-	ts := newCheckerService(auth, ids, locator)
+	ts := newService(auth, ids, locator)
 	client := newClient(locator)
 
 	authInfo, err := client.do(asUser("bob"), ts, readOp("something"))
@@ -91,7 +91,7 @@ func (s *checkerSuite) TestAuthorizeMultipleOps(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
 	auth := opAuthorizer{readOp("something"): {"bob"}, readOp("otherthing"): {"bob"}}
-	ts := newCheckerService(auth, ids, locator)
+	ts := newService(auth, ids, locator)
 	client := newClient(locator)
 
 	_, err := client.do(asUser("bob"), ts, readOp("something"), readOp("otherthing"))
@@ -107,7 +107,7 @@ func (s *checkerSuite) TestCapability(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
 	auth := opAuthorizer{readOp("something"): {"bob"}}
-	ts := newCheckerService(auth, ids, locator)
+	ts := newService(auth, ids, locator)
 	client := newClient(locator)
 
 	m, err := client.dischargedCapability(asUser("bob"), ts, readOp("something"))
@@ -127,7 +127,7 @@ func (s *checkerSuite) TestCapabilityMultipleEntities(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
 	auth := opAuthorizer{readOp("e1"): {"bob"}, readOp("e2"): {"bob"}, readOp("e3"): {"bob"}}
-	ts := newCheckerService(auth, ids, locator)
+	ts := newService(auth, ids, locator)
 	client := newClient(locator)
 
 	m, err := client.dischargedCapability(asUser("bob"), ts, readOp("e1"), readOp("e2"), readOp("e3"))
@@ -154,7 +154,7 @@ func (s *checkerSuite) TestMultipleCapabilities(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
 	auth := opAuthorizer{readOp("e1"): {"alice"}, readOp("e2"): {"bob"}}
-	ts := newCheckerService(auth, ids, locator)
+	ts := newService(auth, ids, locator)
 
 	// Acquire two capabilities as different users and check
 	// that we can combine them together to do both operations
@@ -186,7 +186,7 @@ func (s *checkerSuite) TestCombineCapabilities(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
 	auth := opAuthorizer{readOp("e1"): {"alice"}, readOp("e2"): {"bob"}, readOp("e3"): {"bob", "alice"}}
-	ts := newCheckerService(auth, ids, locator)
+	ts := newService(auth, ids, locator)
 
 	// Acquire two capabilities as different users and check
 	// that we can combine them together into a single capability
@@ -207,7 +207,7 @@ func (s *checkerSuite) TestPartiallyAuthorizedRequest(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
 	auth := opAuthorizer{readOp("e1"): {"alice"}, readOp("e2"): {"bob"}}
-	ts := newCheckerService(auth, ids, locator)
+	ts := newService(auth, ids, locator)
 
 	// Acquire a capability for e1 but rely on authentication to
 	// authorize e2.
@@ -236,11 +236,11 @@ func (s *checkerSuite) TestAuthWithThirdPartyCaveats(c *gc.C) {
 		}
 		return false, nil, nil
 	})
-	ts := newCheckerService(auth, ids, locator)
+	ts := newService(auth, ids, locator)
 
 	locator["other third party"] = &discharger{
 		key: mustGenerateKey(),
-		checker: bakery.ThirdPartyCheckerFunc(func(ctxt context.Context, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+		checker: bakery.ThirdPartyCaveatCheckerFunc(func(ctxt context.Context, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 			if info.Condition != "question" {
 				return nil, errgo.Newf("third party condition not recognized")
 			}
@@ -270,7 +270,7 @@ func (s *checkerSuite) TestCapabilityCombinesFirstPartyCaveats(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
 	auth := opAuthorizer{readOp("e1"): {"alice"}, readOp("e2"): {"bob"}}
-	ts := newCheckerService(auth, ids, locator)
+	ts := newService(auth, ids, locator)
 
 	// Acquire two capabilities as different users, add some first party caveats
 	//
@@ -347,7 +347,7 @@ func (s *checkerSuite) TestFirstPartyCaveatSquashing(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
 	auth := opAuthorizer{readOp("e1"): {"alice"}, readOp("e2"): {"alice"}}
-	ts := newCheckerService(auth, ids, locator)
+	ts := newService(auth, ids, locator)
 	ns := ts.checker.Namespace()
 	for i, test := range firstPartyCaveatSquashingTests {
 		c.Logf("test %d: %v", i, test.about)
@@ -379,7 +379,7 @@ func (s *checkerSuite) TestLoginOnly(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
 	auth := bakery.ClosedAuthorizer
-	ts := newCheckerService(auth, ids, locator)
+	ts := newService(auth, ids, locator)
 	authInfo, err := newClient(locator).do(asUser("bob"), ts, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
 	c.Assert(authInfo.Identity, gc.Equals, simpleIdentity("bob"))
@@ -389,7 +389,7 @@ func (s *checkerSuite) TestAllowAny(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
 	auth := opAuthorizer{readOp("e1"): {"alice"}, readOp("e2"): {"bob"}}
-	ts := newCheckerService(auth, ids, locator)
+	ts := newService(auth, ids, locator)
 
 	// Acquire a capability for e1 but rely on authentication to
 	// authorize e2.
@@ -423,7 +423,7 @@ func (s *checkerSuite) TestAuthWithIdentityFromContext(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := basicAuthIdService{}
 	auth := opAuthorizer{readOp("e1"): {"sherlock"}, readOp("e2"): {"bob"}}
-	ts := newCheckerService(auth, ids, locator)
+	ts := newService(auth, ids, locator)
 
 	// Check that we can perform the ops with basic auth in the
 	// context.
@@ -437,7 +437,7 @@ func (s *checkerSuite) TestOperationAllowCaveat(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
 	auth := opAuthorizer{readOp("e1"): {"bob"}, writeOp("e1"): {"bob"}, readOp("e2"): {"bob"}}
-	ts := newCheckerService(auth, ids, locator)
+	ts := newService(auth, ids, locator)
 	client := newClient(locator)
 
 	m, err := client.capability(asUser("bob"), ts, readOp("e1"), writeOp("e1"), readOp("e2"))
@@ -462,7 +462,7 @@ func (s *checkerSuite) TestOperationDenyCaveat(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
 	auth := opAuthorizer{readOp("e1"): {"bob"}, writeOp("e1"): {"bob"}, readOp("e2"): {"bob"}}
-	ts := newCheckerService(auth, ids, locator)
+	ts := newService(auth, ids, locator)
 	client := newClient(locator)
 
 	m, err := client.capability(asUser("bob"), ts, readOp("e1"), writeOp("e1"), readOp("e2"))
@@ -487,7 +487,7 @@ func (s *checkerSuite) TestDuplicateLoginMacaroons(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
 	auth := bakery.ClosedAuthorizer
-	ts := newCheckerService(auth, ids, locator)
+	ts := newService(auth, ids, locator)
 
 	// Acquire a login macaroon for bob.
 	client1 := newClient(locator)
@@ -727,7 +727,7 @@ type service struct {
 	store   *macaroonStore
 }
 
-func newCheckerService(auth bakery.Authorizer, idm bakery.IdentityClient, locator bakery.ThirdPartyLocator) *service {
+func newService(auth bakery.Authorizer, idm bakery.IdentityClient, locator bakery.ThirdPartyLocator) *service {
 	store := newMacaroonStore(mustGenerateKey(), locator)
 	return &service{
 		checker: bakery.NewChecker(bakery.CheckerParams{
@@ -795,7 +795,7 @@ func (svc *service) maybeDischargeRequiredError(err error) error {
 type discharger struct {
 	key     *bakery.KeyPair
 	locator bakery.ThirdPartyLocator
-	checker bakery.ThirdPartyChecker
+	checker bakery.ThirdPartyCaveatChecker
 }
 
 type dischargeRequiredError struct {

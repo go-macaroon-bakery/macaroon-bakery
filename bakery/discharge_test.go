@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/juju/testing"
-	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/macaroon.v2-unstable"
 
@@ -71,39 +70,37 @@ func (*DischargeSuite) TestDischargeAllManyDischarges(c *gc.C) {
 }
 
 func (*DischargeSuite) TestDischargeAllLocalDischarge(c *gc.C) {
-	svc, err := bakery.NewService(bakery.NewServiceParams{})
-	c.Assert(err, gc.IsNil)
+	oc := newBakery("ts", nil)
 
 	clientKey, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
 
-	m, err := svc.NewMacaroon(bakery.LatestVersion, []checkers.Caveat{
+	m, err := oc.Oven.NewMacaroon(testContext, macaroon.LatestVersion, ages, []checkers.Caveat{
 		bakery.LocalThirdPartyCaveat(&clientKey.Public, bakery.LatestVersion),
-	})
+	}, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
 
 	ms, err := bakery.DischargeAllWithKey(testContext, m, noDischarge(c), clientKey)
 	c.Assert(err, gc.IsNil)
 
-	err = svc.Check(context.Background(), ms)
+	_, err = oc.Checker.Auth(ms).Allow(testContext, loginOps...)
 	c.Assert(err, gc.IsNil)
 }
 
 func (*DischargeSuite) TestDischargeAllLocalDischargeVersion1(c *gc.C) {
-	svc, err := bakery.NewService(bakery.NewServiceParams{})
-	c.Assert(err, gc.IsNil)
+	oc := newBakery("ts", nil)
 
 	clientKey, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
 
-	m, err := svc.NewMacaroon(bakery.Version1, []checkers.Caveat{
+	m, err := oc.Oven.NewMacaroon(testContext, macaroon.V1, ages, []checkers.Caveat{
 		bakery.LocalThirdPartyCaveat(&clientKey.Public, bakery.Version1),
-	})
+	}, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
 
 	ms, err := bakery.DischargeAllWithKey(testContext, m, noDischarge(c), clientKey)
 	c.Assert(err, gc.IsNil)
 
-	err = svc.Check(context.Background(), ms)
+	_, err = oc.Checker.Auth(ms).Allow(testContext, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
 }
