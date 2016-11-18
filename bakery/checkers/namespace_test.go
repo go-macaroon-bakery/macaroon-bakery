@@ -66,6 +66,20 @@ func (*NamespaceSuite) TestRegister(c *gc.C) {
 	c.Assert(ok, gc.Equals, true)
 }
 
+func (*NamespaceSuite) TestRegisterBadURI(c *gc.C) {
+	ns := checkers.NewNamespace(nil)
+	c.Assert(func() {
+		ns.Register("", "x")
+	}, gc.PanicMatches, `cannot register invalid URI "" \(prefix "x"\)`)
+}
+
+func (*NamespaceSuite) TestRegisterBadPrefix(c *gc.C) {
+	ns := checkers.NewNamespace(nil)
+	c.Assert(func() {
+		ns.Register("std", "x:1")
+	}, gc.PanicMatches, `cannot register invalid prefix "x:1" for URI "std"`)
+}
+
 var resolveCaveatTests = []struct {
 	about  string
 	ns     map[string]string
@@ -120,5 +134,158 @@ func (*NamespaceSuite) TestResolveCaveatWithNamespace(c *gc.C) {
 		c.Logf("test %d: %s", i, test.about)
 		ns := checkers.NewNamespace(test.ns)
 		c.Assert(ns.ResolveCaveat(test.caveat), jc.DeepEquals, test.expect)
+	}
+}
+
+var namespaceMarshalTests = []struct {
+	about  string
+	ns     map[string]string
+	expect string
+}{{
+	about: "empty namespace",
+}, {
+	about: "standard namespace",
+	ns: map[string]string{
+		"std": "",
+	},
+	expect: "std:",
+}, {
+	about: "several elements",
+	ns: map[string]string{
+		"std":              "",
+		"http://blah.blah": "blah",
+		"one":              "two",
+		"foo.com/x.v0.1":   "z",
+	},
+	expect: "foo.com/x.v0.1:z http://blah.blah:blah one:two std:",
+}, {
+	about: "sort by URI not by field",
+	ns: map[string]string{
+		"a":  "one",
+		"a1": "two", // Note that '1' < ':'
+	},
+	expect: "a:one a1:two",
+}}
+
+func (*NamespaceSuite) TestMarshal(c *gc.C) {
+	for i, test := range namespaceMarshalTests {
+		c.Logf("test %d: %v", i, test.about)
+		ns := checkers.NewNamespace(test.ns)
+		data, err := ns.MarshalText()
+		c.Assert(err, gc.Equals, nil)
+		c.Assert(string(data), gc.Equals, test.expect)
+		c.Assert(ns.String(), gc.Equals, test.expect)
+
+		// Check that it can be unmarshaled to the same thing:
+		var ns1 checkers.Namespace
+		err = ns1.UnmarshalText(data)
+		c.Assert(err, gc.Equals, nil)
+		c.Assert(&ns1, jc.DeepEquals, ns)
+	}
+}
+
+var namespaceUnmarshalTests = []struct {
+	about       string
+	text        string
+	expect      map[string]string
+	expectError string
+}{{
+	about: "empty text",
+}, {
+	about: "fields with extra space",
+	text:  "   x:y \t\nz:\r",
+	expect: map[string]string{
+		"x": "y",
+		"z": "",
+	},
+}, {
+	about:       "field without colon",
+	text:        "foo:x bar baz:g",
+	expectError: `no colon in namespace field "bar"`,
+}, {
+	about:       "invalid URI",
+	text:        "foo\xff:a",
+	expectError: `invalid URI "foo\\xff" in namespace field "foo\\xff:a"`,
+}, {
+	about:       "empty URI",
+	text:        "blah:x :b",
+	expectError: `invalid URI "" in namespace field ":b"`,
+}, {
+	about:       "invalid prefix",
+	text:        "p:\xff",
+	expectError: `invalid prefix "\\xff" in namespace field "p:\\xff"`,
+}, {
+	about:       "duplicate URI",
+	text:        "std: std:p",
+	expectError: `duplicate URI "std" in namespace "std: std:p"`,
+}}
+
+func (*NamespaceSuite) TestUnmarshal(c *gc.C) {
+	for i, test := range namespaceUnmarshalTests {
+		c.Logf("test %d: %v", i, test.about)
+		var ns checkers.Namespace
+		err := ns.UnmarshalText([]byte(test.text))
+		if test.expectError != "" {
+			c.Assert(err, gc.ErrorMatches, test.expectError)
+		} else {
+			c.Assert(err, gc.Equals, nil)
+			c.Assert(&ns, jc.DeepEquals, checkers.NewNamespace(test.expect))
+		}
+	}
+}
+
+func (*NamespaceSuite) TestMarshalNil(c *gc.C) {
+	var ns *checkers.Namespace
+	data, err := ns.MarshalText()
+	c.Assert(err, gc.Equals, nil)
+	c.Assert(data, gc.HasLen, 0)
+}
+
+var validTests = []struct {
+	about  string
+	test   func(string) bool
+	s      string
+	expect bool
+}{{
+	about:  "URI with schema",
+	test:   checkers.IsValidSchemaURI,
+	s:      "http://foo.com",
+	expect: true,
+}, {
+	about: "URI with space",
+	test:  checkers.IsValidSchemaURI,
+	s:     "a\rb",
+}, {
+	about: "URI with unicode space",
+	test:  checkers.IsValidSchemaURI,
+	s:     "x\u2003y",
+}, {
+	about: "empty URI",
+	test:  checkers.IsValidSchemaURI,
+}, {
+	about: "URI with invalid UTF-8",
+	test:  checkers.IsValidSchemaURI,
+	s:     "\xff",
+}, {
+	about: "prefix with colon",
+	test:  checkers.IsValidPrefix,
+	s:     "x:y",
+}, {
+	about: "prefix with space",
+	test:  checkers.IsValidPrefix,
+	s:     "x y",
+}, {
+	about: "prefix with unicode space",
+	test:  checkers.IsValidPrefix,
+	s:     "\u3000",
+}, {
+	about:  "empty prefix",
+	test:   checkers.IsValidPrefix,
+	expect: true,
+}}
+
+func (*NamespaceSuite) TestValid(c *gc.C) {
+	for i, test := range validTests {
+		c.Check(test.test(test.s), gc.Equals, test.expect, gc.Commentf("test %d: %s", i, test.about))
 	}
 }
