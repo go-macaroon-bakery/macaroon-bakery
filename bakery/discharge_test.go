@@ -28,7 +28,7 @@ func (*DischargeSuite) TestDischargeAllNoDischarges(c *gc.C) {
 	rootKey := []byte("root key")
 	m, err := macaroon.New(rootKey, []byte("id0"), "loc0", macaroonCurrentVersion)
 	c.Assert(err, gc.IsNil)
-	ms, err := bakery.DischargeAll(m, noDischarge(c))
+	ms, err := bakery.DischargeAll(testContext, m, noDischarge(c))
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 1)
 	c.Assert(ms[0], gc.Equals, m)
@@ -62,7 +62,7 @@ func (*DischargeSuite) TestDischargeAllManyDischarges(c *gc.C) {
 		addCaveats(m)
 		return m, nil
 	}
-	ms, err := bakery.DischargeAll(m0, getDischarge)
+	ms, err := bakery.DischargeAll(testContext, m0, getDischarge)
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 41)
 
@@ -82,7 +82,7 @@ func (*DischargeSuite) TestDischargeAllLocalDischarge(c *gc.C) {
 	})
 	c.Assert(err, gc.IsNil)
 
-	ms, err := bakery.DischargeAllWithKey(m, noDischarge(c), clientKey)
+	ms, err := bakery.DischargeAllWithKey(testContext, m, noDischarge(c), clientKey)
 	c.Assert(err, gc.IsNil)
 
 	err = svc.Check(context.Background(), ms)
@@ -101,16 +101,9 @@ func (*DischargeSuite) TestDischargeAllLocalDischargeVersion1(c *gc.C) {
 	})
 	c.Assert(err, gc.IsNil)
 
-	ms, err := bakery.DischargeAllWithKey(m, noDischarge(c), clientKey)
+	ms, err := bakery.DischargeAllWithKey(testContext, m, noDischarge(c), clientKey)
 	c.Assert(err, gc.IsNil)
 
 	err = svc.Check(context.Background(), ms)
 	c.Assert(err, gc.IsNil)
-}
-
-func noDischarge(c *gc.C) func(macaroon.Caveat) (*macaroon.Macaroon, error) {
-	return func(macaroon.Caveat) (*macaroon.Macaroon, error) {
-		c.Errorf("getDischarge called unexpectedly")
-		return nil, fmt.Errorf("nothing")
-	}
 }

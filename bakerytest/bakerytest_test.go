@@ -67,7 +67,7 @@ func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 	}
 	d2 := bakerytest.NewDischarger(d1, bakerytest.ConditionParser(d2checker))
 	defer d2.Close()
-	locator := bakery.NewThirdPartyLocatorStore()
+	locator := bakery.NewThirdPartyStore()
 	locator.AddInfo(d1.Location(), bakery.ThirdPartyInfo{
 		PublicKey: *d1.Service.PublicKey(),
 		Version:   bakery.LatestVersion,

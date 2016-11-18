@@ -9,6 +9,7 @@ import (
 
 	"github.com/juju/httprequest"
 	"github.com/julienschmidt/httprouter"
+	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2-unstable"
 
@@ -133,7 +134,7 @@ func NewDischarger(p DischargerParams) *Discharger {
 
 type emptyLocator struct{}
 
-func (emptyLocator) ThirdPartyInfo(loc string) (bakery.ThirdPartyInfo, error) {
+func (emptyLocator) ThirdPartyInfo(ctxt context.Context, loc string) (bakery.ThirdPartyInfo, error) {
 	return bakery.ThirdPartyInfo{}, bakery.ErrNotFound
 }
 
@@ -205,8 +206,8 @@ func (h dischargeHandler) Discharge(p httprequest.Params, r *dischargeRequest) (
 	} else {
 		id = []byte(r.Id)
 	}
-	m, caveats, err := bakery.Discharge(h.discharger.p.Key, bakery.ThirdPartyCheckerFunc(
-		func(cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+	m, caveats, err := bakery.Discharge(context.TODO(), h.discharger.p.Key, bakery.ThirdPartyCheckerFunc(
+		func(_ context.Context, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 			return h.discharger.p.Checker.CheckThirdPartyCaveat(p.Request, cav)
 		},
 	), id)
@@ -214,7 +215,7 @@ func (h dischargeHandler) Discharge(p httprequest.Params, r *dischargeRequest) (
 		return nil, errgo.NoteMask(err, "cannot discharge", errgo.Any)
 	}
 	for _, cav := range caveats {
-		if err := bakery.AddCaveat(h.discharger.p.Key, h.discharger.p.Locator, m, cav, dischargeNamespace); err != nil {
+		if err := bakery.AddCaveat(context.TODO(), h.discharger.p.Key, h.discharger.p.Locator, m, cav, dischargeNamespace); err != nil {
 			return nil, errgo.Mask(err)
 		}
 	}
