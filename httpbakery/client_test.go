@@ -37,27 +37,30 @@ var _ = gc.Suite(&ClientSuite{})
 
 var macaroonCurrentVersion = bakery.MacaroonVersion(bakery.LatestVersion)
 
+var testOp = bakery.Op{"test", "test"}
+var ages = time.Now().Add(24 * time.Hour)
+
 // TestSingleServiceFirstParty creates a single service
 // with a macaroon with one first party caveat.
 // It creates a request with this macaroon and checks that the service
 // can verify this macaroon as valid.
 func (s *ClientSuite) TestSingleServiceFirstParty(c *gc.C) {
 	// Create a target service.
-	svc := newService("loc", nil, nil)
+	b := newBakery("loc", nil, nil)
 	// No discharge required, so pass "unknown" for the third party
 	// caveat discharger location so we know that we don't try
 	// to discharge the location.
 	ts := httptest.NewServer(serverHandler(serverHandlerParams{
-		service:      svc,
+		bakery:       b,
 		authLocation: "unknown",
 	}))
 	defer ts.Close()
 
 	// Mint a macaroon for the target service.
-	serverMacaroon, err := svc.NewMacaroon(bakery.LatestVersion, nil)
+	serverMacaroon, err := b.Oven.NewMacaroon(context.Background(), macaroon.LatestVersion, ages, nil, testOp)
 	c.Assert(err, gc.IsNil)
 	c.Assert(serverMacaroon.Location(), gc.Equals, "loc")
-	err = svc.AddCaveat(serverMacaroon, checkers.Caveat{
+	err = b.Oven.AddCaveat(context.Background(), serverMacaroon, checkers.Caveat{
 		Condition: "is something",
 	})
 	c.Assert(err, gc.IsNil)
@@ -77,21 +80,21 @@ func (s *ClientSuite) TestSingleServiceFirstParty(c *gc.C) {
 
 func (s *ClientSuite) TestSingleServiceFirstPartyWithHeader(c *gc.C) {
 	// Create a target service.
-	svc := newService("loc", nil, nil)
+	b := newBakery("loc", nil, nil)
 	// No discharge required, so pass "unknown" for the third party
 	// caveat discharger location so we know that we don't try
 	// to discharge the location.
 	ts := httptest.NewServer(serverHandler(serverHandlerParams{
-		service:      svc,
+		bakery:       b,
 		authLocation: "unknown",
 	}))
 	defer ts.Close()
 
 	// Mint a macaroon for the target service.
-	serverMacaroon, err := svc.NewMacaroon(bakery.LatestVersion, nil)
+	serverMacaroon, err := b.Oven.NewMacaroon(context.Background(), macaroon.LatestVersion, ages, nil, testOp)
 	c.Assert(err, gc.IsNil)
 	c.Assert(serverMacaroon.Location(), gc.Equals, "loc")
-	err = svc.AddCaveat(serverMacaroon, checkers.Caveat{
+	err = b.Oven.AddCaveat(context.Background(), serverMacaroon, checkers.Caveat{
 		Condition: "is something",
 	})
 	c.Assert(err, gc.IsNil)
@@ -119,10 +122,10 @@ func (s *ClientSuite) TestRepeatedRequestWithBody(c *gc.C) {
 	defer d.Close()
 
 	// Create a target service.
-	svc := newService("loc", d, nil)
+	b := newBakery("loc", d, nil)
 
 	ts := httptest.NewServer(serverHandler(serverHandlerParams{
-		service:        svc,
+		bakery:         b,
 		authLocation:   d.Location(),
 		alwaysReadBody: true,
 	}))
@@ -156,10 +159,10 @@ func (s ClientSuite) TestWithLargeBody(c *gc.C) {
 	defer d.Close()
 
 	// Create a target service.
-	svc := newService("loc", d, nil)
+	b := newBakery("loc", d, nil)
 
 	ts := httptest.NewServer(serverHandler(serverHandlerParams{
-		service:      svc,
+		bakery:       b,
 		authLocation: d.Location(),
 	}))
 	defer ts.Close()
@@ -222,14 +225,14 @@ func assertDischargeServerDischargesConditionForVersion(c *gc.C, cond string, ve
 		c.Check(cav.Condition, gc.Equals, cond)
 		return nil, nil
 	}
-	discharger := bakerytest.NewDischarger(nil, httpbakery.ThirdPartyCheckerFunc(checker))
+	discharger := bakerytest.NewDischarger(nil, httpbakery.ThirdPartyCaveatCheckerFunc(checker))
 
-	svcKey, err := bakery.GenerateKey()
+	bKey, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
 
 	m, err := macaroon.New([]byte("root key"), []byte("id"), "location", version)
 	c.Assert(err, gc.IsNil)
-	err = bakery.AddCaveat(context.TODO(), svcKey, discharger, m, checkers.Caveat{
+	err = bakery.AddCaveat(context.TODO(), bKey, discharger, m, checkers.Caveat{
 		Location:  discharger.Location(),
 		Condition: cond,
 	}, nil)
@@ -309,8 +312,8 @@ func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
 	// create the services from leaf discharger to primary
 	// service so that each one can know the location
 	// to discharge at.
-	dsvc1 := newService("loc", locator, nil)
-	key2, h2 := newHTTPDischarger(dsvc1, httpbakery.ThirdPartyCheckerFunc(func(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+	db1 := newBakery("loc", locator, nil)
+	key2, h2 := newHTTPDischarger(db1, httpbakery.ThirdPartyCaveatCheckerFunc(func(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 		called[2]++
 		if cav.Condition != "is-ok" {
 			return nil, fmt.Errorf("unrecognized caveat at srv2")
@@ -320,17 +323,17 @@ func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
 	srv2 := httptest.NewServer(h2)
 	defer srv2.Close()
 	locator.AddInfo(srv2.URL, bakery.ThirdPartyInfo{
-		PublicKey: *key2,
+		PublicKey: key2,
 		Version:   bakery.LatestVersion,
 	})
 
-	dsvc2 := newService("loc", locator, nil)
-	key1, h1 := newHTTPDischarger(dsvc2, httpbakery.ThirdPartyCheckerFunc(func(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+	db2 := newBakery("loc", locator, nil)
+	key1, h1 := newHTTPDischarger(db2, httpbakery.ThirdPartyCaveatCheckerFunc(func(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 		called[1]++
-		if _, _, err := httpbakery.CheckRequest(context.Background(), dsvc2, req, nil); err != nil {
+		if _, err := db2.Checker.Auth(httpbakery.RequestMacaroons(req)...).Allow(context.Background(), testOp); err != nil {
 			c.Logf("returning discharge required error")
 			return nil, newDischargeRequiredError(serverHandlerParams{
-				service:      dsvc2,
+				bakery:       db2,
 				authLocation: srv2.URL,
 			}, err, req)
 		}
@@ -342,13 +345,13 @@ func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
 	srv1 := httptest.NewServer(h1)
 	defer srv1.Close()
 	locator.AddInfo(srv1.URL, bakery.ThirdPartyInfo{
-		PublicKey: *key1,
+		PublicKey: key1,
 		Version:   bakery.LatestVersion,
 	})
 
-	svc0 := newService("loc", locator, nil)
+	b0 := newBakery("loc", locator, nil)
 	srv0 := httptest.NewServer(serverHandler(serverHandlerParams{
-		service:      svc0,
+		bakery:       b0,
 		authLocation: srv1.URL,
 	}))
 	defer srv0.Close()
@@ -376,7 +379,7 @@ func (s *ClientSuite) TestTwoDischargesRequired(c *gc.C) {
 		dischargeCount++
 		return nil, nil
 	}
-	discharger := bakerytest.NewDischarger(nil, httpbakery.ThirdPartyCheckerFunc(checker))
+	discharger := bakerytest.NewDischarger(nil, httpbakery.ThirdPartyCaveatCheckerFunc(checker))
 
 	srv := s.serverRequiringMultipleDischarges(httpbakery.MaxDischargeRetries, discharger)
 	defer srv.Close()
@@ -399,7 +402,7 @@ func (s *ClientSuite) TestTooManyDischargesRequired(c *gc.C) {
 	checker := func(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 		return nil, nil
 	}
-	discharger := bakerytest.NewDischarger(nil, httpbakery.ThirdPartyCheckerFunc(checker))
+	discharger := bakerytest.NewDischarger(nil, httpbakery.ThirdPartyCaveatCheckerFunc(checker))
 
 	srv := s.serverRequiringMultipleDischarges(httpbakery.MaxDischargeRetries+1, discharger)
 	defer srv.Close()
@@ -416,9 +419,9 @@ func (s *ClientSuite) TestTooManyDischargesRequired(c *gc.C) {
 // discharges when accessing its endpoints. The parameter
 // holds the total number of discharges that will be required.
 func (s *ClientSuite) serverRequiringMultipleDischarges(n int, discharger *bakerytest.Discharger) *httptest.Server {
-	svc := newService("loc", discharger, nil)
+	b := newBakery("loc", discharger, nil)
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if _, _, err := httpbakery.CheckRequest(context.Background(), svc, req, nil); err == nil {
+		if _, err := b.Checker.Auth(httpbakery.RequestMacaroons(req)...).Allow(context.TODO(), testOp); err == nil {
 			w.Write([]byte("ok"))
 			return
 		}
@@ -434,7 +437,7 @@ func (s *ClientSuite) serverRequiringMultipleDischarges(n int, discharger *baker
 				Condition: fmt.Sprintf("error %d attempts left", n),
 			})
 		}
-		m, err := svc.NewMacaroon(bakery.LatestVersion, caveats)
+		m, err := b.Oven.NewMacaroon(context.TODO(), macaroon.LatestVersion, ages, caveats, testOp)
 		if err != nil {
 			panic(fmt.Errorf("cannot make new macaroon: %v", err))
 		}
@@ -471,11 +474,15 @@ func (s *ClientSuite) TestVersion1Generates401Status(c *gc.C) {
 	c.Assert(resp.Header.Get("WWW-Authenticate"), gc.Equals, "Macaroon")
 }
 
-func newHTTPDischarger(svc *bakery.Service, checker httpbakery.ThirdPartyChecker) (*bakery.PublicKey, http.Handler) {
+func newHTTPDischarger(b *bakery.Bakery, checker httpbakery.ThirdPartyCaveatChecker) (bakery.PublicKey, http.Handler) {
 	mux := http.NewServeMux()
-	d := httpbakery.NewDischargerFromService(svc, checker)
+
+	d := httpbakery.NewDischarger(httpbakery.DischargerParams{
+		Checker: checker,
+		Key:     b.Oven.Key(),
+	})
 	d.AddMuxHandlers(mux, "/")
-	return svc.PublicKey(), mux
+	return b.Oven.Key().Public, mux
 }
 
 func (s *ClientSuite) TestDischargeAcquirer(c *gc.C) {
@@ -544,7 +551,7 @@ func (s *ClientSuite) TestMacaroonCookieName(c *gc.C) {
 		return nil
 	})
 
-	svc := newService("loc", nil, checker)
+	b := newBakery("loc", nil, checker)
 
 	// We arrange things so that although we use the same client
 	// (with the same cookie jar), the macaroon verification only
@@ -553,7 +560,7 @@ func (s *ClientSuite) TestMacaroonCookieName(c *gc.C) {
 	caveatSeq := 0
 	cookieName := ""
 	ts := httptest.NewServer(serverHandler(serverHandlerParams{
-		service: svc,
+		bakery: b,
 		mutateError: func(e *httpbakery.Error) {
 			e.Info.CookieNameSuffix = cookieName
 			e.Info.MacaroonPath = "/"
@@ -605,11 +612,11 @@ func (s *ClientSuite) TestMacaroonCookieName(c *gc.C) {
 }
 
 func (s *ClientSuite) TestMacaroonCookiePath(c *gc.C) {
-	svc := newService("loc", nil, nil)
+	b := newBakery("loc", nil, nil)
 
 	cookiePath := ""
 	ts := httptest.NewServer(serverHandler(serverHandlerParams{
-		service: svc,
+		bakery: b,
 		mutateError: func(e *httpbakery.Error) {
 			e.Info.MacaroonPath = cookiePath
 		},
@@ -701,10 +708,10 @@ func (s *ClientSuite) TestThirdPartyDischargeRefused(c *gc.C) {
 	defer d.Close()
 
 	// Create a target service.
-	svc := newService("loc", d, nil)
+	b := newBakery("loc", d, nil)
 
 	ts := httptest.NewServer(serverHandler(serverHandlerParams{
-		service:      svc,
+		bakery:       b,
 		authLocation: d.Location(),
 	}))
 	defer ts.Close()
@@ -736,10 +743,10 @@ func (s *ClientSuite) TestDischargeWithInteractionRequiredError(c *gc.C) {
 	defer d.Close()
 
 	// Create a target service.
-	svc := newService("loc", d, nil)
+	b := newBakery("loc", d, nil)
 
 	ts := httptest.NewServer(serverHandler(serverHandlerParams{
-		service:      svc,
+		bakery:       b,
 		authLocation: d.Location(),
 	}))
 	defer ts.Close()
@@ -778,10 +785,10 @@ func (s *ClientSuite) TestDischargeWithInteractionRequiredErrorAndWebPageVisitor
 	defer d.Close()
 
 	// Create a target service.
-	svc := newService("loc", d, nil)
+	b := newBakery("loc", d, nil)
 
 	ts := httptest.NewServer(serverHandler(serverHandlerParams{
-		service:      svc,
+		bakery:       b,
 		authLocation: d.Location(),
 	}))
 	defer ts.Close()
@@ -843,9 +850,9 @@ func (s *ClientSuite) TestDischargeWithVisitURLError(c *gc.C) {
 	defer d.Close()
 
 	// Create a target service.
-	svc := newService("loc", d, nil)
+	b := newBakery("loc", d, nil)
 	ts := httptest.NewServer(serverHandler(serverHandlerParams{
-		service:      svc,
+		bakery:       b,
 		authLocation: d.Location(),
 	}))
 	defer ts.Close()
@@ -876,11 +883,11 @@ func (s *ClientSuite) TestDischargeWithVisitURLError(c *gc.C) {
 
 func (s *ClientSuite) TestMacaroonsForURL(c *gc.C) {
 	// Create a target service.
-	svc := newService("loc", nil, nil)
+	b := newBakery("loc", nil, nil)
 
-	m1, err := svc.NewMacaroon(bakery.LatestVersion, nil)
+	m1, err := b.Oven.NewMacaroon(context.Background(), macaroon.LatestVersion, ages, nil, testOp)
 	c.Assert(err, gc.IsNil)
-	m2, err := svc.NewMacaroon(bakery.LatestVersion, nil)
+	m2, err := b.Oven.NewMacaroon(context.Background(), macaroon.LatestVersion, ages, nil, testOp)
 	c.Assert(err, gc.IsNil)
 
 	u1 := mustParseURL("http://0.1.2.3/")
@@ -914,7 +921,7 @@ func (s *ClientSuite) TestMacaroonsForURL(c *gc.C) {
 	checked := make(map[string]int)
 	for _, ms := range mss {
 		checked[string(ms[0].Id())]++
-		err := svc.Check(context.Background(), ms)
+		_, err := b.Checker.Auth(ms).Allow(context.Background(), testOp)
 		c.Assert(err, gc.IsNil)
 	}
 	c.Assert(checked, jc.DeepEquals, map[string]int{
@@ -923,12 +930,12 @@ func (s *ClientSuite) TestMacaroonsForURL(c *gc.C) {
 	})
 }
 
-func (s *ClientSuite) TestDoWithBodyAndCustomError(c *gc.C) {
+func (s *ClientSuite) TestDoWithCustomError(c *gc.C) {
 	d := bakerytest.NewDischarger(nil, nil)
 	defer d.Close()
 
 	// Create a target service.
-	svc := newService("loc", d, nil)
+	b := newBakery("loc", d, nil)
 
 	type customError struct {
 		CustomError *httpbakery.Error
@@ -936,12 +943,12 @@ func (s *ClientSuite) TestDoWithBodyAndCustomError(c *gc.C) {
 	callCount := 0
 	handler := func(w http.ResponseWriter, req *http.Request) {
 		callCount++
-		if _, _, checkErr := httpbakery.CheckRequest(context.Background(), svc, req, nil); checkErr != nil {
+		if _, err := b.Checker.Auth(httpbakery.RequestMacaroons(req)...).Allow(context.Background(), testOp); err != nil {
 			httprequest.WriteJSON(w, http.StatusTeapot, customError{
 				CustomError: newDischargeRequiredError(serverHandlerParams{
-					service:      svc,
+					bakery:       b,
 					authLocation: d.Location(),
-				}, checkErr, req).(*httpbakery.Error),
+				}, err, req).(*httpbakery.Error),
 			})
 			return
 		}
@@ -991,19 +998,19 @@ func (s *ClientSuite) TestHandleError(c *gc.C) {
 	defer d.Close()
 
 	// Create a target service.
-	svc := newService("loc", d, nil)
+	b := newBakery("loc", d, nil)
 
 	srv := httptest.NewServer(serverHandler(serverHandlerParams{
-		service:      svc,
+		bakery:       b,
 		authLocation: "unknown",
 		mutateError:  nil,
 	}))
 	defer srv.Close()
 
-	m, err := svc.NewMacaroon(bakery.LatestVersion, []checkers.Caveat{{
+	m, err := b.Oven.NewMacaroon(context.Background(), macaroon.LatestVersion, ages, []checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
-	}})
+	}}, testOp)
 
 	c.Assert(err, gc.IsNil)
 
@@ -1045,10 +1052,10 @@ func (s *ClientSuite) TestNewClientOldServer(c *gc.C) {
 	defer d.Close()
 
 	// Create a target service.
-	svc := newService("loc", d, nil)
+	b := newBakery("loc", d, nil)
 
 	srv := httptest.NewServer(serverHandler(serverHandlerParams{
-		service:      svc,
+		bakery:       b,
 		authLocation: d.Location(),
 	}))
 	defer srv.Close()
@@ -1074,11 +1081,11 @@ func (s *ClientSuite) TestHandleErrorDifferentError(c *gc.C) {
 }
 
 func (s *ClientSuite) TestNewCookieExpires(c *gc.C) {
-	t := time.Now().Add(24 * time.Hour)
-	svc := newService("loc", nil, nil)
-	m, err := svc.NewMacaroon(bakery.LatestVersion, []checkers.Caveat{
+	t := time.Now().Add(time.Minute)
+	b := newBakery("loc", nil, nil)
+	m, err := b.Oven.NewMacaroon(context.Background(), macaroon.LatestVersion, ages, []checkers.Caveat{
 		checkers.TimeBeforeCaveat(t),
-	})
+	}, testOp)
 
 	c.Assert(err, gc.IsNil)
 	cookie, err := httpbakery.NewCookie(nil, macaroon.Slice{m})
@@ -1148,22 +1155,23 @@ func (r *readCounter) Read(buf []byte) (int, error) {
 	return n, err
 }
 
-func newService(location string, locator bakery.ThirdPartyLocator, checker bakery.FirstPartyCaveatChecker) *bakery.Service {
+func newBakery(location string, locator bakery.ThirdPartyLocator, checker bakery.FirstPartyCaveatChecker) *bakery.Bakery {
 	if checker == nil {
 		c := checkers.New(nil)
 		c.Namespace().Register("testns", "")
 		c.Register("is", "testns", checkIsSomething)
 		checker = c
 	}
-	svc, err := bakery.NewService(bakery.NewServiceParams{
-		Location: location,
-		Locator:  locator,
-		Checker:  checker,
-	})
+	key, err := bakery.GenerateKey()
 	if err != nil {
 		panic(err)
 	}
-	return svc
+	return bakery.New(bakery.BakeryParams{
+		Location: location,
+		Locator:  locator,
+		Key:      key,
+		Checker:  checker,
+	})
 }
 
 func clientRequestWithCookies(c *gc.C, u string, macaroons macaroon.Slice) *http.Client {
@@ -1178,13 +1186,9 @@ func clientRequestWithCookies(c *gc.C, u string, macaroons macaroon.Slice) *http
 var handleErrors = httprequest.ErrorMapper(httpbakery.ErrorToResponse).HandleErrors
 
 type serverHandlerParams struct {
-	// service holds the service that will be used to check incoming
-	// requests.
-	service *bakery.Service
-
-	// checker is used to check first party caveats in macaroons.
-	// If it is nil, isChecker("something") will be used.
-	checker bakery.FirstPartyCaveatChecker
+	// bakery is used to check incoming requests
+	// and macaroons for discharge-required errors.
+	bakery *bakery.Bakery
 
 	// authLocation holds the location of any 3rd party authorizer.
 	// If this is non-empty, a 3rd party caveat will be added
@@ -1224,8 +1228,8 @@ func serverHandler(hp serverHandlerParams) http.Handler {
 		if hp.alwaysReadBody {
 			defer ioutil.ReadAll(p.Request.Body)
 		}
-		if _, _, checkErr := httpbakery.CheckRequest(context.Background(), hp.service, p.Request, nil); checkErr != nil {
-			return newDischargeRequiredError(hp, checkErr, p.Request)
+		if _, err := hp.bakery.Checker.Auth(httpbakery.RequestMacaroons(p.Request)...).Allow(p.Context, testOp); err != nil {
+			return newDischargeRequiredError(hp, err, p.Request)
 		}
 		fmt.Fprintf(p.Response, "done")
 		// Special case: the no-body path doesn't return the body.
@@ -1272,7 +1276,7 @@ func newDischargeRequiredError(hp serverHandlerParams, checkErr error, req *http
 	if hp.caveats != nil {
 		caveats = append(caveats, hp.caveats()...)
 	}
-	m, err := hp.service.NewMacaroon(hp.version, caveats)
+	m, err := hp.bakery.Oven.NewMacaroon(context.Background(), macaroon.LatestVersion, ages, caveats, testOp)
 	if err != nil {
 		panic(fmt.Errorf("cannot make new macaroon: %v", err))
 	}
@@ -1288,4 +1292,8 @@ func checkIsSomething(ctxt context.Context, _, arg string) error {
 		return fmt.Errorf(`%v doesn't match "something"`, arg)
 	}
 	return nil
+}
+
+func noCaveatChecker(_ *http.Request, cond, arg string) ([]checkers.Caveat, error) {
+	return nil, nil
 }

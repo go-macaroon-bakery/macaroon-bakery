@@ -5,10 +5,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"time"
 
 	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
+	"gopkg.in/macaroon.v2-unstable"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
@@ -17,7 +19,7 @@ import (
 )
 
 type agentSuite struct {
-	bakery       *bakery.Service
+	bakery       *bakery.Bakery
 	dischargeKey *bakery.PublicKey
 	discharger   *Discharger
 	server       *httptest.Server
@@ -26,31 +28,20 @@ type agentSuite struct {
 var _ = gc.Suite(&agentSuite{})
 
 func (s *agentSuite) SetUpSuite(c *gc.C) {
+	locator := bakery.NewThirdPartyStore()
+	s.discharger = newDischarger(c, locator)
+
 	key, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
-	s.dischargeKey = &key.Public
-	c.Assert(err, gc.IsNil)
-	bak, err := bakery.NewService(bakery.NewServiceParams{
-		Key: key,
+	s.bakery = bakery.New(bakery.BakeryParams{
+		Locator:        locator,
+		IdentityClient: idmClient{s.discharger.URL},
+		Key:            key,
 	})
-	c.Assert(err, gc.IsNil)
-	s.discharger = &Discharger{
-		Bakery: bak,
-	}
-	s.server = s.discharger.Serve()
-	locator := bakery.NewThirdPartyStore()
-	locator.AddInfo(s.discharger.URL, bakery.ThirdPartyInfo{
-		PublicKey: key.Public,
-		Version:   bakery.LatestVersion,
-	})
-	s.bakery, err = bakery.NewService(bakery.NewServiceParams{
-		Locator: locator,
-	})
-	c.Assert(err, gc.IsNil)
 }
 
 func (s *agentSuite) TearDownSuite(c *gc.C) {
-	s.server.Close()
+	s.discharger.Close()
 }
 
 var agentLoginTests = []struct {
@@ -62,7 +53,7 @@ var agentLoginTests = []struct {
 }, {
 	about: "error response",
 	loginHandler: func(d *Discharger, w http.ResponseWriter, _ *http.Request) {
-		d.WriteJSON(w, http.StatusBadRequest, httpbakery.Error{
+		d.writeJSON(w, http.StatusBadRequest, httpbakery.Error{
 			Code:    "bad request",
 			Message: "test error",
 		})
@@ -77,13 +68,13 @@ var agentLoginTests = []struct {
 }, {
 	about: "unexpected error response",
 	loginHandler: func(d *Discharger, w http.ResponseWriter, _ *http.Request) {
-		d.WriteJSON(w, http.StatusBadRequest, httpbakery.Error{})
+		d.writeJSON(w, http.StatusBadRequest, httpbakery.Error{})
 	},
 	expectError: `cannot get discharge from ".*": cannot start interactive session: unexpected response to non-interactive web page visit .* \(content type application/json\)`,
 }, {
 	about: "incorrect JSON",
 	loginHandler: func(d *Discharger, w http.ResponseWriter, _ *http.Request) {
-		d.WriteJSON(w, http.StatusOK, httpbakery.Error{
+		d.writeJSON(w, http.StatusOK, httpbakery.Error{
 			Code:    "bad request",
 			Message: "test error",
 		})
@@ -102,11 +93,13 @@ func (s *agentSuite) TestAgentLogin(c *gc.C) {
 		c.Assert(err, gc.IsNil)
 		err = agent.SetUpAuth(client, u, "test-user")
 		c.Assert(err, gc.IsNil)
-		m, err := s.bakery.NewMacaroon(bakery.LatestVersion, []checkers.Caveat{{
-			Location:  s.discharger.URL,
-			Condition: "test condition",
-		}})
-
+		m, err := s.bakery.Oven.NewMacaroon(
+			context.Background(),
+			macaroon.LatestVersion,
+			time.Now().Add(time.Minute),
+			identityCaveats(s.discharger.URL),
+			bakery.LoginOp,
+		)
 		c.Assert(err, gc.IsNil)
 		ms, err := client.DischargeAll(m)
 		if test.expectError != "" {
@@ -114,8 +107,9 @@ func (s *agentSuite) TestAgentLogin(c *gc.C) {
 			continue
 		}
 		c.Assert(err, gc.IsNil)
-		err = s.bakery.Check(context.Background(), ms)
+		authInfo, err := s.bakery.Checker.Auth(ms).Allow(context.Background(), bakery.LoginOp)
 		c.Assert(err, gc.IsNil)
+		c.Assert(authInfo.Identity, gc.Equals, simpleIdentity("test-user"))
 	}
 }
 
@@ -128,10 +122,13 @@ func (s *agentSuite) TestSetUpAuthError(c *gc.C) {
 func (s *agentSuite) TestNoCookieError(c *gc.C) {
 	client := httpbakery.NewClient()
 	client.VisitWebPage = agent.VisitWebPage(client)
-	m, err := s.bakery.NewMacaroon(bakery.LatestVersion, []checkers.Caveat{{
-		Location:  s.discharger.URL,
-		Condition: "test condition",
-	}})
+	m, err := s.bakery.Oven.NewMacaroon(
+		context.Background(),
+		macaroon.LatestVersion,
+		time.Now().Add(time.Minute),
+		identityCaveats(s.discharger.URL),
+		bakery.LoginOp,
+	)
 
 	c.Assert(err, gc.IsNil)
 	_, err = client.DischargeAll(m)
@@ -239,4 +236,33 @@ func ExampleVisitWebPage() {
 	client.Key = key
 	agent.SetCookie(client.Jar, u, "agent-username", &client.Key.Public)
 	client.VisitWebPage = agent.VisitWebPage(client)
+}
+
+type idmClient struct {
+	dischargerURL string
+}
+
+func (c idmClient) IdentityFromContext(ctxt context.Context) (bakery.Identity, []checkers.Caveat, error) {
+	return nil, identityCaveats(c.dischargerURL), nil
+}
+
+func identityCaveats(dischargerURL string) []checkers.Caveat {
+	return []checkers.Caveat{{
+		Location:  dischargerURL,
+		Condition: "test condition",
+	}}
+}
+
+func (c idmClient) DeclaredIdentity(declared map[string]string) (bakery.Identity, error) {
+	return simpleIdentity(declared["username"]), nil
+}
+
+type simpleIdentity string
+
+func (simpleIdentity) Domain() string {
+	return ""
+}
+
+func (id simpleIdentity) Id() string {
+	return string(id)
 }

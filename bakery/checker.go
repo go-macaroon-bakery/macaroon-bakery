@@ -22,17 +22,17 @@ var LoginOp = Op{
 
 // Op holds an entity and action to be authorized on that entity.
 type Op struct {
-	// Action holds the action to perform on the entity, such as "read"
-	// or "delete". It is up to the service using a checker to define
-	// a set of operations and keep them consistent over time.
-	Action string
-
 	// Entity holds the name of the entity to be authorized.
 	// Entity names should not contain spaces and should
 	// not start with the prefix "login" or "multi-" (conventionally,
 	// entity names will be prefixed with the entity type followed
 	// by a hyphen.
 	Entity string
+
+	// Action holds the action to perform on the entity, such as "read"
+	// or "delete". It is up to the service using a checker to define
+	// a set of operations and keep them consistent over time.
+	Action string
 }
 
 // CheckerParams holds parameters for NewChecker.
@@ -52,6 +52,8 @@ type CheckerParams struct {
 
 	// IdentityClient is used for interactions with the external
 	// identity service used for authentication.
+	//
+	// If this is nil, no authentication will be possible.
 	IdentityClient IdentityClient
 
 	// MacaroonOps is used to retrieve macaroon root keys
@@ -97,6 +99,9 @@ func NewChecker(p CheckerParams) *Checker {
 	}
 	if p.Authorizer == nil {
 		p.Authorizer = ClosedAuthorizer
+	}
+	if p.IdentityClient == nil {
+		p.IdentityClient = noIdentities{}
 	}
 	return &Checker{
 		FirstPartyCaveatChecker: p.Checker,
@@ -319,7 +324,7 @@ func (a *AuthChecker) allowAny(ctxt context.Context, ops []Op) (authed, used []b
 			need = append(need, ops[i])
 		}
 	}
-	logger.Infof("operations needed after authz macaroons: %#v", need)
+	logger.Debugf("operations needed after authz macaroons: %#v", need)
 
 	// Try to authorize the operations even if we haven't got an authenticated user.
 	oks, caveats, err := a.p.Authorizer.Authorize(ctxt, a.identity, need)
@@ -339,7 +344,7 @@ func (a *AuthChecker) allowAny(ctxt context.Context, ops []Op) (authed, used []b
 		// No more ops need to be authenticated and no caveats to be discharged.
 		return authed, used, nil
 	}
-	logger.Infof("operations still needed after auth check: %#v", stillNeed)
+	logger.Debugf("operations still needed after auth check: %#v", stillNeed)
 	if a.identity == nil && len(a.identityCaveats) > 0 {
 		return authed, used, &DischargeRequiredError{
 			Message: "authentication required",

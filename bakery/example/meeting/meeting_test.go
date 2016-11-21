@@ -1,3 +1,5 @@
+// +build ignore
+
 package meeting_test
 
 import (

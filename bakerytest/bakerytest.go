@@ -21,7 +21,7 @@ import (
 
 // NoCaveatChecker is a third party caveat checker that
 // always allows any caveat and adds no third party caveats.
-var NoCaveatChecker = httpbakery.ThirdPartyCheckerFunc(func(req *http.Request, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+var NoCaveatChecker = httpbakery.ThirdPartyCaveatCheckerFunc(func(req *http.Request, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 	return nil, nil
 })
 
@@ -30,7 +30,8 @@ var NoCaveatChecker = httpbakery.ThirdPartyCheckerFunc(func(req *http.Request, i
 // discharge requests. It should be shut down by calling
 // Close when done with.
 type Discharger struct {
-	Service *bakery.Service
+	Key     *bakery.KeyPair
+	Locator bakery.ThirdPartyLocator
 
 	server *httptest.Server
 }
@@ -93,32 +94,34 @@ func stopSkipVerify() {
 // If checker is nil, NoCaveatChecker will be used.
 func NewDischarger(
 	locator bakery.ThirdPartyLocator,
-	checker httpbakery.ThirdPartyChecker,
+	checker httpbakery.ThirdPartyCaveatChecker,
 ) *Discharger {
 	mux := http.NewServeMux()
 	server := httptest.NewTLSServer(mux)
-	svc, err := bakery.NewService(bakery.NewServiceParams{
-		Location: server.URL,
-		Locator:  locator,
-	})
+	key, err := bakery.GenerateKey()
 	if err != nil {
 		panic(err)
 	}
 	if checker == nil {
 		checker = NoCaveatChecker
 	}
-	d := httpbakery.NewDischargerFromService(svc, checker)
+	d := httpbakery.NewDischarger(httpbakery.DischargerParams{
+		Key:     key,
+		Locator: locator,
+		Checker: checker,
+	})
 	d.AddMuxHandlers(mux, "/")
 	startSkipVerify()
 	return &Discharger{
-		Service: svc,
+		Key:     key,
+		Locator: locator,
 		server:  server,
 	}
 }
 
-// ConditionParser adapts the given function into a httpbakery.ThirdPartyChecker.
+// ConditionParser adapts the given function into a httpbakery.ThirdPartyCaveatChecker.
 // It parses the caveat's condition and calls the function with the result.
-func ConditionParser(check func(cond, arg string) ([]checkers.Caveat, error)) httpbakery.ThirdPartyChecker {
+func ConditionParser(check func(cond, arg string) ([]checkers.Caveat, error)) httpbakery.ThirdPartyCaveatChecker {
 	f := func(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 		cond, arg, err := checkers.ParseCaveat(cav.Condition)
 		if err != nil {
@@ -126,7 +129,7 @@ func ConditionParser(check func(cond, arg string) ([]checkers.Caveat, error)) ht
 		}
 		return check(cond, arg)
 	}
-	return httpbakery.ThirdPartyCheckerFunc(f)
+	return httpbakery.ThirdPartyCaveatCheckerFunc(f)
 }
 
 // Close shuts down the server. It may be called more than
@@ -144,14 +147,14 @@ func (d *Discharger) Close() {
 // for setting as the location in a third party caveat.
 // This will be the URL of the server.
 func (d *Discharger) Location() string {
-	return d.Service.Location()
+	return d.server.URL
 }
 
 // PublicKeyForLocation implements bakery.PublicKeyLocator.
 func (d *Discharger) ThirdPartyInfo(ctxt context.Context, loc string) (bakery.ThirdPartyInfo, error) {
 	if loc == d.Location() {
 		return bakery.ThirdPartyInfo{
-			PublicKey: *d.Service.PublicKey(),
+			PublicKey: d.Key.Public,
 			Version:   bakery.LatestVersion,
 		}, nil
 	}
@@ -225,18 +228,21 @@ func NewInteractiveDischarger(locator bakery.ThirdPartyLocator, visitHandler htt
 	d.Mux.Handle("/visit", visitHandler)
 	d.Mux.Handle("/wait", http.HandlerFunc(d.wait))
 	server := httptest.NewTLSServer(d.Mux)
-	svc, err := bakery.NewService(bakery.NewServiceParams{
-		Location: server.URL,
-		Locator:  locator,
-	})
+
+	key, err := bakery.GenerateKey()
 	if err != nil {
 		panic(err)
 	}
-	bd := httpbakery.NewDischargerFromService(svc, d)
+	bd := httpbakery.NewDischarger(httpbakery.DischargerParams{
+		Key:     key,
+		Locator: locator,
+		Checker: d,
+	})
 	bd.AddMuxHandlers(d.Mux, "/")
 	startSkipVerify()
 	d.Discharger = Discharger{
-		Service: svc,
+		Key:     key,
+		Locator: locator,
 		server:  server,
 	}
 	return d
@@ -244,7 +250,7 @@ func NewInteractiveDischarger(locator bakery.ThirdPartyLocator, visitHandler htt
 
 // CheckThirdPartyCaveat implements httpbakery.ThirdPartyCaveatDischarger
 // by always returning an interaction-required error.
-func (d *InteractiveDischarger) CheckThirdPartyCaveat(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+func (d *InteractiveDischarger) CheckThirdPartyCaveat(ctxt context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 	d.mu.Lock()
 	id := fmt.Sprintf("%d", d.id)
 	d.id++
@@ -288,21 +294,24 @@ func (d *InteractiveDischarger) wait(w http.ResponseWriter, r *http.Request) {
 		httprequest.WriteJSON(w, code, body)
 		return
 	}
-	m, err := d.Service.Discharge(
-		bakery.ThirdPartyCheckerFunc(
-			func(_ context.Context, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
-				return cavs, nil
-			},
-		),
-		// TODO obtain the namespace from the client.
-		dischargeNamespace,
-		discharge.cavId,
-	)
+	check := bakery.ThirdPartyCaveatCheckerFunc(func(_ context.Context, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+		return cavs, nil
+	})
+	m, cavs, err := bakery.Discharge(context.Background(), d.Key, check, discharge.cavId)
 	if err != nil {
 		code, body := httpbakery.ErrorToResponse(err)
 		httprequest.WriteJSON(w, code, body)
 		return
 	}
+	for _, cav := range cavs {
+		// TODO obtain the namespace from the client.
+		if err := bakery.AddCaveat(context.TODO(), d.Key, d.Locator, m, cav, dischargeNamespace); err != nil {
+			code, body := httpbakery.ErrorToResponse(err)
+			httprequest.WriteJSON(w, code, body)
+			return
+		}
+	}
+
 	httprequest.WriteJSON(
 		w,
 		http.StatusOK,

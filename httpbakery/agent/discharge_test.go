@@ -4,12 +4,15 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"sync"
+	"time"
 
 	"golang.org/x/net/context"
+	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2-unstable"
 
@@ -19,39 +22,58 @@ import (
 	"gopkg.in/macaroon-bakery.v2-unstable/httpbakery/agent"
 )
 
+var ages = time.Now().Add(time.Hour)
+
 type discharge struct {
 	cavId []byte
-	c     chan error
+	c     chan bakery.Identity
 }
 
 var allCheckers = httpbakery.NewChecker()
 
 type Discharger struct {
-	Bakery       *bakery.Service
-	URL          string
+	*httptest.Server
+	key          *bakery.KeyPair
+	bakery       *bakery.Bakery
 	LoginHandler func(*Discharger, http.ResponseWriter, *http.Request)
 
 	mu      sync.Mutex
 	waiting []discharge
 }
 
-func (d *Discharger) ServeMux() *http.ServeMux {
+func newDischarger(c *gc.C, locator *bakery.ThirdPartyStore) *Discharger {
+	key, err := bakery.GenerateKey()
+	c.Assert(err, gc.IsNil)
+	d := &Discharger{
+		key: key,
+	}
+	d.Server = httptest.NewServer(d.handler())
+
+	d.bakery = bakery.New(bakery.BakeryParams{
+		Key:            key,
+		IdentityClient: idmClient{d.URL},
+	})
+	locator.AddInfo(d.URL, bakery.ThirdPartyInfo{
+		PublicKey: key.Public,
+		Version:   bakery.LatestVersion,
+	})
+	return d
+}
+
+func (d *Discharger) handler() http.Handler {
 	mux := http.NewServeMux()
-	discharger := httpbakery.NewDischargerFromService(d.Bakery, d)
+	discharger := httpbakery.NewDischarger(httpbakery.DischargerParams{
+		Key:     d.key,
+		Checker: d,
+	})
 	discharger.AddMuxHandlers(mux, "/")
 	mux.Handle("/login", http.HandlerFunc(d.login))
 	mux.Handle("/wait", http.HandlerFunc(d.wait))
-	mux.Handle("/", http.HandlerFunc(d.notfound))
+	mux.Handle("/", http.HandlerFunc(d.notFound))
 	return mux
 }
 
-func (d *Discharger) Serve() *httptest.Server {
-	s := httptest.NewServer(d.ServeMux())
-	d.URL = s.URL
-	return s
-}
-
-func (d *Discharger) WriteJSON(w http.ResponseWriter, status int, v interface{}) error {
+func (d *Discharger) writeJSON(w http.ResponseWriter, status int, v interface{}) error {
 	body, err := json.Marshal(v)
 	if err != nil {
 		return errgo.Notef(err, "cannot marshal v")
@@ -80,23 +102,24 @@ func (d *Discharger) GetAgentLogin(r *http.Request) (*agent.AgentLogin, error) {
 	return &al, nil
 }
 
-func (d *Discharger) FinishWait(w http.ResponseWriter, r *http.Request, err error) {
+func (d *Discharger) finishWait(w http.ResponseWriter, r *http.Request, identity bakery.Identity) {
+	log.Printf("finish wait, identity %#v", identity)
 	r.ParseForm()
 	id, err := strconv.Atoi(r.Form.Get("waitid"))
 	if err != nil {
-		d.WriteJSON(w, http.StatusBadRequest, httpbakery.Error{
+		d.writeJSON(w, http.StatusBadRequest, httpbakery.Error{
 			Message: fmt.Sprintf("cannot read waitid: %s", err),
 		})
 		return
 	}
-	d.waiting[id].c <- err
+	d.waiting[id].c <- identity
 	return
 }
 
-func (d *Discharger) CheckThirdPartyCaveat(req *http.Request, ci *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+func (d *Discharger) CheckThirdPartyCaveat(ctxt context.Context, req *http.Request, ci *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 	d.mu.Lock()
 	id := len(d.waiting)
-	d.waiting = append(d.waiting, discharge{ci.MacaroonId, make(chan error, 1)})
+	d.waiting = append(d.waiting, discharge{ci.MacaroonId, make(chan bakery.Identity, 1)})
 	d.mu.Unlock()
 	return nil, &httpbakery.Error{
 		Code:    httpbakery.ErrInteractionRequired,
@@ -116,63 +139,66 @@ func (d *Discharger) login(w http.ResponseWriter, r *http.Request) {
 		d.LoginHandler(d, w, r)
 		return
 	}
-	al, err := d.GetAgentLogin(r)
+	username, userPublicKey, err := agent.LoginCookie(r)
 	if err != nil {
-		d.WriteJSON(w, http.StatusBadRequest, httpbakery.Error{
+		d.writeJSON(w, http.StatusBadRequest, httpbakery.Error{
 			Message: fmt.Sprintf("cannot read agent login: %s", err),
 		})
 		return
 	}
-	_, _, err = httpbakery.CheckRequest(ctxt, d.Bakery, r, nil)
-	if err == nil {
-		d.FinishWait(w, r, nil)
-		d.WriteJSON(w, http.StatusOK, agent.AgentResponse{
+	authInfo, authErr := d.bakery.Checker.Auth(httpbakery.RequestMacaroons(r)...).Allow(ctxt, bakery.LoginOp)
+	if authErr == nil {
+		d.finishWait(w, r, authInfo.Identity)
+		d.writeJSON(w, http.StatusOK, agent.AgentResponse{
 			AgentLogin: true,
 		})
 		return
 	}
 	version := httpbakery.RequestVersion(r)
-	m, err := d.Bakery.NewMacaroon(version, []checkers.Caveat{
-		bakery.LocalThirdPartyCaveat(al.PublicKey, version),
-	})
+	macaroonVersion := bakery.MacaroonVersion(httpbakery.RequestVersion(r))
+	m, err := d.bakery.Oven.NewMacaroon(ctxt, macaroonVersion, ages, []checkers.Caveat{
+		bakery.LocalThirdPartyCaveat(userPublicKey, version),
+		checkers.DeclaredCaveat("username", username),
+	}, bakery.LoginOp)
 
 	if err != nil {
-		d.WriteJSON(w, http.StatusInternalServerError, httpbakery.Error{
+		d.writeJSON(w, http.StatusInternalServerError, httpbakery.Error{
 			Message: fmt.Sprintf("cannot create macaroon: %s", err),
 		})
 		return
 	}
-	httpbakery.WriteDischargeRequiredError(w, m, "", nil)
+	httpbakery.WriteDischargeRequiredError(w, m, "", authErr)
 }
 
 func (d *Discharger) wait(w http.ResponseWriter, r *http.Request) {
 	r.ParseForm()
 	id, err := strconv.Atoi(r.Form.Get("waitid"))
 	if err != nil {
-		d.WriteJSON(w, http.StatusBadRequest, httpbakery.Error{
+		d.writeJSON(w, http.StatusBadRequest, httpbakery.Error{
 			Message: fmt.Sprintf("cannot read waitid: %s", err),
 		})
 		return
 	}
-	err = <-d.waiting[id].c
-	if err != nil {
-		d.WriteJSON(w, http.StatusForbidden, err)
+	identity := <-d.waiting[id].c
+	if identity == nil {
+		d.writeJSON(w, http.StatusForbidden, fmt.Errorf("login failed"))
 		return
 	}
-	m, err := d.Bakery.Discharge(
-		bakery.ThirdPartyCheckerFunc(
-			func(context.Context, *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
-				return nil, nil
-			},
-		),
-		nil,
+	m, _, err := bakery.Discharge(
+		context.TODO(),
+		d.bakery.Oven.Key(),
+		bakery.ThirdPartyCaveatCheckerFunc(alwaysDischarge),
 		d.waiting[id].cavId,
 	)
 	if err != nil {
-		d.WriteJSON(w, http.StatusForbidden, err)
+		d.writeJSON(w, http.StatusForbidden, err)
 		return
 	}
-	d.WriteJSON(
+	// Declare the logged in username
+	ns := d.bakery.Checker.Namespace() // TODO use first party namespace here.
+	cav := ns.ResolveCaveat(checkers.DeclaredCaveat("username", string(identity.(simpleIdentity))))
+	m.AddFirstPartyCaveat(cav.Condition)
+	d.writeJSON(
 		w,
 		http.StatusOK,
 		struct {
@@ -183,8 +209,12 @@ func (d *Discharger) wait(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
-func (d *Discharger) notfound(w http.ResponseWriter, r *http.Request) {
-	d.WriteJSON(w, http.StatusNotFound, httpbakery.Error{
+func alwaysDischarge(context.Context, *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+	return nil, nil
+}
+
+func (d *Discharger) notFound(w http.ResponseWriter, r *http.Request) {
+	d.writeJSON(w, http.StatusNotFound, httpbakery.Error{
 		Message: fmt.Sprintf("cannot find %s", r.URL.String()),
 	})
 }
