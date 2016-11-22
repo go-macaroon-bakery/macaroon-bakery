@@ -83,7 +83,7 @@ func (*DischargeSuite) TestDischargeAllLocalDischarge(c *gc.C) {
 	ms, err := bakery.DischargeAllWithKey(testContext, m, noDischarge(c), clientKey)
 	c.Assert(err, gc.IsNil)
 
-	_, err = oc.Checker.Auth(ms).Allow(testContext, loginOps...)
+	_, err = oc.Checker.Auth(ms).Allow(testContext, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
 }
 

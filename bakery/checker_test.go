@@ -4,7 +4,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/juju/loggo"
 	jujutesting "github.com/juju/testing"
 	jc "github.com/juju/testing/checkers"
 	"golang.org/x/net/context"
@@ -15,10 +14,6 @@ import (
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
 )
-
-var logger = loggo.GetLogger("bakery.bakery_test")
-
-const Everyone = "everyone"
 
 type dischargeRecord struct {
 	location string
@@ -40,7 +35,7 @@ func (s *checkerSuite) SetUpTest(c *gc.C) {
 func (s *checkerSuite) TestAuthorizeWithOpenAccessAndNoMacaroons(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
-	auth := opAuthorizer{readOp("something"): {Everyone}}
+	auth := opAuthorizer{readOp("something"): {bakery.Everyone}}
 	ts := newService(auth, ids, locator)
 	client := newClient(locator)
 
@@ -227,8 +222,8 @@ func (s *checkerSuite) TestAuthWithThirdPartyCaveats(c *gc.C) {
 
 	// We make an authorizer that requires a third party discharge
 	// when authorizing.
-	auth := authorizerFunc(func(id string, op bakery.Op) (bool, []checkers.Caveat, error) {
-		if id == "bob" && op == readOp("something") {
+	auth := bakery.AuthorizerFunc(func(_ context.Context, id bakery.Identity, op bakery.Op) (bool, []checkers.Caveat, error) {
+		if id == simpleIdentity("bob") && op == readOp("something") {
 			return true, []checkers.Caveat{{
 				Condition: "question",
 				Location:  "other third party",
@@ -598,36 +593,12 @@ func writeOp(entity string) bakery.Op {
 type opAuthorizer map[bakery.Op][]string
 
 func (auth opAuthorizer) Authorize(ctxt context.Context, id bakery.Identity, ops []bakery.Op) (allowed []bool, caveats []checkers.Caveat, err error) {
-	return authorizerFunc(auth.authorize).Authorize(ctxt, id, ops)
-}
-
-func (auth opAuthorizer) authorize(id string, op bakery.Op) (bool, []checkers.Caveat, error) {
-	for _, allowedId := range auth[op] {
-		if allowedId == Everyone || id == allowedId {
-			return true, nil, nil
-		}
-	}
-	return false, nil, nil
-}
-
-type authorizerFunc func(id string, op bakery.Op) (bool, []checkers.Caveat, error)
-
-func (auth authorizerFunc) Authorize(ctxt context.Context, id bakery.Identity, ops []bakery.Op) (allowed []bool, caveats []checkers.Caveat, err error) {
-	allowed = make([]bool, len(ops))
-	var allCaveats []checkers.Caveat
-	idStr := ""
-	if id != nil {
-		idStr = id.Id()
-	}
-	for i, op := range ops {
-		ok, caveats, err := auth(idStr, op)
-		if err != nil {
-			return nil, nil, errgo.Mask(err)
-		}
-		allowed[i] = ok
-		allCaveats = append(allCaveats, caveats...)
-	}
-	return allowed, allCaveats, nil
+	return bakery.ACLAuthorizer{
+		AllowPublic: true,
+		GetACL: func(ctxt context.Context, op bakery.Op) ([]string, error) {
+			return auth[op], nil
+		},
+	}.Authorize(ctxt, id, ops)
 }
 
 type idService struct {
@@ -694,6 +665,8 @@ func dischargeUserFromContext(ctxt context.Context) string {
 	return username
 }
 
+var _ bakery.ACLIdentity = simpleIdentity("")
+
 type simpleIdentity string
 
 func (simpleIdentity) Domain() string {
@@ -702,6 +675,15 @@ func (simpleIdentity) Domain() string {
 
 func (id simpleIdentity) Id() string {
 	return string(id)
+}
+
+func (id simpleIdentity) Allow(ctxt context.Context, acl []string) (bool, error) {
+	for _, g := range acl {
+		if string(id) == g {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 type basicAuthIdService struct{}

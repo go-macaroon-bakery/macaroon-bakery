@@ -1,7 +1,3 @@
-// The bakery package layers on top of the macaroon package, providing
-// a transport and store-agnostic way of using macaroons to assert
-// client capabilities.
-//
 package bakery
 
 import (

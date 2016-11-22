@@ -2,6 +2,21 @@
 // a transport and store-agnostic way of using macaroons to assert
 // client capabilities.
 //
+// Summary
+//
+// The Bakery type is probably where you want to start.
+// It encapsulates a Checker type, which performs checking
+// of operations, and an Oven type, which encapsulates
+// the actual details of the macaroon encoding conventions.
+//
+// Most other types and functions are designed either to plug
+// into one of the above types (the various Authorizer
+// implementations, for example), or to expose some independent
+// functionality that's potentially useful (Discharge, for example).
+//
+// The rest of this introduction introduces some of the concepts
+// used by the bakery package.
+//
 // Identity and entities
 //
 // An Identity represents some authenticated user (or agent), usually
