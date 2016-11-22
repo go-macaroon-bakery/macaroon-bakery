@@ -48,7 +48,7 @@ func (s *suite) TestDischargerSimple(c *gc.C) {
 	}}, dischargeOp)
 
 	c.Assert(err, gc.IsNil)
-	ms, err := s.client.DischargeAll(m)
+	ms, err := s.client.DischargeAll(context.Background(), m)
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 2)
 
@@ -94,7 +94,7 @@ func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 	}}, dischargeOp)
 	c.Assert(err, gc.IsNil)
 
-	ms, err := s.client.DischargeAll(m)
+	ms, err := s.client.DischargeAll(context.Background(), m)
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 3)
 
@@ -107,7 +107,7 @@ func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 	})
 	c.Assert(err, gc.IsNil)
 
-	ms, err = s.client.DischargeAll(m)
+	ms, err = s.client.DischargeAll(context.Background(), m)
 	c.Assert(err, gc.ErrorMatches, `cannot get discharge from "https://[^"]*": third party refused discharge: cannot discharge: caveat refused`)
 	c.Assert(ms, gc.HasLen, 0)
 }
@@ -174,7 +174,7 @@ func (s *suite) TestInteractiveDischarger(c *gc.C) {
 		var c httprequest.Client
 		return c.Get(u.String(), nil)
 	}
-	ms, err := client.DischargeAll(m)
+	ms, err := client.DischargeAll(context.Background(), m)
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 2)
 
@@ -212,7 +212,7 @@ func (s *suite) TestLoginDischargerError(c *gc.C) {
 		var c httprequest.Client
 		return c.Get(u.String(), nil)
 	}
-	_, err = client.DischargeAll(m)
+	_, err = client.DischargeAll(context.Background(), m)
 	c.Assert(err, gc.ErrorMatches, `cannot get discharge from ".*": failed to acquire macaroon after waiting: third party refused discharge: test error`)
 }
 
@@ -245,7 +245,7 @@ func (s *suite) TestInteractiveDischargerURL(c *gc.C) {
 		var c httprequest.Client
 		return c.Get(u.String(), nil)
 	}
-	ms, err := client.DischargeAll(m)
+	ms, err := client.DischargeAll(context.Background(), m)
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 2)
 

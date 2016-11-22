@@ -170,7 +170,7 @@ func (s *formSuite) TestFormLogin(c *gc.C) {
 		}
 		client.WebPageVisitor = httpbakery.NewMultiVisitor(handlers...)
 
-		ms, err := client.DischargeAll(m)
+		ms, err := client.DischargeAll(context.Background(), m)
 		if test.expectError != "" {
 			c.Assert(err, gc.ErrorMatches, test.expectError)
 			continue
@@ -230,7 +230,7 @@ func (s *formSuite) TestFormTitle(c *gc.C) {
 			},
 		)
 
-		ms, err := client.DischargeAll(m)
+		ms, err := client.DischargeAll(context.Background(), m)
 		c.Assert(err, gc.IsNil)
 		c.Assert(len(ms), gc.Equals, 2)
 		c.Assert(f.title, gc.Equals, test.expect)

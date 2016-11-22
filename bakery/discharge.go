@@ -18,7 +18,7 @@ import (
 func DischargeAll(
 	ctxt context.Context,
 	m *macaroon.Macaroon,
-	getDischarge func(cav macaroon.Caveat) (*macaroon.Macaroon, error),
+	getDischarge func(context.Context, macaroon.Caveat) (*macaroon.Macaroon, error),
 ) (macaroon.Slice, error) {
 	return DischargeAllWithKey(ctxt, m, getDischarge, nil)
 }
@@ -35,7 +35,7 @@ func DischargeAll(
 func DischargeAllWithKey(
 	ctxt context.Context,
 	m *macaroon.Macaroon,
-	getDischarge func(cav macaroon.Caveat) (*macaroon.Macaroon, error),
+	getDischarge func(context.Context, macaroon.Caveat) (*macaroon.Macaroon, error),
 	localKey *KeyPair,
 ) (macaroon.Slice, error) {
 	sig := m.Signature()
@@ -58,7 +58,7 @@ func DischargeAllWithKey(
 		if localKey != nil && cav.Location == "local" {
 			dm, _, err = Discharge(ctxt, localKey, localDischargeChecker, cav.Id)
 		} else {
-			dm, err = getDischarge(cav)
+			dm, err = getDischarge(ctxt, cav)
 		}
 		if err != nil {
 			return nil, errgo.NoteMask(err, fmt.Sprintf("cannot get discharge from %q", cav.Location), errgo.Any)
