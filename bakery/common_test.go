@@ -55,8 +55,8 @@ func newBakery(location string, locator *bakery.ThirdPartyStore) *bakery.Bakery 
 	return bakery.New(p)
 }
 
-func noDischarge(c *gc.C) func(context.Context, macaroon.Caveat) (*macaroon.Macaroon, error) {
-	return func(context.Context, macaroon.Caveat) (*macaroon.Macaroon, error) {
+func noDischarge(c *gc.C) func(context.Context, macaroon.Caveat, []byte) (*bakery.Macaroon, error) {
+	return func(context.Context, macaroon.Caveat, []byte) (*bakery.Macaroon, error) {
 		c.Errorf("getDischarge called unexpectedly")
 		return nil, fmt.Errorf("nothing")
 	}

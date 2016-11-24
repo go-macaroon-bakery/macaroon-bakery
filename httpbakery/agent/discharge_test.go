@@ -13,7 +13,6 @@ import (
 	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
-	"gopkg.in/macaroon.v2-unstable"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
@@ -24,8 +23,8 @@ import (
 var ages = time.Now().Add(time.Hour)
 
 type discharge struct {
-	cavId []byte
-	c     chan bakery.Identity
+	caveatInfo *bakery.ThirdPartyCaveatInfo
+	c          chan bakery.Identity
 }
 
 var allCheckers = httpbakery.NewChecker()
@@ -117,7 +116,10 @@ func (d *Discharger) finishWait(w http.ResponseWriter, r *http.Request, identity
 func (d *Discharger) CheckThirdPartyCaveat(ctxt context.Context, req *http.Request, ci *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 	d.mu.Lock()
 	id := len(d.waiting)
-	d.waiting = append(d.waiting, discharge{ci.MacaroonId, make(chan bakery.Identity, 1)})
+	d.waiting = append(d.waiting, discharge{
+		caveatInfo: ci,
+		c:          make(chan bakery.Identity, 1),
+	})
 	d.mu.Unlock()
 	return nil, &httpbakery.Error{
 		Code:    httpbakery.ErrInteractionRequired,
@@ -153,8 +155,7 @@ func (d *Discharger) login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	version := httpbakery.RequestVersion(r)
-	macaroonVersion := bakery.MacaroonVersion(httpbakery.RequestVersion(r))
-	m, err := d.bakery.Oven.NewMacaroon(ctxt, macaroonVersion, ages, []checkers.Caveat{
+	m, err := d.bakery.Oven.NewMacaroon(ctxt, httpbakery.RequestVersion(r), ages, []checkers.Caveat{
 		bakery.LocalThirdPartyCaveat(userPublicKey, version),
 		checkers.DeclaredCaveat("username", username),
 	}, bakery.LoginOp)
@@ -182,33 +183,32 @@ func (d *Discharger) wait(w http.ResponseWriter, r *http.Request) {
 		d.writeJSON(w, http.StatusForbidden, fmt.Errorf("login failed"))
 		return
 	}
-	m, _, err := bakery.Discharge(
-		context.TODO(),
-		d.bakery.Oven.Key(),
-		bakery.ThirdPartyCaveatCheckerFunc(alwaysDischarge),
-		d.waiting[id].cavId,
-	)
+	ci := d.waiting[id].caveatInfo
+	m, err := bakery.Discharge(context.TODO(), bakery.DischargeParams{
+		Id:     ci.Id,
+		Caveat: ci.Caveat,
+		Key:    d.bakery.Oven.Key(),
+		Checker: bakery.ThirdPartyCaveatCheckerFunc(
+			func(context.Context, *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+				return []checkers.Caveat{
+					checkers.DeclaredCaveat("username", string(identity.(simpleIdentity))),
+				}, nil
+			},
+		),
+	})
 	if err != nil {
 		d.writeJSON(w, http.StatusForbidden, err)
 		return
 	}
-	// Declare the logged in username
-	ns := d.bakery.Checker.Namespace() // TODO use first party namespace here.
-	cav := ns.ResolveCaveat(checkers.DeclaredCaveat("username", string(identity.(simpleIdentity))))
-	m.AddFirstPartyCaveat(cav.Condition)
 	d.writeJSON(
 		w,
 		http.StatusOK,
 		struct {
-			Macaroon *macaroon.Macaroon
+			Macaroon *bakery.Macaroon
 		}{
 			Macaroon: m,
 		},
 	)
-}
-
-func alwaysDischarge(context.Context, *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
-	return nil, nil
 }
 
 func (d *Discharger) notFound(w http.ResponseWriter, r *http.Request) {

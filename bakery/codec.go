@@ -9,49 +9,54 @@ import (
 
 	"golang.org/x/crypto/nacl/box"
 	"gopkg.in/errgo.v1"
+
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
 )
 
-type caveatIdRecord struct {
+type caveatRecord struct {
 	RootKey   []byte
 	Condition string
 }
 
-// caveatId defines the format of a third party caveat id.
-type caveatId struct {
+// caveatJSON defines the format of a V1 JSON-encoded third party caveat id.
+type caveatJSON struct {
 	ThirdPartyPublicKey *PublicKey
 	FirstPartyPublicKey *PublicKey
 	Nonce               []byte
 	Id                  string
 }
 
-// encodeCaveatId creates a third-party caveat with the given condtion
+// encodeCaveat encrypts a third-party caveat with the given condtion
 // and root key. The thirdPartyInfo key holds information about the
 // third party we're encrypting the caveat for; the key is the
 // public/private key pair of the party that's adding the caveat.
 //
-// The caveat id will be encoded according to the version information
+// The caveat will be encoded according to the version information
 // found in thirdPartyInfo.
-func encodeCaveatId(
+func encodeCaveat(
 	condition string,
 	rootKey []byte,
 	thirdPartyInfo ThirdPartyInfo,
 	key *KeyPair,
+	ns *checkers.Namespace,
 ) ([]byte, error) {
 	switch thirdPartyInfo.Version {
 	case Version0, Version1:
-		return encodeCaveatIdV1(condition, rootKey, &thirdPartyInfo.PublicKey, key)
+		return encodeCaveatV1(condition, rootKey, &thirdPartyInfo.PublicKey, key)
+	case Version2:
+		return encodeCaveatV2(condition, rootKey, &thirdPartyInfo.PublicKey, key)
 	default:
-		// It's V2 or later - use V2.
-		return encodeCaveatIdV2(condition, rootKey, &thirdPartyInfo.PublicKey, key)
+		// Version 3 or later - use V3.
+		return encodeCaveatV3(condition, rootKey, &thirdPartyInfo.PublicKey, key, ns)
 	}
 }
 
-// encodeCaveatIdV1 creates a JSON-encoded third-party caveat
+// encodeCaveatV1 creates a JSON-encoded third-party caveat
 // with the given condtion and root key. The thirdPartyPubKey key
 // represents the public key of the third party we're encrypting
 // the caveat for; the key is the public/private key pair of the party
 // that's adding the caveat.
-func encodeCaveatIdV1(
+func encodeCaveatV1(
 	condition string,
 	rootKey []byte,
 	thirdPartyPubKey *PublicKey,
@@ -61,7 +66,7 @@ func encodeCaveatIdV1(
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return nil, errgo.Notef(err, "cannot generate random number for nonce")
 	}
-	plain := caveatIdRecord{
+	plain := caveatRecord{
 		RootKey:   rootKey,
 		Condition: condition,
 	}
@@ -70,7 +75,7 @@ func encodeCaveatIdV1(
 		return nil, errgo.Notef(err, "cannot marshal %#v", &plain)
 	}
 	sealed := box.Seal(nil, plainData, &nonce, thirdPartyPubKey.boxKey(), key.Private.boxKey())
-	id := caveatId{
+	id := caveatJSON{
 		ThirdPartyPublicKey: thirdPartyPubKey,
 		FirstPartyPublicKey: &key.Public,
 		Nonce:               nonce[:],
@@ -85,143 +90,218 @@ func encodeCaveatIdV1(
 	return buf, nil
 }
 
-const publicKeyPrefixLen = 4
-
-// encodeCaveatIdV2 creates a version 2 third-party caveat.
-//
-// The v2 format has the following packed binary fields:
-// version 2 [1 byte]
-// first 4 bytes of third-party Curve25519 public key [4 bytes]
-// first-party Curve25519 public key [32 bytes]
-// nonce [24 bytes]
-// encrypted secret part [rest of message]
-func encodeCaveatIdV2(
+// encodeCaveatV2 creates a version 2 third-party caveat.
+func encodeCaveatV2(
 	condition string,
 	rootKey []byte,
 	thirdPartyPubKey *PublicKey,
 	key *KeyPair,
 ) ([]byte, error) {
-	var nonce [NonceLen]byte
-	if _, err := rand.Read(nonce[:]); err != nil {
-		return nil, errgo.Notef(err, "cannot generate random number for nonce")
+	return encodeCaveatV2V3(Version2, condition, rootKey, thirdPartyPubKey, key, nil)
+}
+
+// encodeCaveatV3 creates a version 3 third-party caveat.
+func encodeCaveatV3(
+	condition string,
+	rootKey []byte,
+	thirdPartyPubKey *PublicKey,
+	key *KeyPair,
+	ns *checkers.Namespace,
+) ([]byte, error) {
+	return encodeCaveatV2V3(Version3, condition, rootKey, thirdPartyPubKey, key, ns)
+}
+
+const publicKeyPrefixLen = 4
+
+// version3CaveatMinLen holds an underestimate of the
+// minimum length of a version 3 caveat.
+const version3CaveatMinLen = 1 + 4 + 32 + 24 + box.Overhead + 1
+
+// encodeCaveatV3 creates a version 2 or version 3 third-party caveat.
+//
+// The format has the following packed binary fields (note
+// that all fields up to and including the nonce are the same
+// as the v2 format):
+//
+// 	version 2 or 3 [1 byte]
+// 	first 4 bytes of third-party Curve25519 public key [4 bytes]
+// 	first-party Curve25519 public key [32 bytes]
+// 	nonce [24 bytes]
+// 	encrypted secret part [rest of message]
+//
+// The encrypted part encrypts the following fields
+// with box.Seal:
+//
+// 	version 2 or 3 [1 byte]
+// 	length of root key [n: uvarint]
+// 	root key [n bytes]
+// 	length of encoded namespace [n: uvarint] (Version 3 only)
+// 	encoded namespace [n bytes] (Version 3 only)
+// 	condition [rest of encrypted part]
+func encodeCaveatV2V3(
+	version Version,
+	condition string,
+	rootKey []byte,
+	thirdPartyPubKey *PublicKey,
+	key *KeyPair,
+	ns *checkers.Namespace,
+) ([]byte, error) {
+
+	var nsData []byte
+	if version >= Version3 {
+		data, err := ns.MarshalText()
+		if err != nil {
+			return nil, errgo.Mask(err)
+		}
+		nsData = data
 	}
-	data := make([]byte, 0, 1+publicKeyPrefixLen+KeyLen+NonceLen+1+binary.MaxVarintLen64+len(rootKey)+len(condition)+box.Overhead)
-	data = append(data, byte(Version2)) //version
+	// dataLen is our estimate of how long the data will be.
+	// As we always use append, this doesn't have to be strictly
+	// accurate but it's nice to avoid allocations.
+	dataLen := 0 +
+		1 + // version
+		publicKeyPrefixLen +
+		KeyLen +
+		NonceLen +
+		box.Overhead +
+		1 + // version
+		uvarintLen(uint64(len(rootKey))) +
+		len(rootKey) +
+		uvarintLen(uint64(len(nsData))) +
+		len(nsData) +
+		len(condition)
+
+	var nonce [NonceLen]byte = uuidGen.Next()
+
+	data := make([]byte, 0, dataLen)
+	data = append(data, byte(version))
 	data = append(data, thirdPartyPubKey.Key[:publicKeyPrefixLen]...)
 	data = append(data, key.Public.Key[:]...)
 	data = append(data, nonce[:]...)
-	secret := encodeSecretPartV2(condition, rootKey)
-	data = box.Seal(data, secret, &nonce, thirdPartyPubKey.boxKey(), key.Private.boxKey())
-	return data, nil
+	secret := encodeSecretPartV2V3(version, condition, rootKey, nsData)
+	return box.Seal(data, secret, &nonce, thirdPartyPubKey.boxKey(), key.Private.boxKey()), nil
 }
 
-// encodeSecretPartV2 creates a version 0 secret part of the third party
-// caveat. The generated secret part is not encrypted.
+// encodeSecretPartV2V3 creates a version 2 or version 3 secret part of the third party
+// caveat. The returned data is not encrypted.
 //
-// The v2 format has the following packed binary fields:
-// version 2 [1 byte]
-// root key [24 bytes]
+// The format has the following packed binary fields:
+// version 2 or 3 [1 byte]
+// root key length [n: uvarint]
+// root key [n bytes]
+// namespace length [n: uvarint] (v3 only)
+// namespace [n bytes] (v3 only)
 // predicate [rest of message]
-func encodeSecretPartV2(condition string, rootKey []byte) []byte {
+func encodeSecretPartV2V3(version Version, condition string, rootKey, nsData []byte) []byte {
 	data := make([]byte, 0, 1+binary.MaxVarintLen64+len(rootKey)+len(condition))
-	data = append(data, byte(Version2)) // version
-	n := binary.PutUvarint(data[1:1+binary.MaxVarintLen64], uint64(len(rootKey)))
-	data = data[0 : len(data)+n]
+	data = append(data, byte(version)) // version
+	data = appendUvarint(data, uint64(len(rootKey)))
 	data = append(data, rootKey...)
+	if version >= Version3 {
+		data = appendUvarint(data, uint64(len(nsData)))
+		data = append(data, nsData...)
+	}
 	data = append(data, condition...)
 	return data
 }
 
-// decodeCaveatId attempts to decode id decrypting the encrypted part
+// decodeCaveat attempts to decode caveat by decrypting the encrypted part
 // using key.
-func decodeCaveatId(key *KeyPair, id []byte) (*ThirdPartyCaveatInfo, error) {
-	if len(id) == 0 {
-		return nil, errgo.New("caveat id empty")
+func decodeCaveat(key *KeyPair, caveat []byte) (*ThirdPartyCaveatInfo, error) {
+	if len(caveat) == 0 {
+		return nil, errgo.New("empty third party caveat")
 	}
-	switch id[0] {
+	switch caveat[0] {
 	case byte(Version2):
-		return decodeCaveatIdV2(key, []byte(id))
+		return decodeCaveatV2V3(Version2, key, caveat)
+	case byte(Version3):
+		if len(caveat) < version3CaveatMinLen {
+			// If it has the version 3 caveat tag and it's too short, it's
+			// almost certainly an id, not an encrypted payload.
+			return nil, errgo.Newf("caveat id payload not provided for caveat id %q", caveat)
+		}
+		return decodeCaveatV2V3(Version3, key, caveat)
 	case 'e':
 		// 'e' will be the first byte if the caveatid is a base64 encoded JSON object.
-		return decodeJSONCaveatId(key, id)
+		return decodeCaveatV1(key, caveat)
 	default:
-		return nil, errgo.Newf("caveat id has unsupported version %d", id[0])
+		return nil, errgo.Newf("caveat has unsupported version %d", caveat[0])
 	}
 }
 
-// decodeJSONCaveatId attempts to decode a base64 encoded JSON id. This
+// decodeCaveatV1 attempts to decode a base64 encoded JSON id. This
 // encoding is nominally version -1.
-func decodeJSONCaveatId(key *KeyPair, id []byte) (*ThirdPartyCaveatInfo, error) {
-	data := make([]byte, (3*len(id)+3)/4)
-	n, err := base64.StdEncoding.Decode(data, id)
+func decodeCaveatV1(key *KeyPair, caveat []byte) (*ThirdPartyCaveatInfo, error) {
+	data := make([]byte, (3*len(caveat)+3)/4)
+	n, err := base64.StdEncoding.Decode(data, caveat)
 	if err != nil {
-		return nil, errgo.Notef(err, "cannot base64-decode caveat id")
+		return nil, errgo.Notef(err, "cannot base64-decode caveat")
 	}
 	data = data[:n]
-	var tpid caveatId
-	if err := json.Unmarshal(data, &tpid); err != nil {
-		return nil, errgo.Notef(err, "cannot unmarshal caveat id %q", data)
+	var wrapper caveatJSON
+	if err := json.Unmarshal(data, &wrapper); err != nil {
+		return nil, errgo.Notef(err, "cannot unmarshal caveat %q", data)
 	}
-	if !bytes.Equal(key.Public.Key[:], tpid.ThirdPartyPublicKey.Key[:]) {
+	if !bytes.Equal(key.Public.Key[:], wrapper.ThirdPartyPublicKey.Key[:]) {
 		return nil, errgo.New("public key mismatch")
 	}
-	if tpid.FirstPartyPublicKey == nil {
+	if wrapper.FirstPartyPublicKey == nil {
 		return nil, errgo.New("target service public key not specified")
 	}
 	// The encrypted string is base64 encoded in the JSON representation.
-	secret, err := base64.StdEncoding.DecodeString(tpid.Id)
+	secret, err := base64.StdEncoding.DecodeString(wrapper.Id)
 	if err != nil {
 		return nil, errgo.Notef(err, "cannot base64-decode encrypted data")
 	}
 	var nonce [NonceLen]byte
-	if copy(nonce[:], tpid.Nonce) < NonceLen {
-		return nil, errgo.Newf("nonce too short %x", tpid.Nonce)
+	if copy(nonce[:], wrapper.Nonce) < NonceLen {
+		return nil, errgo.Newf("nonce too short %x", wrapper.Nonce)
 	}
-	cid, ok := box.Open(nil, secret, &nonce, tpid.FirstPartyPublicKey.boxKey(), key.Private.boxKey())
+	c, ok := box.Open(nil, secret, &nonce, wrapper.FirstPartyPublicKey.boxKey(), key.Private.boxKey())
 	if !ok {
-		return nil, errgo.Newf("cannot decrypt caveat id %#v", tpid)
+		return nil, errgo.Newf("cannot decrypt caveat %#v", wrapper)
 	}
-	var record caveatIdRecord
-	if err := json.Unmarshal(cid, &record); err != nil {
+	var record caveatRecord
+	if err := json.Unmarshal(c, &record); err != nil {
 		return nil, errgo.Notef(err, "cannot decode third party caveat record")
 	}
 	return &ThirdPartyCaveatInfo{
 		Condition:           record.Condition,
-		FirstPartyPublicKey: *tpid.FirstPartyPublicKey,
+		FirstPartyPublicKey: *wrapper.FirstPartyPublicKey,
 		ThirdPartyKeyPair:   *key,
 		RootKey:             record.RootKey,
-		CaveatId:            id,
-		MacaroonId:          id,
+		Caveat:              caveat,
 		Version:             Version1,
+		Namespace:           legacyNamespace(),
 	}, nil
 }
 
-// decodeCaveatIdV2 decodes a version 0 caveat id.
-func decodeCaveatIdV2(key *KeyPair, id []byte) (*ThirdPartyCaveatInfo, error) {
-	origId := id
-	if len(id) < 1+publicKeyPrefixLen+KeyLen+NonceLen+box.Overhead {
+// decodeCaveatV2V3 decodes a version 2 or version 3 caveat.
+func decodeCaveatV2V3(version Version, key *KeyPair, caveat []byte) (*ThirdPartyCaveatInfo, error) {
+	origCaveat := caveat
+	if len(caveat) < 1+publicKeyPrefixLen+KeyLen+NonceLen+box.Overhead {
 		return nil, errgo.New("caveat id too short")
 	}
-	id = id[1:] // skip version (already checked)
+	caveat = caveat[1:] // skip version (already checked)
 
-	publicKeyPrefix, id := id[:publicKeyPrefixLen], id[publicKeyPrefixLen:]
+	publicKeyPrefix, caveat := caveat[:publicKeyPrefixLen], caveat[publicKeyPrefixLen:]
 	if !bytes.Equal(key.Public.Key[:publicKeyPrefixLen], publicKeyPrefix) {
 		return nil, errgo.New("public key mismatch")
 	}
 
 	var firstPartyPub PublicKey
-	copy(firstPartyPub.Key[:], id[:KeyLen])
-	id = id[KeyLen:]
+	copy(firstPartyPub.Key[:], caveat[:KeyLen])
+	caveat = caveat[KeyLen:]
 
 	var nonce [NonceLen]byte
-	copy(nonce[:], id[:NonceLen])
-	id = id[NonceLen:]
+	copy(nonce[:], caveat[:NonceLen])
+	caveat = caveat[NonceLen:]
 
-	data, ok := box.Open(nil, id, &nonce, firstPartyPub.boxKey(), key.Private.boxKey())
+	data, ok := box.Open(nil, caveat, &nonce, firstPartyPub.boxKey(), key.Private.boxKey())
 	if !ok {
 		return nil, errgo.Newf("cannot decrypt caveat id")
 	}
-	rootKey, condition, err := decodeSecretPartV2(data)
+	rootKey, ns, condition, err := decodeSecretPartV2V3(version, data)
 	if err != nil {
 		return nil, errgo.Notef(err, "invalid secret part")
 	}
@@ -230,28 +310,69 @@ func decodeCaveatIdV2(key *KeyPair, id []byte) (*ThirdPartyCaveatInfo, error) {
 		FirstPartyPublicKey: firstPartyPub,
 		ThirdPartyKeyPair:   *key,
 		RootKey:             rootKey,
-		CaveatId:            origId,
-		MacaroonId:          origId,
-		Version:             Version2,
+		Caveat:              origCaveat,
+		Version:             version,
+		Namespace:           ns,
 	}, nil
 }
 
-func decodeSecretPartV2(data []byte) (rootKey []byte, condition string, err error) {
+func decodeSecretPartV2V3(version Version, data []byte) (rootKey []byte, ns *checkers.Namespace, condition string, err error) {
 	if len(data) < 1 {
-		return nil, "", errgo.New("secret part too short")
+		return nil, nil, "", errgo.New("secret part too short")
 	}
-
-	version, data := data[0], data[1:]
-	if version != byte(Version2) {
-		return nil, "", errgo.Newf("unsupported secret part version %d", version)
+	gotVersion, data := data[0], data[1:]
+	if version != Version(gotVersion) {
+		return nil, nil, "", errgo.Newf("unexpected secret part version, got %d want %d", gotVersion, version)
 	}
 
 	l, n := binary.Uvarint(data)
 	if n <= 0 || uint64(n)+l > uint64(len(data)) {
-		return nil, "", errgo.Newf("invalid root key length")
+		return nil, nil, "", errgo.Newf("invalid root key length")
 	}
 	data = data[n:]
+	rootKey, data = data[:l], data[l:]
 
-	rootKey, condition = data[:l], string(data[l:])
-	return rootKey, condition, nil
+	if version >= Version3 {
+		var nsData []byte
+		var ns1 checkers.Namespace
+
+		l, n = binary.Uvarint(data)
+		if n <= 0 || uint64(n)+l > uint64(len(data)) {
+			return nil, nil, "", errgo.Newf("invalid namespace length")
+		}
+		data = data[n:]
+		nsData, data = data[:l], data[l:]
+		if err := ns1.UnmarshalText(nsData); err != nil {
+			return nil, nil, "", errgo.Notef(err, "cannot unmarshal namespace")
+		}
+		ns = &ns1
+	} else {
+		ns = legacyNamespace()
+	}
+	return rootKey, ns, string(data), nil
+}
+
+// appendUvarint appends n to data encoded as a variable-length
+// unsigned integer.
+func appendUvarint(data []byte, n uint64) []byte {
+	// Ensure the capacity is sufficient. If our space calculations when
+	// allocating data were correct, this should never happen,
+	// but be defensive just in case.
+	for need := uvarintLen(n); cap(data)-len(data) < need; {
+		data1 := append(data[0:cap(data)], 0)
+		data = data1[0:len(data)]
+	}
+	nlen := binary.PutUvarint(data[len(data):cap(data)], n)
+	return data[0 : len(data)+nlen]
+}
+
+// uvarintLen returns the number of bytes that n will require
+// when encoded with binary.PutUvarint.
+func uvarintLen(n uint64) int {
+	len := 1
+	n >>= 7
+	for ; n > 0; n >>= 7 {
+		len++
+	}
+	return len
 }

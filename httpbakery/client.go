@@ -70,7 +70,7 @@ func IsInteractionError(err error) bool {
 // by an HTTP response made to a WaitURL
 // (See the ErrorInfo type).
 type WaitResponse struct {
-	Macaroon *macaroon.Macaroon
+	Macaroon *bakery.Macaroon
 }
 
 // NewHTTPClient returns an http.Client that ensures
@@ -147,7 +147,7 @@ type Client struct {
 type DischargeAcquirer interface {
 	// AcquireDischarge should return a discharge macaroon for the given third
 	// party caveat.
-	AcquireDischarge(ctx context.Context, cav macaroon.Caveat) (*macaroon.Macaroon, error)
+	AcquireDischarge(ctx context.Context, cav macaroon.Caveat, payload []byte) (*bakery.Macaroon, error)
 }
 
 // NewClient returns a new Client containing an HTTP client
@@ -169,7 +169,7 @@ func NewClient() *Client {
 //
 // The returned macaroon slice will not be stored in the client
 // cookie jar (see SetCookie if you need to do that).
-func (c *Client) DischargeAll(ctx context.Context, m *macaroon.Macaroon) (macaroon.Slice, error) {
+func (c *Client) DischargeAll(ctx context.Context, m *bakery.Macaroon) (macaroon.Slice, error) {
 	return bakery.DischargeAllWithKey(ctx, m, c.dischargeAcquirer().AcquireDischarge, c.Key)
 }
 
@@ -421,7 +421,7 @@ func appendURLElem(u, elem string) string {
 
 // AcquireDischarge implements DischargeAcquirer by requesting a discharge
 // macaroon from the caveat location as an HTTP URL.
-func (c *Client) AcquireDischarge(ctx context.Context, cav macaroon.Caveat) (*macaroon.Macaroon, error) {
+func (c *Client) AcquireDischarge(ctx context.Context, cav macaroon.Caveat, payload []byte) (*bakery.Macaroon, error) {
 	dclient := newDischargeClient(cav.Location, c)
 	var id, id64 string
 	if utf8.Valid(cav.Id) {
@@ -429,10 +429,14 @@ func (c *Client) AcquireDischarge(ctx context.Context, cav macaroon.Caveat) (*ma
 	} else {
 		id64 = base64.RawURLEncoding.EncodeToString(cav.Id)
 	}
-	resp, err := dclient.Discharge(ctx, &dischargeRequest{
+	req := &dischargeRequest{
 		Id:   id,
 		Id64: id64,
-	})
+	}
+	if len(payload) > 0 {
+		req.Caveat = base64.RawURLEncoding.EncodeToString(payload)
+	}
+	resp, err := dclient.Discharge(ctx, req)
 	if err == nil {
 		return resp.Macaroon, nil
 	}
@@ -461,7 +465,7 @@ func (c *Client) AcquireDischarge(ctx context.Context, cav macaroon.Caveat) (*ma
 
 // interact gathers a macaroon by directing the user to interact with a
 // web page.
-func (c *Client) interact(ctx context.Context, location, visitURLStr, waitURLStr string) (*macaroon.Macaroon, error) {
+func (c *Client) interact(ctx context.Context, location, visitURLStr, waitURLStr string) (*bakery.Macaroon, error) {
 	visitURL, err := relativeURL(location, visitURLStr)
 	if err != nil {
 		return nil, errgo.Notef(err, "cannot make relative visit URL")

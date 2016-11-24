@@ -197,7 +197,7 @@ func decodeMacaroonId(id []byte) (storageId []byte, ops []Op, err error) {
 //
 // The macaroon will expire at the given time - a TimeBefore first party caveat will be added with
 // that time.
-func (o *Oven) NewMacaroon(ctxt context.Context, version macaroon.Version, expiry time.Time, caveats []checkers.Caveat, ops ...Op) (*macaroon.Macaroon, error) {
+func (o *Oven) NewMacaroon(ctxt context.Context, version Version, expiry time.Time, caveats []checkers.Caveat, ops ...Op) (*Macaroon, error) {
 	if len(ops) == 0 {
 		return nil, errgo.Newf("cannot mint a macaroon associated with no operations")
 	}
@@ -219,14 +219,14 @@ func (o *Oven) NewMacaroon(ctxt context.Context, version macaroon.Version, expir
 	// TODO We could use a proto.Buffer to avoid this copy.
 	copy(idBytes[1:], idBytesNoVersion)
 
-	if version < macaroon.V2 {
+	if MacaroonVersion(version) < macaroon.V2 {
 		// The old macaroon format required valid text for the macaroon id,
 		// so base64-encode it.
 		b64data := make([]byte, base64.RawURLEncoding.EncodedLen(len(idBytes)))
 		base64.RawURLEncoding.Encode(b64data, idBytes)
 		idBytes = b64data
 	}
-	m, err := macaroon.New(rootKey, idBytes, o.p.Location, version)
+	m, err := NewMacaroon(rootKey, idBytes, o.p.Location, version, o.p.Namespace)
 	if err != nil {
 		return nil, errgo.Notef(err, "cannot create macaroon")
 	}
@@ -240,18 +240,13 @@ func (o *Oven) NewMacaroon(ctxt context.Context, version macaroon.Version, expir
 }
 
 // AddCaveat adds a caveat to the given macaroon.
-func (o *Oven) AddCaveat(ctxt context.Context, m *macaroon.Macaroon, cav checkers.Caveat) error {
-	return AddCaveat(ctxt, o.p.Key, o.p.Locator, m, cav, o.p.Namespace)
+func (o *Oven) AddCaveat(ctx context.Context, m *Macaroon, cav checkers.Caveat) error {
+	return m.AddCaveat(ctx, cav, o.p.Key, o.p.Locator)
 }
 
-// AddCaveats uses o.AddCaveat to add all the given caveats to the macaroon.
-func (o *Oven) AddCaveats(ctxt context.Context, m *macaroon.Macaroon, caveats []checkers.Caveat) error {
-	for _, cav := range caveats {
-		if err := o.AddCaveat(ctxt, m, cav); err != nil {
-			return errgo.Notef(err, "cannot add caveat: %v", err)
-		}
-	}
-	return nil
+// AddCaveats adds all the caveats to the given macaroon.
+func (o *Oven) AddCaveats(ctxt context.Context, m *Macaroon, caveats []checkers.Caveat) error {
+	return m.AddCaveats(ctxt, caveats, o.p.Key, o.p.Locator)
 }
 
 // Key returns the oven's private/public key par.

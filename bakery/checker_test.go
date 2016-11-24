@@ -194,7 +194,7 @@ func (s *checkerSuite) TestCombineCapabilities(c *gc.C) {
 	m, err := ts.capability(testContext, []macaroon.Slice{m1, m2}, readOp("e1"), readOp("e2"), readOp("e3"))
 	c.Assert(err, gc.IsNil)
 
-	_, err = ts.do(testContext, []macaroon.Slice{{m}}, readOp("e1"), readOp("e2"), readOp("e3"))
+	_, err = ts.do(testContext, []macaroon.Slice{{m.M()}}, readOp("e1"), readOp("e2"), readOp("e3"))
 	c.Assert(err, gc.IsNil)
 }
 
@@ -273,21 +273,21 @@ func (s *checkerSuite) TestCapabilityCombinesFirstPartyCaveats(c *gc.C) {
 	// capable of both operations.
 	m1, err := newClient(locator).capability(asUser("alice"), ts, readOp("e1"))
 	c.Assert(err, gc.IsNil)
-	m1.AddFirstPartyCaveat("true 1")
-	m1.AddFirstPartyCaveat("true 2")
+	m1.M().AddFirstPartyCaveat("true 1")
+	m1.M().AddFirstPartyCaveat("true 2")
 	m2, err := newClient(locator).capability(asUser("bob"), ts, readOp("e2"))
 	c.Assert(err, gc.IsNil)
-	m2.AddFirstPartyCaveat("true 3")
-	m2.AddFirstPartyCaveat("true 4")
+	m2.M().AddFirstPartyCaveat("true 3")
+	m2.M().AddFirstPartyCaveat("true 4")
 
 	client := newClient(locator)
-	client.addMacaroon(ts, "authz1", macaroon.Slice{m1})
-	client.addMacaroon(ts, "authz2", macaroon.Slice{m2})
+	client.addMacaroon(ts, "authz1", macaroon.Slice{m1.M()})
+	client.addMacaroon(ts, "authz2", macaroon.Slice{m2.M()})
 
 	m, err := client.capability(testContext, ts, readOp("e1"), readOp("e2"))
 	c.Assert(err, gc.IsNil)
 
-	c.Assert(macaroonConditions(m.Caveats(), false), jc.DeepEquals, []string{
+	c.Assert(macaroonConditions(m.M().Caveats(), false), jc.DeepEquals, []string{
 		"true 1",
 		"true 2",
 		"true 3",
@@ -343,30 +343,29 @@ func (s *checkerSuite) TestFirstPartyCaveatSquashing(c *gc.C) {
 	ids := s.newIdService("ids", locator)
 	auth := opAuthorizer{readOp("e1"): {"alice"}, readOp("e2"): {"alice"}}
 	ts := newService(auth, ids, locator)
-	ns := ts.checker.Namespace()
 	for i, test := range firstPartyCaveatSquashingTests {
 		c.Logf("test %d: %v", i, test.about)
 
 		// Make a first macaroon with all the required first party caveats.
 		m1, err := newClient(locator).capability(asUser("alice"), ts, readOp("e1"))
 		c.Assert(err, gc.IsNil)
-		for _, cav := range test.caveats {
-			m1.AddFirstPartyCaveat(ns.ResolveCaveat(cav).Condition)
-		}
+		err = m1.AddCaveats(testContext, test.caveats, nil, nil)
+		c.Assert(err, gc.IsNil)
 
 		// Make a second macaroon that's not used to check that it's
 		// caveats are not added.
 		m2, err := newClient(locator).capability(asUser("alice"), ts, readOp("e2"))
 		c.Assert(err, gc.IsNil)
-		m2.AddFirstPartyCaveat(ns.ResolveCaveat(trueCaveat("notused")).Condition)
+		err = m2.AddCaveat(testContext, trueCaveat("notused"), nil, nil)
+		c.Assert(err, gc.IsNil)
 
 		client := newClient(locator)
-		client.addMacaroon(ts, "authz1", macaroon.Slice{m1})
-		client.addMacaroon(ts, "authz2", macaroon.Slice{m2})
+		client.addMacaroon(ts, "authz1", macaroon.Slice{m1.M()})
+		client.addMacaroon(ts, "authz2", macaroon.Slice{m2.M()})
 
 		m3, err := client.capability(testContext, ts, readOp("e1"))
 		c.Assert(err, gc.IsNil)
-		c.Assert(macaroonConditions(m3.Caveats(), false), jc.DeepEquals, resolveCaveats(ns, test.expect))
+		c.Assert(macaroonConditions(m3.M().Caveats(), false), jc.DeepEquals, resolveCaveats(m3.Namespace(), test.expect))
 	}
 }
 
@@ -439,17 +438,18 @@ func (s *checkerSuite) TestOperationAllowCaveat(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 
 	// Sanity check that we can do a write.
-	_, err = ts.do(testContext, []macaroon.Slice{{m}}, writeOp("e1"))
+	_, err = ts.do(testContext, []macaroon.Slice{{m.M()}}, writeOp("e1"))
 	c.Assert(err, gc.IsNil)
 
-	addFirstPartyCaveats(m, ts.checker.Namespace(), checkers.AllowCaveat("read"))
+	err = m.AddCaveat(testContext, checkers.AllowCaveat("read"), nil, nil)
+	c.Assert(err, gc.IsNil)
 
 	// A read operation should work.
-	_, err = ts.do(testContext, []macaroon.Slice{{m}}, readOp("e1"), readOp("e2"))
+	_, err = ts.do(testContext, []macaroon.Slice{{m.M()}}, readOp("e1"), readOp("e2"))
 	c.Assert(err, gc.IsNil)
 
 	// A write operation should fail even though the original macaroon allowed it.
-	_, err = ts.do(testContext, []macaroon.Slice{{m}}, writeOp("e1"))
+	_, err = ts.do(testContext, []macaroon.Slice{{m.M()}}, writeOp("e1"))
 	c.Assert(err, gc.ErrorMatches, `discharge required`)
 }
 
@@ -464,17 +464,18 @@ func (s *checkerSuite) TestOperationDenyCaveat(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 
 	// Sanity check that we can do a write.
-	_, err = ts.do(testContext, []macaroon.Slice{{m}}, writeOp("e1"))
+	_, err = ts.do(testContext, []macaroon.Slice{{m.M()}}, writeOp("e1"))
 	c.Assert(err, gc.IsNil)
 
-	addFirstPartyCaveats(m, ts.checker.Namespace(), checkers.DenyCaveat("write"))
+	err = m.AddCaveat(testContext, checkers.DenyCaveat("write"), nil, nil)
+	c.Assert(err, gc.IsNil)
 
 	// A read operation should work.
-	_, err = ts.do(testContext, []macaroon.Slice{{m}}, readOp("e1"), readOp("e2"))
+	_, err = ts.do(testContext, []macaroon.Slice{{m.M()}}, readOp("e1"), readOp("e2"))
 	c.Assert(err, gc.IsNil)
 
 	// A write operation should fail even though the original macaroon allowed it.
-	_, err = ts.do(testContext, []macaroon.Slice{{m}}, writeOp("e1"))
+	_, err = ts.do(testContext, []macaroon.Slice{{m.M()}}, writeOp("e1"))
 	c.Assert(err, gc.ErrorMatches, `discharge required`)
 }
 
@@ -529,12 +530,6 @@ func (s *checkerSuite) TestMacaroonOpsFatalError(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	_, err = checker.Auth(macaroon.Slice{m}).Allow(testContext, bakery.LoginOp)
 	c.Assert(err, gc.ErrorMatches, `cannot retrieve macaroon: an error`)
-}
-
-func addFirstPartyCaveats(m *macaroon.Macaroon, ns *checkers.Namespace, caveats ...checkers.Caveat) {
-	for _, cav := range caveats {
-		m.AddFirstPartyCaveat(ns.ResolveCaveat(cav).Condition)
-	}
 }
 
 // resolveCaveats resolves all the given caveats with the
@@ -738,7 +733,7 @@ func (svc *service) doAny(ctxt context.Context, ms []macaroon.Slice, ops ...bake
 	return authInfo, allowed, svc.maybeDischargeRequiredError(err)
 }
 
-func (svc *service) capability(ctxt context.Context, ms []macaroon.Slice, ops ...bakery.Op) (*macaroon.Macaroon, error) {
+func (svc *service) capability(ctxt context.Context, ms []macaroon.Slice, ops ...bakery.Op) (*bakery.Macaroon, error) {
 	conds, err := svc.checker.Auth(ms...).AllowCapability(ctxt, ops...)
 	if err != nil {
 		return nil, svc.maybeDischargeRequiredError(err)
@@ -748,7 +743,7 @@ func (svc *service) capability(ctxt context.Context, ms []macaroon.Slice, ops ..
 		return nil, errgo.Mask(err)
 	}
 	for _, cond := range conds {
-		if err := m.AddFirstPartyCaveat(cond); err != nil {
+		if err := m.M().AddFirstPartyCaveat(cond); err != nil {
 			return nil, errgo.Mask(err)
 		}
 	}
@@ -782,22 +777,23 @@ type discharger struct {
 
 type dischargeRequiredError struct {
 	name string
-	m    *macaroon.Macaroon
+	m    *bakery.Macaroon
 }
 
 func (*dischargeRequiredError) Error() string {
 	return "discharge required"
 }
 
-func (d *discharger) discharge(ctxt context.Context, cav macaroon.Caveat, ns *checkers.Namespace) (*macaroon.Macaroon, error) {
-	m, caveats, err := bakery.Discharge(ctxt, d.key, d.checker, cav.Id)
+func (d *discharger) discharge(ctxt context.Context, cav macaroon.Caveat, payload []byte) (*bakery.Macaroon, error) {
+	m, err := bakery.Discharge(ctxt, bakery.DischargeParams{
+		Id:      cav.Id,
+		Caveat:  payload,
+		Key:     d.key,
+		Checker: d.checker,
+		Locator: d.locator,
+	})
 	if err != nil {
 		return nil, errgo.Mask(err)
-	}
-	for _, cav := range caveats {
-		if err := bakery.AddCaveat(ctxt, d.key, d.locator, m, cav, ns); err != nil {
-			return nil, errgo.Mask(err)
-		}
 	}
 	return m, nil
 }
@@ -851,8 +847,8 @@ func (c *client) doAny(ctxt context.Context, svc *service, ops ...bakery.Op) (*b
 }
 
 // capability returns a capability macaroon for the given operations.
-func (c *client) capability(ctxt context.Context, svc *service, ops ...bakery.Op) (*macaroon.Macaroon, error) {
-	var m *macaroon.Macaroon
+func (c *client) capability(ctxt context.Context, svc *service, ops ...bakery.Op) (*bakery.Macaroon, error) {
+	var m *bakery.Macaroon
 	err := c.doFunc(ctxt, svc, func(ms []macaroon.Slice) (err error) {
 		m, err = svc.capability(ctxt, ms, ops...)
 		return
@@ -865,7 +861,7 @@ func (c *client) dischargedCapability(ctxt context.Context, svc *service, ops ..
 	if err != nil {
 		return nil, errgo.Mask(err)
 	}
-	return c.dischargeAll(ctxt, m, svc.checker.Namespace())
+	return c.dischargeAll(ctxt, m)
 }
 
 func (c *client) doFunc(ctxt context.Context, svc *service, f func(ms []macaroon.Slice) error) error {
@@ -875,7 +871,7 @@ func (c *client) doFunc(ctxt context.Context, svc *service, f func(ms []macaroon
 		if !ok {
 			return err
 		}
-		ms, err := c.dischargeAll(ctxt, derr.m, svc.checker.Namespace())
+		ms, err := c.dischargeAll(ctxt, derr.m)
 		if err != nil {
 			return errgo.Mask(err)
 		}
@@ -916,12 +912,12 @@ func (c *client) requestMacaroons(svc *service) []macaroon.Slice {
 	return ms
 }
 
-func (c *client) dischargeAll(ctxt context.Context, m *macaroon.Macaroon, ns *checkers.Namespace) (macaroon.Slice, error) {
-	return bakery.DischargeAll(ctxt, m, func(_ context.Context, cav macaroon.Caveat) (*macaroon.Macaroon, error) {
+func (c *client) dischargeAll(ctx context.Context, m *bakery.Macaroon) (macaroon.Slice, error) {
+	return bakery.DischargeAll(ctx, m, func(ctx context.Context, cav macaroon.Caveat, payload []byte) (*bakery.Macaroon, error) {
 		d := c.dischargers[cav.Location]
 		if d == nil {
 			return nil, errgo.Newf("third party discharger %q not found", cav.Location)
 		}
-		return d.discharge(ctxt, cav, ns)
+		return d.discharge(ctx, cav, payload)
 	})
 }

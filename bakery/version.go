@@ -12,7 +12,8 @@ const (
 	Version1 Version = 1
 	// In version 2, binary macaroons and caveat ids are supported.
 	Version2 Version = 2
-	// In version 3, we support operations associated with macaroons.
+	// In version 3, we support operations associated with macaroons
+	// and external third party caveats.
 	Version3      Version = 3
 	LatestVersion         = Version3
 )

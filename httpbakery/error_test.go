@@ -10,8 +10,8 @@ import (
 	jc "github.com/juju/testing/checkers"
 	"github.com/juju/testing/httptesting"
 	gc "gopkg.in/check.v1"
-	"gopkg.in/macaroon.v2-unstable"
 
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/httpbakery"
 )
 
@@ -20,7 +20,7 @@ type ErrorSuite struct{}
 var _ = gc.Suite(&ErrorSuite{})
 
 func (s *ErrorSuite) TestWriteDischargeRequiredError(c *gc.C) {
-	m, err := macaroon.New([]byte("secret"), []byte("id"), "a location", macaroon.V1)
+	m, err := bakery.NewMacaroon([]byte("secret"), []byte("id"), "a location", bakery.Version1, nil)
 	c.Assert(err, gc.IsNil)
 	tests := []struct {
 		about            string

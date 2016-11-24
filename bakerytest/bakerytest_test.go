@@ -11,7 +11,6 @@ import (
 	"github.com/juju/httprequest"
 	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
-	"gopkg.in/macaroon.v2-unstable"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
@@ -44,7 +43,7 @@ func (s *suite) TestDischargerSimple(c *gc.C) {
 		Locator:  d,
 		Key:      mustGenerateKey(),
 	})
-	m, err := b.Oven.NewMacaroon(context.Background(), macaroon.LatestVersion, ages, []checkers.Caveat{{
+	m, err := b.Oven.NewMacaroon(context.Background(), bakery.LatestVersion, ages, []checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
 	}}, dischargeOp)
@@ -84,16 +83,16 @@ func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 		PublicKey: d2.Key.Public,
 		Version:   bakery.LatestVersion,
 	})
-	c.Logf("map: %s", locator)
 	b := bakery.New(bakery.BakeryParams{
 		Location: "here",
 		Locator:  locator,
 		Key:      mustGenerateKey(),
 	})
-	m, err := b.Oven.NewMacaroon(context.Background(), macaroon.LatestVersion, ages, []checkers.Caveat{{
+	m, err := b.Oven.NewMacaroon(context.Background(), bakery.LatestVersion, ages, []checkers.Caveat{{
 		Location:  d2.Location(),
 		Condition: "true",
 	}}, dischargeOp)
+
 	c.Assert(err, gc.IsNil)
 
 	ms, err := s.client.DischargeAll(context.Background(), m)
@@ -165,7 +164,7 @@ func (s *suite) TestInteractiveDischarger(c *gc.C) {
 		Checker:  &r,
 		Key:      mustGenerateKey(),
 	})
-	m, err := b.Oven.NewMacaroon(context.Background(), macaroon.LatestVersion, ages, []checkers.Caveat{{
+	m, err := b.Oven.NewMacaroon(context.Background(), bakery.LatestVersion, ages, []checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
 	}}, dischargeOp)
@@ -202,7 +201,7 @@ func (s *suite) TestLoginDischargerError(c *gc.C) {
 		Locator:  d,
 		Key:      mustGenerateKey(),
 	})
-	m, err := b.Oven.NewMacaroon(context.Background(), macaroon.LatestVersion, ages, []checkers.Caveat{{
+	m, err := b.Oven.NewMacaroon(context.Background(), bakery.LatestVersion, ages, []checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
 	}}, dischargeOp)
@@ -236,7 +235,7 @@ func (s *suite) TestInteractiveDischargerURL(c *gc.C) {
 		Locator:  d,
 		Key:      mustGenerateKey(),
 	})
-	m, err := b.Oven.NewMacaroon(context.Background(), macaroon.LatestVersion, ages, []checkers.Caveat{{
+	m, err := b.Oven.NewMacaroon(context.Background(), bakery.LatestVersion, ages, []checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
 	}}, dischargeOp)

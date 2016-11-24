@@ -12,7 +12,6 @@ import (
 	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
-	"gopkg.in/macaroon.v2-unstable"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
@@ -99,11 +98,11 @@ func (s *agentSuite) TestAgentLogin(c *gc.C) {
 		client.WebPageVisitor = visitor
 		m, err := s.bakery.Oven.NewMacaroon(
 			context.Background(),
-			macaroon.LatestVersion,
+			bakery.LatestVersion,
 			time.Now().Add(time.Minute),
 			identityCaveats(s.discharger.URL),
-			bakery.LoginOp,
-		)
+			bakery.LoginOp)
+
 		c.Assert(err, gc.IsNil)
 		ms, err := client.DischargeAll(context.Background(), m)
 		if test.expectError != "" {
@@ -121,12 +120,11 @@ func (s *agentSuite) TestNoCookieError(c *gc.C) {
 	client := httpbakery.NewClient()
 	client.WebPageVisitor = new(agent.Visitor)
 	m, err := s.bakery.Oven.NewMacaroon(
-		context.Background(),
-		macaroon.LatestVersion,
+		context.Background(), bakery.LatestVersion,
+
 		time.Now().Add(time.Minute),
 		identityCaveats(s.discharger.URL),
-		bakery.LoginOp,
-	)
+		bakery.LoginOp)
 
 	c.Assert(err, gc.IsNil)
 	_, err = client.DischargeAll(context.Background(), m)
@@ -183,12 +181,12 @@ func (s *agentSuite) TestMultipleAgents(c *gc.C) {
 	client := httpbakery.NewClient()
 	client.WebPageVisitor = visitor
 	m, err := s.bakery.Oven.NewMacaroon(
-		context.Background(),
-		macaroon.LatestVersion,
+		context.Background(), bakery.LatestVersion,
+
 		time.Now().Add(time.Minute),
 		identityCaveats(s.discharger.URL),
-		bakery.LoginOp,
-	)
+		bakery.LoginOp)
+
 	c.Assert(err, gc.IsNil)
 	ms, err := client.DischargeAll(context.Background(), m)
 	c.Assert(err, gc.IsNil)

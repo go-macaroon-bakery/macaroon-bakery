@@ -15,12 +15,16 @@ import (
 // getDischarge to acquire each discharge macaroon. It returns a slice
 // with m as the first element, followed by all the discharge macaroons.
 // All the discharge macaroons will be bound to the primary macaroon.
+//
+// The getDischarge function is passed the caveat to be discharged;
+// encryptedCaveat will be passed the external caveat payload found
+// in m, if any.
 func DischargeAll(
-	ctxt context.Context,
-	m *macaroon.Macaroon,
-	getDischarge func(context.Context, macaroon.Caveat) (*macaroon.Macaroon, error),
+	ctx context.Context,
+	m *Macaroon,
+	getDischarge func(ctx context.Context, cav macaroon.Caveat, encryptedCaveat []byte) (*Macaroon, error),
 ) (macaroon.Slice, error) {
-	return DischargeAllWithKey(ctxt, m, getDischarge, nil)
+	return DischargeAllWithKey(ctx, m, getDischarge, nil)
 }
 
 // DischargeAllWithKey is like DischargeAll except that the localKey
@@ -34,37 +38,59 @@ func DischargeAll(
 // DischargeAll.
 func DischargeAllWithKey(
 	ctxt context.Context,
-	m *macaroon.Macaroon,
-	getDischarge func(context.Context, macaroon.Caveat) (*macaroon.Macaroon, error),
+	m *Macaroon,
+	getDischarge func(ctx context.Context, cav macaroon.Caveat, encodedCaveat []byte) (*Macaroon, error),
 	localKey *KeyPair,
 ) (macaroon.Slice, error) {
-	sig := m.Signature()
-	discharges := macaroon.Slice{m}
-	var need []macaroon.Caveat
-	addCaveats := func(m *macaroon.Macaroon) {
-		for _, cav := range m.Caveats() {
+	primary := m.M()
+	discharges := macaroon.Slice{primary}
+
+	type needCaveat struct {
+		// cav holds the caveat that needs discharge.
+		cav macaroon.Caveat
+		// encryptedCaveat holds encrypted caveat
+		// if it was held externally.
+		encryptedCaveat []byte
+	}
+	var need []needCaveat
+	addCaveats := func(m *Macaroon) {
+		for _, cav := range m.M().Caveats() {
 			if cav.Location == "" {
 				continue
 			}
-			need = append(need, cav)
+			need = append(need, needCaveat{
+				cav:             cav,
+				encryptedCaveat: m.caveatData[string(cav.Id)],
+			})
 		}
 	}
+	sig := primary.Signature()
 	addCaveats(m)
 	for len(need) > 0 {
 		cav := need[0]
 		need = need[1:]
-		var dm *macaroon.Macaroon
+		var dm *Macaroon
 		var err error
-		if localKey != nil && cav.Location == "local" {
-			dm, _, err = Discharge(ctxt, localKey, localDischargeChecker, cav.Id)
+		if localKey != nil && cav.cav.Location == "local" {
+			// TODO use a small caveat id.
+			dm, err = Discharge(ctxt, DischargeParams{
+				Key:     localKey,
+				Checker: localDischargeChecker,
+				Caveat:  cav.encryptedCaveat,
+				Id:      cav.cav.Id,
+				Locator: emptyLocator{},
+			})
 		} else {
-			dm, err = getDischarge(ctxt, cav)
+			dm, err = getDischarge(ctxt, cav.cav, cav.encryptedCaveat)
 		}
 		if err != nil {
-			return nil, errgo.NoteMask(err, fmt.Sprintf("cannot get discharge from %q", cav.Location), errgo.Any)
+			return nil, errgo.NoteMask(err, fmt.Sprintf("cannot get discharge from %q", cav.cav.Location), errgo.Any)
 		}
-		dm.Bind(sig)
-		discharges = append(discharges, dm)
+		// It doesn't matter that we're invalidating dm here because we're
+		// about to throw it away.
+		discharge := dm.M()
+		discharge.Bind(sig)
+		discharges = append(discharges, discharge)
 		addCaveats(dm)
 	}
 	return discharges, nil
