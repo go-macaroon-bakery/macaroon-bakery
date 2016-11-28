@@ -109,7 +109,7 @@ var checkerTests = []struct {
 		caveat: httpbakery.SameClientIPAddrCaveat(&http.Request{
 			RemoteAddr: "bad",
 		}),
-		expectError: `caveat "error cannot parse host port in remote address: missing port in address bad" not satisfied: bad caveat`,
+		expectError: `caveat "error cannot parse host port in remote address: .*" not satisfied: bad caveat`,
 	}, {
 		caveat: httpbakery.SameClientIPAddrCaveat(&http.Request{
 			RemoteAddr: "bad:56",
