@@ -7,15 +7,14 @@
 package agent
 
 import (
-	"bytes"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
-	"io/ioutil"
-	"mime"
+	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 
+	"github.com/juju/httprequest"
 	"github.com/juju/loggo"
 	"gopkg.in/errgo.v1"
 
@@ -64,12 +63,30 @@ unmarshals to an httpbakery.Error.
 
 const cookieName = "agent-login"
 
-// agentLogin defines the structure of an agent login cookie. It is also
-// returned in a successful agent login attempt to help indicate that an
-// agent login has occurred.
+// agentLogin defines the structure of an agent login cookie.
 type agentLogin struct {
 	Username  string            `json:"username"`
 	PublicKey *bakery.PublicKey `json:"public_key"`
+}
+
+// setCookie sets an agent-login cookie with the specified parameters on
+// the given request.
+func setCookie(req *http.Request, username string, key *bakery.PublicKey) {
+	al := agentLogin{
+		Username:  username,
+		PublicKey: key,
+	}
+	data, err := json.Marshal(al)
+	if err != nil {
+		// This should be impossible as the agentLogin structure
+		// has to be marshalable. It is certainly a bug if it
+		// isn't.
+		panic(errgo.Notef(err, "cannot marshal %s cookie", cookieName))
+	}
+	req.AddCookie(&http.Cookie{
+		Name:  cookieName,
+		Value: base64.StdEncoding.EncodeToString(data),
+	})
 }
 
 // agentResponse contains the response to an agent login attempt.
@@ -106,121 +123,111 @@ func LoginCookie(req *http.Request) (username string, key *bakery.PublicKey, err
 	return al.Username, al.PublicKey, nil
 }
 
-// SetUpAuth configures agent authentication on c. A cookie is created in
-// c's cookie jar containing credentials derived from the username and
-// c.Key. c.VisitWebPage is set to VisitWebPage(c). The return is
-// non-nil only if c.Key is nil.
-func SetUpAuth(c *httpbakery.Client, u *url.URL, username string) error {
-	if c.Key == nil {
-		return errgo.New("cannot set-up authentication: client key not configured")
-	}
-	SetCookie(c.Jar, u, username, &c.Key.Public)
-	c.VisitWebPage = VisitWebPage(c)
-	return nil
+// agent represents an agent that can be used for agent authentication.
+type agent struct {
+	pathParts []string
+	username  string
+	key       *bakery.KeyPair
 }
 
-// SetCookie creates a cookie in jar which is suitable for performing agent
-// logins to u.
-//
-// If using SetUpAuth, it should not be necessary to use
-// this function.
-func SetCookie(jar http.CookieJar, u *url.URL, username string, pk *bakery.PublicKey) {
-	al := agentLogin{
-		Username:  username,
-		PublicKey: pk,
-	}
-	b, err := json.Marshal(al)
-	if err != nil {
-		// This shouldn't happen as the agentLogin type has to be marshalable.
-		panic(errgo.Notef(err, "cannot marshal cookie"))
-	}
-	v := base64.StdEncoding.EncodeToString(b)
-	jar.SetCookies(u, []*http.Cookie{{
-		Name:  cookieName,
-		Value: v,
-	}})
+// Visitor is a httpbakery.Visitor that performs interaction using the
+// agent login protocol.
+type Visitor struct {
+	agents map[string][]agent
 }
 
-// VisitWebPage creates a function that can be used with
-// httpbakery.Client.VisitWebPage. The function uses c to access the
-// visit URL. If no agent-login cookie has been configured for u an error
-// with the cause of ErrNoAgentLoginCookie will be returned. If the login
-// fails the returned error will be of type *httpbakery.Error. If the
-// response from the visitURL cannot be interpreted the error will be of
-// type *UnexpectedResponseError.
-//
-// If using SetUpAuth, it should not be necessary to use
-// this function.
-func VisitWebPage(c *httpbakery.Client) func(u *url.URL) error {
-	return func(u *url.URL) error {
-		err := ErrNoAgentLoginCookie
-		for _, c := range c.Jar.Cookies(u) {
-			if c.Name == cookieName {
-				err = nil
-				break
-			}
+// AddAgent adds an agent to the visitor. The agent will have the given
+// username and key and will be used for requests that match the given
+// URL. If more than one agent matches a target URL then the most
+// specific one will be used. If an agent is added with an identical URL
+// as an existing agent then the existing agent will be replaced.
+func (v *Visitor) AddAgent(u *url.URL, username string, key *bakery.KeyPair) {
+	logger.Tracef("adding agent %s for %v", username, u)
+	if v.agents == nil {
+		v.agents = make(map[string][]agent)
+	}
+	v.agents[u.Host] = insertAgent(v.agents[u.Host], agent{
+		pathParts: pathParts(u.Path),
+		username:  username,
+		key:       key,
+	})
+}
+
+func insertAgent(agents []agent, ag agent) []agent {
+	for i, a := range agents {
+		switch pathCmp(ag.pathParts, a.pathParts) {
+		case -1:
+			agents = append(agents, agent{})
+			copy(agents[i+1:], agents[i:])
+			agents[i] = ag
+			return agents
+		case 0:
+			agents[i] = ag
+			return agents
 		}
+	}
+	return append(agents, ag)
+}
+
+// pathParts splits a path up into an array of parts.
+func pathParts(path string) []string {
+	return strings.FieldsFunc(path, func(c rune) bool {
+		return c == '/'
+	})
+}
+
+// pathCmp compares two slices of path parts and returns -1 if p1 comes
+// first logically, 1 if p1 comes second logically or 0 if they are
+// equal. The logical ordering used by this function compares each part
+// lexically, if these are equal up to the length of the shortest slice
+// then the longer slice comes first.
+func pathCmp(p1, p2 []string) int {
+	for len(p1) > 0 && len(p2) > 0 {
+		if cmp := strings.Compare(p1[0], p2[0]); cmp != 0 {
+			return cmp
+		}
+		p1, p2 = p1[1:], p2[1:]
+	}
+	if len(p1) > 0 {
+		return -1
+	}
+	if len(p2) > 0 {
+		return 1
+	}
+	return 0
+}
+
+// VisitWebPage implements httpbakery.Visitor.VisitWebPage
+func (v *Visitor) VisitWebPage(client *httpbakery.Client, m map[string]*url.URL) error {
+	url := m[httpbakery.UserInteractionMethod]
+	pathParts := pathParts(url.Path)
+	for _, agent := range v.agents[url.Host] {
+		if len(pathParts) < len(agent.pathParts) {
+			continue
+		}
+		if pathCmp(agent.pathParts, pathParts[:len(agent.pathParts)]) != 0 {
+			continue
+		}
+		logger.Debugf("attempting login to %v using agent %s", url, agent.username)
+		c := &httprequest.Client{
+			Doer: &httpbakery.Client{
+				Client: client.Client,
+				Key:    agent.key,
+			},
+		}
+		req, err := http.NewRequest("GET", url.String(), nil)
 		if err != nil {
-			return errgo.WithCausef(err, http.ErrNoCookie, "cannot perform agent login")
+			return errgo.Mask(err)
 		}
-		req, err := http.NewRequest("GET", u.String(), nil)
-		if err != nil {
-			return errgo.Notef(err, "cannot create request")
-		}
-		resp, err := c.Do(req)
-		if err != nil {
-			return errgo.Notef(err, "cannot perform request")
-		}
-		defer resp.Body.Close()
-		b, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			logger.Errorf("cannot read response body: %s", err)
-			b = []byte{}
-		}
-		mt, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-		if err != nil {
-			logger.Warningf("cannot parse response content type: %s", err)
-			mt = ""
-		}
-		if mt != "application/json" {
-			uerr := (*UnexpectedResponseError)(resp)
-			uerr.Body = ioutil.NopCloser(bytes.NewReader(b))
-			return uerr
-		}
-		if resp.StatusCode != http.StatusOK {
-			var herr httpbakery.Error
-			err := json.Unmarshal(b, &herr)
-			if err == nil && herr.Message != "" {
-				return &herr
-			}
-			if err != nil {
-				logger.Warningf("cannot unmarshal error response: %s", err)
-			}
-			uerr := (*UnexpectedResponseError)(resp)
-			uerr.Body = ioutil.NopCloser(bytes.NewReader(b))
-			return uerr
-		}
+		setCookie(req, agent.username, &agent.key.Public)
 		var ar agentResponse
-		err = json.Unmarshal(b, &ar)
-		if err == nil && ar.AgentLogin {
-			return nil
+		if err := c.Do(req, nil, &ar); err != nil {
+			return errgo.Mask(err)
 		}
-		if err != nil {
-			logger.Warningf("cannot unmarshal response: %s", err)
+		if !ar.AgentLogin {
+			return errors.New("agent login failed")
 		}
-		uerr := (*UnexpectedResponseError)(resp)
-		uerr.Body = ioutil.NopCloser(bytes.NewReader(b))
-		return uerr
+		return nil
 	}
-}
-
-// UnexpectedResponseError is the error returned when a response is
-// received that cannot be interpreted.
-type UnexpectedResponseError http.Response
-
-func (u *UnexpectedResponseError) Error() string {
-	return fmt.Sprintf(
-		"unexpected response to non-interactive web page visit %s (content type %s)",
-		u.Request.URL.String(),
-		u.Header.Get("Content-Type"))
+	return errgo.New("no suitable agent found")
 }
