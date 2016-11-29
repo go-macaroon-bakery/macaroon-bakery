@@ -7,8 +7,6 @@
 package agent
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -63,14 +61,6 @@ If an error occurs then the response should be a JSON object that
 unmarshals to an httpbakery.Error.
 */
 
-const cookieName = "agent-login"
-
-// agentLogin defines the structure of an agent login cookie.
-type agentLogin struct {
-	Username  string            `json:"username"`
-	PublicKey *bakery.PublicKey `json:"public_key"`
-}
-
 // SetUpAuth is a convenience function that makes a new Visitor
 // and adds an agent for the given URL using the given username
 // and the public key of the client.Key.
@@ -90,58 +80,9 @@ func SetUpAuth(client *httpbakery.Client, siteURL string, agentUsername string) 
 	return nil
 }
 
-// setCookie sets an agent-login cookie with the specified parameters on
-// the given request.
-func setCookie(req *http.Request, username string, key *bakery.PublicKey) {
-	al := agentLogin{
-		Username:  username,
-		PublicKey: key,
-	}
-	data, err := json.Marshal(al)
-	if err != nil {
-		// This should be impossible as the agentLogin structure
-		// has to be marshalable. It is certainly a bug if it
-		// isn't.
-		panic(errgo.Notef(err, "cannot marshal %s cookie", cookieName))
-	}
-	req.AddCookie(&http.Cookie{
-		Name:  cookieName,
-		Value: base64.StdEncoding.EncodeToString(data),
-	})
-}
-
 // agentResponse contains the response to an agent login attempt.
 type agentResponse struct {
 	AgentLogin bool `json:"agent_login"`
-}
-
-// ErrNoAgentLoginCookie is the error returned when the expected
-// agent login cookie has not been found.
-var ErrNoAgentLoginCookie = errgo.New("no agent-login cookie found")
-
-// LoginCookie returns details of the agent login cookie
-// from the given request. If no agent-login cookie is found,
-// it returns an ErrNoAgentLoginCookie error.
-func LoginCookie(req *http.Request) (username string, key *bakery.PublicKey, err error) {
-	c, err := req.Cookie(cookieName)
-	if err != nil {
-		return "", nil, ErrNoAgentLoginCookie
-	}
-	b, err := base64.StdEncoding.DecodeString(c.Value)
-	if err != nil {
-		return "", nil, errgo.Notef(err, "cannot decode cookie value")
-	}
-	var al agentLogin
-	if err := json.Unmarshal(b, &al); err != nil {
-		return "", nil, errgo.Notef(err, "cannot unmarshal agent login")
-	}
-	if al.Username == "" {
-		return "", nil, errgo.Newf("agent login has no user name")
-	}
-	if al.PublicKey == nil {
-		return "", nil, errgo.Newf("agent login has no public key")
-	}
-	return al.Username, al.PublicKey, nil
 }
 
 // agent is the internal version of the agent type which also
@@ -151,20 +92,22 @@ type agent struct {
 	Agent
 }
 
-// agent represents an agent that can be used for agent authentication.
+// Agent represents an agent that can be used for agent authentication.
 type Agent struct {
 	// URL holds the URL associated with the agent.
-	URL string
+	URL string `json:"url" yaml:"url"`
 	// Username holds the username to use for the agent.
-	Username string
+	Username string `json:"username" yaml:"username"`
 	// Key holds the agent's private key pair.
-	Key *bakery.KeyPair
+	Key *bakery.KeyPair `json:"key,omitempty" yaml:"key,omitempty"`
 }
 
 // Visitor is a httpbakery.Visitor that performs interaction using the
-// agent login protocol.
+// agent login protocol. A Visitor may be encoded as JSON or YAML
+// so that agent information can be stored persistently.
 type Visitor struct {
-	agents map[string][]agent
+	defaultKey *bakery.KeyPair
+	agents     map[string][]agent
 }
 
 // Agents returns all the agents registered with the visitor
@@ -178,6 +121,18 @@ func (v *Visitor) Agents() []Agent {
 	}
 	sort.Sort(agentsByURL(agents))
 	return agents
+}
+
+// SetDefaultKey sets the key that will be associated with
+// added agents that don't have an associated key.
+func (v *Visitor) SetDefaultKey(key *bakery.KeyPair) {
+	v.defaultKey = key
+}
+
+// DefaultKey returns the default key, which may be nil
+// if not set.
+func (v *Visitor) DefaultKey() *bakery.KeyPair {
+	return v.defaultKey
 }
 
 // AddAgent adds an agent to the visitor. The agent information will be
@@ -195,10 +150,14 @@ func (v *Visitor) Agents() []Agent {
 // any trailing slash), the existing agent will be replaced.
 //
 // AddAgent returns an error if the agent's URL cannot be parsed
-// or if the agent does not have a key.
+// or if the agent does not have a key and no default key has
+// been set.
 func (v *Visitor) AddAgent(a Agent) error {
 	if a.Key == nil {
-		return errgo.Newf("no key for agent")
+		if v.defaultKey == nil {
+			return errgo.Newf("no key for agent")
+		}
+		a.Key = v.defaultKey
 	}
 	u, err := url.Parse(a.URL)
 	if err != nil {
@@ -244,7 +203,8 @@ func (v *Visitor) findAgent(u *url.URL) (agent, bool) {
 	return agent{}, false
 }
 
-// VisitWebPage implements httpbakery.Visitor.VisitWebPage
+// VisitWebPage implements httpbakery.Visitor.VisitWebPage by using the
+// appropriate agent for the URL.
 func (v *Visitor) VisitWebPage(ctx context.Context, client *httpbakery.Client, m map[string]*url.URL) error {
 	url := m[httpbakery.UserInteractionMethod]
 	a, ok := v.findAgent(url)
