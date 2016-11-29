@@ -12,6 +12,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/juju/httprequest"
@@ -123,11 +124,21 @@ func LoginCookie(req *http.Request) (username string, key *bakery.PublicKey, err
 	return al.Username, al.PublicKey, nil
 }
 
-// agent represents an agent that can be used for agent authentication.
+// agent is the internal version of the agent type which also
+// includes the parsed URL.
 type agent struct {
-	pathParts []string
-	username  string
-	key       *bakery.KeyPair
+	url *url.URL
+	Agent
+}
+
+// agent represents an agent that can be used for agent authentication.
+type Agent struct {
+	// URL holds the URL associated with the agent.
+	URL string
+	// Username holds the username to use for the agent.
+	Username string
+	// Key holds the agent's private key pair.
+	Key *bakery.KeyPair
 }
 
 // Visitor is a httpbakery.Visitor that performs interaction using the
@@ -136,98 +147,151 @@ type Visitor struct {
 	agents map[string][]agent
 }
 
-// AddAgent adds an agent to the visitor. The agent will have the given
-// username and key and will be used for requests that match the given
-// URL. If more than one agent matches a target URL then the most
-// specific one will be used. If an agent is added with an identical URL
-// as an existing agent then the existing agent will be replaced.
-func (v *Visitor) AddAgent(u *url.URL, username string, key *bakery.KeyPair) {
-	logger.Tracef("adding agent %s for %v", username, u)
+// Agents returns all the agents registered with the visitor
+// ordered by URL.
+func (v *Visitor) Agents() []Agent {
+	var agents []Agent
+	for _, as := range v.agents {
+		for _, a := range as {
+			agents = append(agents, a.Agent)
+		}
+	}
+	sort.Sort(agentsByURL(agents))
+	return agents
+}
+
+// AddAgent adds an agent to the visitor. The agent information will be
+// used when sending discharge requests to all URLs under the given URL.
+// If more than one agent matches a target URL then the agent with the
+// most specific matching URL will be used. Longer paths are counted as
+// more specific than shorter paths.
+//
+// Unlike HTTP cookies, a trailing slash is not significant, so for
+// example, if an agent is registered with the URL
+// http://example.com/foo, its information will be sent to
+// http://example.com/foo/bar but not http://kremvax.com/other.
+//
+// If an agent is added with the same URL as an existing agent (ignoring
+// any trailing slash), the existing agent will be replaced.
+//
+// AddAgent returns an error if the agent's URL cannot be parsed
+// or if the agent does not have a key.
+func (v *Visitor) AddAgent(a Agent) error {
+	if a.Key == nil {
+		return errgo.Newf("no key for agent")
+	}
+	u, err := url.Parse(a.URL)
+	if err != nil {
+		return errgo.Notef(err, "bad agent URL")
+	}
+	// The path should behave the same whether it has a trailing
+	// slash or not.
+	u.Path = strings.TrimSuffix(u.Path, "/")
 	if v.agents == nil {
 		v.agents = make(map[string][]agent)
 	}
 	v.agents[u.Host] = insertAgent(v.agents[u.Host], agent{
-		pathParts: pathParts(u.Path),
-		username:  username,
-		key:       key,
+		Agent: a,
+		url:   u,
 	})
+	return nil
 }
 
-func insertAgent(agents []agent, ag agent) []agent {
-	for i, a := range agents {
-		switch pathCmp(ag.pathParts, a.pathParts) {
-		case -1:
-			agents = append(agents, agent{})
-			copy(agents[i+1:], agents[i:])
-			agents[i] = ag
-			return agents
-		case 0:
-			agents[i] = ag
-			return agents
+// pathMatch checks whether reqPath matches the given registered path.
+func pathMatch(reqPath, path string) bool {
+	if path == reqPath {
+		return true
+	}
+	if !strings.HasPrefix(reqPath, path) {
+		return false
+	}
+	// /foo/bar matches /foo/bar/baz.
+	// /foo/bar/ also matches /foo/bar/baz.
+	// /foo/bar does not match /foo/barfly.
+	// So trim off the suffix and check that the equivalent place in
+	// reqPath holds a slash. Note that we know that reqPath must be
+	// longer than path because path is a prefix of reqPath but not
+	// equal to it.
+	return reqPath[len(path)] == '/'
+}
+
+func (v *Visitor) findAgent(u *url.URL) (agent, bool) {
+	for _, a := range v.agents[u.Host] {
+		if pathMatch(u.Path, a.url.Path) {
+			return a, true
 		}
 	}
-	return append(agents, ag)
-}
-
-// pathParts splits a path up into an array of parts.
-func pathParts(path string) []string {
-	return strings.FieldsFunc(path, func(c rune) bool {
-		return c == '/'
-	})
-}
-
-// pathCmp compares two slices of path parts and returns -1 if p1 comes
-// first logically, 1 if p1 comes second logically or 0 if they are
-// equal. The logical ordering used by this function compares each part
-// lexically, if these are equal up to the length of the shortest slice
-// then the longer slice comes first.
-func pathCmp(p1, p2 []string) int {
-	for len(p1) > 0 && len(p2) > 0 {
-		if cmp := strings.Compare(p1[0], p2[0]); cmp != 0 {
-			return cmp
-		}
-		p1, p2 = p1[1:], p2[1:]
-	}
-	if len(p1) > 0 {
-		return -1
-	}
-	if len(p2) > 0 {
-		return 1
-	}
-	return 0
+	return agent{}, false
 }
 
 // VisitWebPage implements httpbakery.Visitor.VisitWebPage
 func (v *Visitor) VisitWebPage(client *httpbakery.Client, m map[string]*url.URL) error {
 	url := m[httpbakery.UserInteractionMethod]
-	pathParts := pathParts(url.Path)
-	for _, agent := range v.agents[url.Host] {
-		if len(pathParts) < len(agent.pathParts) {
-			continue
-		}
-		if pathCmp(agent.pathParts, pathParts[:len(agent.pathParts)]) != 0 {
-			continue
-		}
-		logger.Debugf("attempting login to %v using agent %s", url, agent.username)
-		c := &httprequest.Client{
-			Doer: &httpbakery.Client{
-				Client: client.Client,
-				Key:    agent.key,
-			},
-		}
-		req, err := http.NewRequest("GET", url.String(), nil)
-		if err != nil {
-			return errgo.Mask(err)
-		}
-		setCookie(req, agent.username, &agent.key.Public)
-		var ar agentResponse
-		if err := c.Do(req, nil, &ar); err != nil {
-			return errgo.Mask(err)
-		}
-		if !ar.AgentLogin {
-			return errors.New("agent login failed")
-		}
-		return nil
+	a, ok := v.findAgent(url)
+	if !ok {
+		return errgo.New("no suitable agent found")
 	}
-	return errgo.New("no suitable agent found")
+	logger.Debugf("attempting login to %v using agent %s", url, a.Username)
+	client1 := *client
+	client1.Key = a.Key
+	c := &httprequest.Client{
+		Doer: &client1,
+	}
+	req, err := http.NewRequest("GET", url.String(), nil)
+	if err != nil {
+		return errgo.Mask(err)
+	}
+	setCookie(req, a.Username, &a.Key.Public)
+	var resp agentResponse
+	if err := c.Do(req, nil, &resp); err != nil {
+		return errgo.Mask(err)
+	}
+	if !resp.AgentLogin {
+		return errors.New("agent login failed")
+	}
+	return nil
+}
+
+func insertAgent(agents []agent, a agent) []agent {
+	for i, a1 := range agents {
+		if a1.url.Path == a.url.Path {
+			agents[i] = a
+			return agents
+		}
+	}
+	agents = append(agents, a)
+	sort.Sort(byReverseURLLength(agents))
+	return agents
+}
+
+type byReverseURLLength []agent
+
+func (as byReverseURLLength) Less(i, j int) bool {
+	p0, p1 := as[i].url.Path, as[j].url.Path
+	if len(p0) != len(p1) {
+		return len(p0) > len(p1)
+	}
+	return p0 < p1
+}
+
+func (as byReverseURLLength) Swap(i, j int) {
+	as[i], as[j] = as[j], as[i]
+}
+
+func (as byReverseURLLength) Len() int {
+	return len(as)
+}
+
+type agentsByURL []Agent
+
+func (as agentsByURL) Less(i, j int) bool {
+	return as[i].URL < as[j].URL
+}
+
+func (as agentsByURL) Swap(i, j int) {
+	as[i], as[j] = as[j], as[i]
+}
+
+func (as agentsByURL) Len() int {
+	return len(as)
 }

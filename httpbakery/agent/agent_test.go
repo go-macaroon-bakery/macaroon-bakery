@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"time"
 
+	jc "github.com/juju/testing/checkers"
 	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
@@ -86,15 +87,14 @@ var agentLoginTests = []struct {
 }}
 
 func (s *agentSuite) TestAgentLogin(c *gc.C) {
-	u, err := url.Parse(s.discharger.URL)
-	c.Assert(err, gc.IsNil)
 	for i, test := range agentLoginTests {
 		c.Logf("%d. %s", i, test.about)
 		s.discharger.LoginHandler = test.loginHandler
 		key, err := bakery.GenerateKey()
 		c.Assert(err, gc.IsNil)
 		visitor := new(agent.Visitor)
-		visitor.AddAgent(u, "test-user", key)
+		err = visitor.AddAgent(agent.Agent{URL: s.discharger.URL, Username: "test-user", Key: key})
+		c.Assert(err, gc.IsNil)
 		client := httpbakery.NewClient()
 		client.WebPageVisitor = visitor
 		m, err := s.bakery.Oven.NewMacaroon(
@@ -136,34 +136,24 @@ func (s *agentSuite) TestNoCookieError(c *gc.C) {
 }
 
 func (s *agentSuite) TestMultipleAgents(c *gc.C) {
-	u, err := url.Parse(s.discharger.URL)
-	c.Assert(err, gc.IsNil)
+	u := s.discharger.URL
 
 	visitor := new(agent.Visitor)
-	u1 := *u
 	key1, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
-	visitor.AddAgent(&u1, "test-user-1", key1)
-	u2 := *u
-	u2.Path = "/login"
+	visitor.AddAgent(agent.Agent{URL: u, Username: "test-user-1", Key: key1})
 	key2, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
-	visitor.AddAgent(&u2, "test-user-2", key2)
-	u3 := *u
-	u3.Path = "/login"
+	visitor.AddAgent(agent.Agent{URL: u + "/login", Username: "test-user-2", Key: key2})
 	key3, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
-	visitor.AddAgent(&u3, "test-user-3", key3)
-	u4 := *u
-	u4.Path = "/login/login"
+	visitor.AddAgent(agent.Agent{URL: u + "/login", Username: "test-user-3", Key: key3})
 	key4, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
-	visitor.AddAgent(&u4, "test-user-4", key4)
-	u5 := *u
-	u5.Path = "/discharge"
+	visitor.AddAgent(agent.Agent{URL: u + "/login/login", Username: "test-user-4", Key: key4})
 	key5, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
-	visitor.AddAgent(&u5, "test-user-5", key5)
+	visitor.AddAgent(agent.Agent{URL: u + "/discharge", Username: "test-user-5", Key: key5})
 	s.discharger.LoginHandler = func(d *Discharger, w http.ResponseWriter, req *http.Request) {
 		al, err := d.GetAgentLogin(req)
 		if err != nil {
@@ -282,65 +272,150 @@ func (s *agentSuite) TestLoginCookie(c *gc.C) {
 	}
 }
 
-var pathCmpTests = []struct {
-	p1     []string
-	p2     []string
-	expect int
+var findAgentTests = []struct {
+	about          string
+	agents         []agent.Agent
+	url            string
+	expectUsername string
 }{{
-	p1:     nil,
-	p2:     nil,
-	expect: 0,
+	about: "no agents",
+	url:   "http://foo.com/",
 }, {
-	p1:     []string{},
-	p2:     nil,
-	expect: 0,
+	about: "one agent, empty paths",
+	agents: []agent.Agent{{
+		Username: "bob",
+		URL:      "http://foo.com",
+	}},
+	url:            "http://foo.com",
+	expectUsername: "bob",
 }, {
-	p1:     []string{"1"},
-	p2:     nil,
-	expect: -1,
+	about: "one agent, agent URL ends with slash, request URL does not",
+	agents: []agent.Agent{{
+		Username: "bob",
+		URL:      "http://foo.com/",
+	}},
+	url:            "http://foo.com",
+	expectUsername: "bob",
 }, {
-	p1:     nil,
-	p2:     []string{"1"},
-	expect: 1,
+	about: "one agent, agent URL does not end with slash, request URL does",
+	agents: []agent.Agent{{
+		Username: "bob",
+		URL:      "http://foo.com",
+	}},
+	url:            "http://foo.com/",
+	expectUsername: "bob",
 }, {
-	p1:     []string{"1"},
-	p2:     []string{"2"},
-	expect: -1,
+	about: "one agent, longer path, match",
+	agents: []agent.Agent{{
+		Username: "bob",
+		URL:      "http://foo.com/foo",
+	}},
+	url:            "http://foo.com/foo",
+	expectUsername: "bob",
 }, {
-	p1:     []string{"1", "1"},
-	p2:     []string{"1", "2"},
-	expect: -1,
+	about: "one agent, path with trailing slash, match",
+	agents: []agent.Agent{{
+		Username: "bob",
+		URL:      "http://foo.com/foo/",
+	}},
+	url:            "http://foo.com/foo",
+	expectUsername: "bob",
 }, {
-	p1:     []string{"1", "2", "3"},
-	p2:     []string{"1", "2"},
-	expect: -1,
+	about: "one agent, should not match matching prefix with non-separated element",
+	agents: []agent.Agent{{
+		Username: "bob",
+		URL:      "http://foo.com/foo",
+	}},
+	url: "http://foo.com/foobar",
 }, {
-	p1:     []string{"1", "2", "3"},
-	p2:     []string{"1", "1"},
-	expect: 1,
+	about: "two matching agents, should match longer URL",
+	agents: []agent.Agent{{
+		Username: "bob",
+		URL:      "http://foo.com/foo/bar",
+	}, {
+		Username: "alice",
+		URL:      "http://foo.com/foo",
+	}},
+	url:            "http://foo.com/foo/bar/something",
+	expectUsername: "bob",
+}, {
+	about: "two matching agents with different hosts",
+	agents: []agent.Agent{{
+		Username: "bob",
+		URL:      "http://foo.com/foo/bar",
+	}, {
+		Username: "alice",
+		URL:      "http://bar.com/foo",
+	}},
+	url:            "http://bar.com/foo/bar/something",
+	expectUsername: "alice",
+}, {
+	about: "matching URL is replaced",
+	agents: []agent.Agent{{
+		Username: "bob",
+		URL:      "http://foo.com/foo",
+	}, {
+		Username: "alice",
+		URL:      "http://foo.com/foo",
+	}},
+	url:            "http://foo.com/foo/bar/something",
+	expectUsername: "alice",
 }}
 
-func (s *agentSuite) TestPathCmp(c *gc.C) {
-	for i, test := range pathCmpTests {
-		switch test.expect {
-		case -1:
-			c.Logf("%d. %#v < %#v", i, test.p1, test.p2)
-		case 0:
-			c.Logf("%d. %#v = %#v", i, test.p1, test.p2)
-		case 1:
-			c.Logf("%d. %#v > %#v", i, test.p1, test.p2)
+func (s *agentSuite) TestFindAgent(c *gc.C) {
+	for i, test := range findAgentTests {
+		c.Logf("test %d: %s", i, test.about)
+		var v agent.Visitor
+		for _, a := range test.agents {
+			a.Key = testKey
+			err := v.AddAgent(a)
+			c.Assert(err, gc.IsNil)
 		}
-		obtained := agent.PathCmp(test.p1, test.p2)
-		c.Assert(obtained, gc.Equals, test.expect)
+		u, err := url.Parse(test.url)
+		c.Assert(err, gc.IsNil)
+		found, ok := agent.FindAgent(&v, u)
+		if test.expectUsername == "" {
+			c.Assert(ok, gc.Equals, false)
+			continue
+		}
+		c.Assert(found.Username, gc.Equals, test.expectUsername)
 	}
+}
+
+func (s *agentSuite) TestAgents(c *gc.C) {
+	agents := []agent.Agent{{
+		URL:      "http://bar.com/x",
+		Username: "alice",
+		Key:      testKey,
+	}, {
+		URL:      "http://foo.com",
+		Username: "bob",
+		Key:      testKey,
+	}, {
+		URL:      "http://foo.com/x",
+		Username: "charlie",
+		Key:      testKey,
+	}}
+	var v agent.Visitor
+	for _, a := range agents {
+		err := v.AddAgent(a)
+		c.Assert(err, gc.IsNil)
+	}
+	c.Assert(v.Agents(), jc.DeepEquals, agents)
 }
 
 func ExampleVisitWebPage() {
 	var key *bakery.KeyPair
-	var u *url.URL
 
 	visitor := new(agent.Visitor)
-	visitor.AddAgent(u, "agent-username", key)
+	err := visitor.AddAgent(agent.Agent{
+		URL:      "http://foo.com",
+		Username: "agent-username",
+		Key:      key,
+	})
+	if err != nil {
+		// handle error
+	}
 	client := httpbakery.NewClient()
 	client.WebPageVisitor = visitor
 }
@@ -373,3 +448,19 @@ func (simpleIdentity) Domain() string {
 func (id simpleIdentity) Id() string {
 	return string(id)
 }
+
+func mustParseURL(s string) *url.URL {
+	u, err := url.Parse(s)
+	if err != nil {
+		panic(err)
+	}
+	return u
+}
+
+var testKey = func() *bakery.KeyPair {
+	key, err := bakery.GenerateKey()
+	if err != nil {
+		panic(err)
+	}
+	return key
+}()

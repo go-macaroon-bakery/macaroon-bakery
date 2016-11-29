@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -103,7 +102,6 @@ func (d *Discharger) GetAgentLogin(r *http.Request) (*agent.AgentLogin, error) {
 }
 
 func (d *Discharger) finishWait(w http.ResponseWriter, r *http.Request, identity bakery.Identity) {
-	log.Printf("finish wait, identity %#v", identity)
 	r.ParseForm()
 	id, err := strconv.Atoi(r.Form.Get("waitid"))
 	if err != nil {
