@@ -8,9 +8,9 @@ import (
 
 	"gopkg.in/errgo.v1"
 
-	"gopkg.in/macaroon-bakery.v1/bakery"
-	"gopkg.in/macaroon-bakery.v1/bakery/checkers"
-	"gopkg.in/macaroon-bakery.v1/httpbakery"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2-unstable/httpbakery"
 )
 
 type targetServiceHandler struct {
@@ -113,7 +113,7 @@ func (srv *targetServiceHandler) writeError(w http.ResponseWriter, req *http.Req
 			Condition: "operation " + operation,
 		}}
 	// Mint an appropriate macaroon and send it back to the client.
-	m, err := srv.svc.NewMacaroon("", nil, caveats)
+	m, err := srv.svc.NewMacaroon(nil, nil, caveats)
 	if err != nil {
 		fail(http.StatusInternalServerError, "cannot mint macaroon: %v", err)
 		return

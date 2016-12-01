@@ -9,10 +9,10 @@ import (
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
 
-	"gopkg.in/macaroon-bakery.v1/bakery"
-	"gopkg.in/macaroon-bakery.v1/bakery/checkers"
-	"gopkg.in/macaroon-bakery.v1/httpbakery"
-	"gopkg.in/macaroon-bakery.v1/httpbakery/agent"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2-unstable/httpbakery"
+	"gopkg.in/macaroon-bakery.v2-unstable/httpbakery/agent"
 )
 
 type agentSuite struct {
@@ -97,7 +97,7 @@ func (s *agentSuite) TestAgentLogin(c *gc.C) {
 		c.Assert(err, gc.IsNil)
 		err = agent.SetUpAuth(client, u, "test-user")
 		c.Assert(err, gc.IsNil)
-		m, err := s.bakery.NewMacaroon("", nil, []checkers.Caveat{{
+		m, err := s.bakery.NewMacaroon(nil, nil, []checkers.Caveat{{
 			Location:  s.discharger.URL,
 			Condition: "test condition",
 		}})
@@ -126,7 +126,7 @@ func (s *agentSuite) TestSetUpAuthError(c *gc.C) {
 func (s *agentSuite) TestNoCookieError(c *gc.C) {
 	client := httpbakery.NewClient()
 	client.VisitWebPage = agent.VisitWebPage(client)
-	m, err := s.bakery.NewMacaroon("", nil, []checkers.Caveat{{
+	m, err := s.bakery.NewMacaroon(nil, nil, []checkers.Caveat{{
 		Location:  s.discharger.URL,
 		Condition: "test condition",
 	}})

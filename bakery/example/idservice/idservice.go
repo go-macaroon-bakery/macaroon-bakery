@@ -9,12 +9,12 @@ import (
 	"github.com/juju/httprequest"
 	"github.com/julienschmidt/httprouter"
 	"gopkg.in/errgo.v1"
-	"gopkg.in/macaroon.v1"
+	"gopkg.in/macaroon.v2-unstable"
 
-	"gopkg.in/macaroon-bakery.v1/bakery"
-	"gopkg.in/macaroon-bakery.v1/bakery/checkers"
-	"gopkg.in/macaroon-bakery.v1/bakery/example/meeting"
-	"gopkg.in/macaroon-bakery.v1/httpbakery"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/example/meeting"
+	"gopkg.in/macaroon-bakery.v2-unstable/httpbakery"
 )
 
 var (
@@ -80,7 +80,7 @@ func (h *handler) userHandler(p httprequest.Params) (interface{}, error) {
 		// Theoretically, we could just redirect the user to the
 		// login page, but that would p.Requestuire a different flow
 		// and it's not clear that it would be an advantage.
-		m, err := h.svc.NewMacaroon("", nil, []checkers.Caveat{{
+		m, err := h.svc.NewMacaroon(nil, nil, []checkers.Caveat{{
 			Location:  h.svc.Location(),
 			Condition: "member-of-group admin",
 		}, {
@@ -166,7 +166,7 @@ func (h *handler) loginAttemptHandler(w http.ResponseWriter, req *http.Request) 
 	// to have a macaroon that they can use later to prove
 	// to us that they have logged in. We also add a cookie
 	// to hold the logged in user name.
-	m, err := h.svc.NewMacaroon("", nil, []checkers.Caveat{{
+	m, err := h.svc.NewMacaroon(nil, nil, []checkers.Caveat{{
 		Condition: "user-is " + user,
 	}})
 	// TODO(rog) when this fails, we should complete the rendezvous
@@ -192,8 +192,8 @@ func (h *handler) loginAttemptHandler(w http.ResponseWriter, req *http.Request) 
 }
 
 // checkThirdPartyCaveat is called by the httpbakery discharge handler.
-func (h *handler) checkThirdPartyCaveat(req *http.Request, cavId, cav string) ([]checkers.Caveat, error) {
-	return h.newContext(req, "").CheckThirdPartyCaveat(cavId, cav)
+func (h *handler) checkThirdPartyCaveat(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+	return h.newContext(req, "").CheckThirdPartyCaveat(cav)
 }
 
 // newContext returns a new caveat-checking context
@@ -228,13 +228,13 @@ func (h *handler) newContext(req *http.Request, operation string) *context {
 // needLogin returns an error suitable for returning
 // from a discharge request that can only be satisfied
 // if the user logs in.
-func (h *handler) needLogin(cavId string, caveat string, why error, req *http.Request) error {
+func (h *handler) needLogin(caveat *bakery.ThirdPartyCaveatInfo, why error, req *http.Request) error {
 	// TODO(rog) If the user is already logged in (username != ""),
 	// we should perhaps just return an error here.
 	log.Printf("login required")
 	waitId, err := h.place.NewRendezvous(&thirdPartyCaveatInfo{
-		CaveatId: cavId,
-		Caveat:   caveat,
+		CaveatId: caveat.CaveatId,
+		Caveat:   caveat.Condition,
 	})
 	if err != nil {
 		return fmt.Errorf("cannot make rendezvous: %v", err)
@@ -273,7 +273,7 @@ func (h *handler) waitHandler(p httprequest.Params) (interface{}, error) {
 	}
 	// Now that we've verified the user, we can check again to see
 	// if we can discharge the original caveat.
-	macaroon, err := h.svc.Discharge(ctxt, caveat.CaveatId)
+	macaroon, err := h.svc.Discharge(ctxt, []byte(caveat.CaveatId))
 	if err != nil {
 		return nil, errgo.Mask(err)
 	}
@@ -368,12 +368,12 @@ func (ctxt *context) Check(cond, arg string) error {
 	}
 }
 
-func (ctxt *context) CheckThirdPartyCaveat(cavId, cav string) ([]checkers.Caveat, error) {
+func (ctxt *context) CheckThirdPartyCaveat(cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 	h := ctxt.handler
-	log.Printf("checking third party caveat %q", cav)
-	op, rest, err := checkers.ParseCaveat(cav)
+	log.Printf("checking third party caveat %q", cav.Condition)
+	op, rest, err := checkers.ParseCaveat(cav.Condition)
 	if err != nil {
-		return nil, fmt.Errorf("cannot parse caveat %q: %v", cav, err)
+		return nil, fmt.Errorf("cannot parse caveat %q: %v", cav.Condition, err)
 	}
 	switch op {
 	case "can-speak-for":
@@ -385,7 +385,7 @@ func (ctxt *context) CheckThirdPartyCaveat(cavId, cav string) ([]checkers.Caveat
 		if checkErr == nil {
 			return ctxt.firstPartyCaveats(), nil
 		}
-		return nil, h.needLogin(cavId, cav, checkErr, ctxt.req)
+		return nil, h.needLogin(cav, checkErr, ctxt.req)
 	case "member-of-group":
 		// The third-party caveat is asking if the currently logged in
 		// user is a member of a particular group.
@@ -393,7 +393,7 @@ func (ctxt *context) CheckThirdPartyCaveat(cavId, cav string) ([]checkers.Caveat
 		// the username cookie (which doesn't provide any power, but
 		// indicates which user name to check)
 		if ctxt.declaredUser == "" {
-			return nil, h.needLogin(cavId, cav, errgo.New("not logged in"), ctxt.req)
+			return nil, h.needLogin(cav, errgo.New("not logged in"), ctxt.req)
 		}
 		if err := ctxt.canSpeakFor(ctxt.declaredUser); err != nil {
 			return nil, errgo.Notef(err, "cannot speak for declared user %q", ctxt.declaredUser)

@@ -33,7 +33,7 @@ type Storage interface {
 type RootKeyStorage interface {
 	// Get returns the root key for the given id.
 	// If the item is not there, it returns ErrNotFound.
-	Get(id string) ([]byte, error)
+	Get(id []byte) ([]byte, error)
 
 	// RootKey returns the root key to be used for making a new
 	// macaroon, and an id that can be used to look it up later with
@@ -45,7 +45,7 @@ type RootKeyStorage interface {
 	// Note that there is no need for it to return a new root key
 	// for every call - keys may be reused, although some key
 	// cycling is over time is advisable.
-	RootKey() (rootKey []byte, id string, err error)
+	RootKey() (rootKey []byte, id []byte, err error)
 }
 
 // ErrNotFound is returned by Storage.Get implementations
@@ -66,10 +66,10 @@ type memRootKeyStorage struct {
 }
 
 // Get implements RootKeyStorage.Get.
-func (s *memRootKeyStorage) Get(id string) ([]byte, error) {
+func (s *memRootKeyStorage) Get(id []byte) ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if id != "0" || s.key == nil {
+	if len(id) != 1 || id[0] != '0' || s.key == nil {
 		return nil, ErrNotFound
 	}
 	return s.key, nil
@@ -77,17 +77,17 @@ func (s *memRootKeyStorage) Get(id string) ([]byte, error) {
 
 // RootKey implements RootKeyStorage.RootKey by
 //always returning the same root key.
-func (s *memRootKeyStorage) RootKey() (rootKey []byte, id string, err error) {
+func (s *memRootKeyStorage) RootKey() (rootKey, id []byte, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.key == nil {
 		newKey, err := randomBytes(24)
 		if err != nil {
-			return nil, "", err
+			return nil, nil, err
 		}
 		s.key = newKey
 	}
-	return s.key, "0", nil
+	return s.key, []byte("0"), nil
 }
 
 // NewMemStorage returns an implementation of Storage

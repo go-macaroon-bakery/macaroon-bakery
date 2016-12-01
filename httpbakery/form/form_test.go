@@ -12,11 +12,11 @@ import (
 	"gopkg.in/juju/environschema.v1"
 	esform "gopkg.in/juju/environschema.v1/form"
 
-	"gopkg.in/macaroon-bakery.v1/bakery"
-	"gopkg.in/macaroon-bakery.v1/bakery/checkers"
-	"gopkg.in/macaroon-bakery.v1/bakerytest"
-	"gopkg.in/macaroon-bakery.v1/httpbakery"
-	"gopkg.in/macaroon-bakery.v1/httpbakery/form"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakerytest"
+	"gopkg.in/macaroon-bakery.v2-unstable/httpbakery"
+	"gopkg.in/macaroon-bakery.v2-unstable/httpbakery/form"
 )
 
 type formSuite struct {
@@ -142,7 +142,7 @@ func (s *formSuite) TestFormLogin(c *gc.C) {
 	for i, test := range formLoginTests {
 		c.Logf("test %d: %s", i, test.about)
 		d.dischargeOptions = test.opts
-		m, err := svc.NewMacaroon("", nil, []checkers.Caveat{{
+		m, err := svc.NewMacaroon(nil, nil, []checkers.Caveat{{
 			Location:  d.discharger.Location(),
 			Condition: "test condition",
 		}})
@@ -200,7 +200,7 @@ func (s *formSuite) TestFormTitle(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	for i, test := range formTitleTests {
 		c.Logf("test %d: %s", i, test.host)
-		m, err := svc.NewMacaroon("", nil, []checkers.Caveat{{
+		m, err := svc.NewMacaroon(nil, nil, []checkers.Caveat{{
 			Location:  "https://" + test.host,
 			Condition: "test condition",
 		}})

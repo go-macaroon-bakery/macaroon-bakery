@@ -4,9 +4,9 @@ import (
 	"time"
 
 	gc "gopkg.in/check.v1"
-	"gopkg.in/macaroon.v1"
+	"gopkg.in/macaroon.v2-unstable"
 
-	"gopkg.in/macaroon-bakery.v1/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
 )
 
 type timeSuite struct{}
@@ -31,7 +31,7 @@ var expireTimeTests = []struct {
 	about: "single time-before caveat",
 	caveats: []macaroon.Caveat{
 		macaroon.Caveat{
-			Id: checkers.TimeBeforeCaveat(t1).Condition,
+			Id: []byte(checkers.TimeBeforeCaveat(t1).Condition),
 		},
 	},
 	expectTime:    t1,
@@ -40,17 +40,17 @@ var expireTimeTests = []struct {
 	about: "single deny caveat",
 	caveats: []macaroon.Caveat{
 		macaroon.Caveat{
-			Id: checkers.DenyCaveat("abc").Condition,
+			Id: []byte(checkers.DenyCaveat("abc").Condition),
 		},
 	},
 }, {
 	about: "multiple time-before caveat",
 	caveats: []macaroon.Caveat{
 		macaroon.Caveat{
-			Id: checkers.TimeBeforeCaveat(t2).Condition,
+			Id: []byte(checkers.TimeBeforeCaveat(t2).Condition),
 		},
 		macaroon.Caveat{
-			Id: checkers.TimeBeforeCaveat(t1).Condition,
+			Id: []byte(checkers.TimeBeforeCaveat(t1).Condition),
 		},
 	},
 	expectTime:    t1,
@@ -59,16 +59,16 @@ var expireTimeTests = []struct {
 	about: "mixed caveats",
 	caveats: []macaroon.Caveat{
 		macaroon.Caveat{
-			Id: checkers.TimeBeforeCaveat(t1).Condition,
+			Id: []byte(checkers.TimeBeforeCaveat(t1).Condition),
 		},
 		macaroon.Caveat{
-			Id: checkers.AllowCaveat("abc").Condition,
+			Id: []byte(checkers.AllowCaveat("abc").Condition),
 		},
 		macaroon.Caveat{
-			Id: checkers.TimeBeforeCaveat(t2).Condition,
+			Id: []byte(checkers.TimeBeforeCaveat(t2).Condition),
 		},
 		macaroon.Caveat{
-			Id: checkers.DenyCaveat("def").Condition,
+			Id: []byte(checkers.DenyCaveat("def").Condition),
 		},
 	},
 	expectTime:    t1,
@@ -77,7 +77,7 @@ var expireTimeTests = []struct {
 	about: "invalid time-before caveat",
 	caveats: []macaroon.Caveat{
 		macaroon.Caveat{
-			Id: checkers.CondTimeBefore + " tomorrow",
+			Id: []byte(checkers.CondTimeBefore + " tomorrow"),
 		},
 	},
 }}
@@ -157,7 +157,7 @@ func (s *timeSuite) TestMacaroonsExpireTime(c *gc.C) {
 }
 
 func mustNewMacaroon(cavs ...string) *macaroon.Macaroon {
-	m, err := macaroon.New(nil, "", "")
+	m, err := macaroon.New(nil, nil, "")
 	if err != nil {
 		panic(err)
 	}

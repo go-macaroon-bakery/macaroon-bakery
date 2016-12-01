@@ -13,9 +13,9 @@ import (
 	"github.com/juju/httprequest"
 	"gopkg.in/errgo.v1"
 
-	"gopkg.in/macaroon-bakery.v1/bakery"
-	"gopkg.in/macaroon-bakery.v1/bakery/checkers"
-	"gopkg.in/macaroon-bakery.v1/httpbakery"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2-unstable/httpbakery"
 )
 
 // Discharger is a third-party caveat discharger suitable
@@ -97,8 +97,8 @@ func NewDischarger(
 	if err != nil {
 		panic(err)
 	}
-	checker1 := func(req *http.Request, cavId, cav string) ([]checkers.Caveat, error) {
-		cond, arg, err := checkers.ParseCaveat(cav)
+	checker1 := func(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+		cond, arg, err := checkers.ParseCaveat(cav.Condition)
 		if err != nil {
 			return nil, err
 		}
@@ -144,7 +144,7 @@ type dischargeResult struct {
 }
 
 type discharge struct {
-	cavId string
+	cavId []byte
 	c     chan dischargeResult
 }
 
@@ -221,11 +221,11 @@ func NewInteractiveDischarger(locator bakery.PublicKeyLocator, visitHandler http
 	return d
 }
 
-func (d *InteractiveDischarger) checker(req *http.Request, cavId, cav string) ([]checkers.Caveat, error) {
+func (d *InteractiveDischarger) checker(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 	d.mu.Lock()
 	id := fmt.Sprintf("%d", d.id)
 	d.id++
-	d.waiting[id] = discharge{cavId, make(chan dischargeResult, 1)}
+	d.waiting[id] = discharge{cav.CaveatId, make(chan dischargeResult, 1)}
 	d.mu.Unlock()
 	visitURL := "/visit?waitid=" + id
 	waitURL := "/wait?waitid=" + id
@@ -265,7 +265,7 @@ func (d *InteractiveDischarger) wait(w http.ResponseWriter, r *http.Request) {
 	}
 	m, err := d.Service.Discharge(
 		bakery.ThirdPartyCheckerFunc(
-			func(cavId, caveat string) ([]checkers.Caveat, error) {
+			func(cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 				return cavs, nil
 			},
 		),
