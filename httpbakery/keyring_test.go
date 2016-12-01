@@ -10,7 +10,6 @@ import (
 	"github.com/juju/httprequest"
 	jujutesting "github.com/juju/testing"
 	jc "github.com/juju/testing/checkers"
-	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
 
@@ -35,7 +34,7 @@ func (s *KeyringSuite) TestCachePrepopulated(c *gc.C) {
 	}
 	cache.AddInfo("https://0.1.2.3/", expectInfo)
 	kr := httpbakery.NewThirdPartyLocator(nil, cache)
-	info, err := kr.ThirdPartyInfo(context.Background(), "https://0.1.2.3/")
+	info, err := kr.ThirdPartyInfo(testContext, "https://0.1.2.3/")
 	c.Assert(err, gc.IsNil)
 	c.Assert(info, jc.DeepEquals, expectInfo)
 }
@@ -50,7 +49,7 @@ func (s *KeyringSuite) TestCacheMiss(c *gc.C) {
 		Version:   bakery.LatestVersion,
 	}
 	location := d.Location()
-	info, err := kr.ThirdPartyInfo(context.Background(), location)
+	info, err := kr.ThirdPartyInfo(testContext, location)
 	c.Assert(err, gc.IsNil)
 	c.Assert(info, jc.DeepEquals, expectInfo)
 
@@ -58,7 +57,7 @@ func (s *KeyringSuite) TestCacheMiss(c *gc.C) {
 	// the key is cached.
 	d.Close()
 
-	info, err = kr.ThirdPartyInfo(context.Background(), location)
+	info, err = kr.ThirdPartyInfo(testContext, location)
 	c.Assert(err, gc.IsNil)
 	c.Assert(info, jc.DeepEquals, expectInfo)
 }
@@ -75,13 +74,13 @@ func (s *KeyringSuite) TestInsecureURL(c *gc.C) {
 
 	// Check that we are refused because it's an insecure URL.
 	kr := httpbakery.NewThirdPartyLocator(nil, nil)
-	info, err := kr.ThirdPartyInfo(context.Background(), srv.URL)
+	info, err := kr.ThirdPartyInfo(testContext, srv.URL)
 	c.Assert(err, gc.ErrorMatches, `untrusted discharge URL "http://.*"`)
 	c.Assert(info, jc.DeepEquals, bakery.ThirdPartyInfo{})
 
 	// Check that it does work when we've enabled AllowInsecure.
 	kr.AllowInsecure()
-	info, err = kr.ThirdPartyInfo(context.Background(), srv.URL)
+	info, err = kr.ThirdPartyInfo(testContext, srv.URL)
 	c.Assert(err, gc.IsNil)
 	c.Assert(info, jc.DeepEquals, bakery.ThirdPartyInfo{
 		PublicKey: d.Key.Public,
@@ -94,8 +93,8 @@ func (s *KeyringSuite) TestCustomHTTPClient(c *gc.C) {
 		Transport: errorTransport{},
 	}
 	kr := httpbakery.NewThirdPartyLocator(client, nil)
-	info, err := kr.ThirdPartyInfo(context.Background(), "https://0.1.2.3/")
-	c.Assert(err, gc.ErrorMatches, `Get https://0.1.2.3/discharge/info: custom round trip error`)
+	info, err := kr.ThirdPartyInfo(testContext, "https://0.1.2.3/")
+	c.Assert(err, gc.ErrorMatches, `(Get|GET) https://0.1.2.3/discharge/info: custom round trip error`)
 	c.Assert(info, jc.DeepEquals, bakery.ThirdPartyInfo{})
 }
 
@@ -103,7 +102,7 @@ func (s *KeyringSuite) TestThirdPartyInfoForLocation(c *gc.C) {
 	d := bakerytest.NewDischarger(nil, nil)
 	defer d.Close()
 	client := httpbakery.NewHTTPClient()
-	info, err := httpbakery.ThirdPartyInfoForLocation(client, d.Location())
+	info, err := httpbakery.ThirdPartyInfoForLocation(testContext, client, d.Location())
 	c.Assert(err, gc.IsNil)
 	expectedInfo := bakery.ThirdPartyInfo{
 		PublicKey: d.Key.Public,
@@ -112,16 +111,17 @@ func (s *KeyringSuite) TestThirdPartyInfoForLocation(c *gc.C) {
 	c.Assert(info, gc.DeepEquals, expectedInfo)
 
 	// Check that it works with client==nil.
-	info, err = httpbakery.ThirdPartyInfoForLocation(nil, d.Location())
+	info, err = httpbakery.ThirdPartyInfoForLocation(testContext, nil, d.Location())
 	c.Assert(err, gc.IsNil)
 	c.Assert(info, gc.DeepEquals, expectedInfo)
 }
 
 func (s *KeyringSuite) TestThirdPartyInfoForLocationWrongURL(c *gc.C) {
 	client := httpbakery.NewHTTPClient()
-	_, err := httpbakery.ThirdPartyInfoForLocation(client, "http://localhost:0")
+	_, err := httpbakery.ThirdPartyInfoForLocation(testContext, client, "http://localhost:0")
+	c.Logf("%v", errgo.Details(err))
 	c.Assert(err, gc.ErrorMatches,
-		`Get http://localhost:0/discharge/info: dial tcp 127.0.0.1:0: .*connection refused`)
+		`(Get|GET) http://localhost:0/discharge/info: dial tcp 127.0.0.1:0: .*connection refused`)
 }
 
 func (s *KeyringSuite) TestThirdPartyInfoForLocationReturnsInvalidJSON(c *gc.C) {
@@ -130,9 +130,9 @@ func (s *KeyringSuite) TestThirdPartyInfoForLocationReturnsInvalidJSON(c *gc.C) 
 	}))
 	defer ts.Close()
 	client := httpbakery.NewHTTPClient()
-	_, err := httpbakery.ThirdPartyInfoForLocation(client, ts.URL)
+	_, err := httpbakery.ThirdPartyInfoForLocation(testContext, client, ts.URL)
 	c.Assert(err, gc.ErrorMatches,
-		fmt.Sprintf(`GET http://.*/discharge/info: unexpected content type text/plain; want application/json; content: BADJSON`))
+		fmt.Sprintf(`Get http://.*/discharge/info: unexpected content type text/plain; want application/json; content: BADJSON`))
 }
 
 func (s *KeyringSuite) TestThirdPartyInfoForLocationReturnsStatusInternalServerError(c *gc.C) {
@@ -141,9 +141,9 @@ func (s *KeyringSuite) TestThirdPartyInfoForLocationReturnsStatusInternalServerE
 	}))
 	defer ts.Close()
 	client := httpbakery.NewHTTPClient()
-	_, err := httpbakery.ThirdPartyInfoForLocation(client, ts.URL)
+	_, err := httpbakery.ThirdPartyInfoForLocation(testContext, client, ts.URL)
 	c.Assert(err, gc.ErrorMatches,
-		fmt.Sprintf(`GET %s/discharge/info: cannot unmarshal error response \(status 500 Internal Server Error\): unexpected content type text/plain; want application/json; content: `, ts.URL))
+		fmt.Sprintf(`Get %s/discharge/info: cannot unmarshal error response \(status 500 Internal Server Error\): unexpected content type text/plain; want application/json; content: `, ts.URL))
 }
 
 func (s *KeyringSuite) TestThirdPartyInfoForLocationFallbackToOldVersion(c *gc.C) {
@@ -163,7 +163,7 @@ func (s *KeyringSuite) TestThirdPartyInfoForLocationFallbackToOldVersion(c *gc.C
 			PublicKey: &key.Public,
 		})
 	})
-	info, err := httpbakery.ThirdPartyInfoForLocation(httpbakery.NewHTTPClient(), server.URL)
+	info, err := httpbakery.ThirdPartyInfoForLocation(testContext, httpbakery.NewHTTPClient(), server.URL)
 	c.Assert(err, gc.IsNil)
 	expectedInfo := bakery.ThirdPartyInfo{
 		PublicKey: key.Public,

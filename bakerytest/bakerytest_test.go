@@ -29,9 +29,11 @@ func (s *suite) SetUpTest(c *gc.C) {
 
 var _ = gc.Suite(&suite{})
 
-var ages = time.Now().Add(time.Hour)
-
-var dischargeOp = bakery.Op{"thirdparty", "x"}
+var (
+	ages        = time.Now().Add(time.Hour)
+	testContext = context.Background()
+	dischargeOp = bakery.Op{"thirdparty", "x"}
+)
 
 func (s *suite) TestDischargerSimple(c *gc.C) {
 	d := bakerytest.NewDischarger(nil, nil)
@@ -147,7 +149,7 @@ func (s *suite) TestInteractiveDischarger(c *gc.C) {
 	var d *bakerytest.InteractiveDischarger
 	d = bakerytest.NewInteractiveDischarger(nil, http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
-			d.FinishInteraction(w, r, []checkers.Caveat{
+			d.FinishInteraction(context.TODO(), w, r, []checkers.Caveat{
 				checkers.Caveat{
 					Condition: "test pass",
 				},
@@ -172,7 +174,7 @@ func (s *suite) TestInteractiveDischarger(c *gc.C) {
 	client := httpbakery.NewClient()
 	client.VisitWebPage = func(u *url.URL) error {
 		var c httprequest.Client
-		return c.Get(u.String(), nil)
+		return c.Get(testContext, u.String(), nil)
 	}
 	ms, err := client.DischargeAll(context.Background(), m)
 	c.Assert(err, gc.IsNil)
@@ -190,7 +192,7 @@ func (s *suite) TestLoginDischargerError(c *gc.C) {
 	var d *bakerytest.InteractiveDischarger
 	d = bakerytest.NewInteractiveDischarger(nil, http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
-			d.FinishInteraction(w, r, nil, errors.New("test error"))
+			d.FinishInteraction(testContext, w, r, nil, errors.New("test error"))
 		},
 	))
 	defer d.Close()
@@ -210,7 +212,7 @@ func (s *suite) TestLoginDischargerError(c *gc.C) {
 	client.VisitWebPage = func(u *url.URL) error {
 		c.Logf("visiting %s", u)
 		var c httprequest.Client
-		return c.Get(u.String(), nil)
+		return c.Get(testContext, u.String(), nil)
 	}
 	_, err = client.DischargeAll(context.Background(), m)
 	c.Assert(err, gc.ErrorMatches, `cannot get discharge from ".*": failed to acquire macaroon after waiting: third party refused discharge: test error`)
@@ -226,7 +228,7 @@ func (s *suite) TestInteractiveDischargerURL(c *gc.C) {
 	defer d.Close()
 	d.Mux.Handle("/redirect", http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
-			d.FinishInteraction(w, r, nil, nil)
+			d.FinishInteraction(testContext, w, r, nil, nil)
 		},
 	))
 	b := bakery.New(bakery.BakeryParams{
@@ -243,7 +245,7 @@ func (s *suite) TestInteractiveDischargerURL(c *gc.C) {
 	client := httpbakery.NewClient()
 	client.VisitWebPage = func(u *url.URL) error {
 		var c httprequest.Client
-		return c.Get(u.String(), nil)
+		return c.Get(testContext, u.String(), nil)
 	}
 	ms, err := client.DischargeAll(context.Background(), m)
 	c.Assert(err, gc.IsNil)

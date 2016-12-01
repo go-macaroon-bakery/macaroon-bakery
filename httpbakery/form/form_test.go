@@ -131,7 +131,7 @@ var formLoginTests = []struct {
 
 type visitorFunc func(*httpbakery.Client, map[string]*url.URL) error
 
-func (f visitorFunc) VisitWebPage(c *httpbakery.Client, m map[string]*url.URL) error {
+func (f visitorFunc) VisitWebPage(_ context.Context, c *httpbakery.Client, m map[string]*url.URL) error {
 	return f(c, m)
 }
 
@@ -252,9 +252,10 @@ type formDischarger struct {
 }
 
 func (d *formDischarger) visit(w http.ResponseWriter, r *http.Request) {
+	ctx := context.TODO()
 	r.ParseForm()
 	if r.Form.Get("fallback") != "" {
-		d.discharger.FinishInteraction(w, r, nil, nil)
+		d.discharger.FinishInteraction(ctx, w, r, nil, nil)
 		return
 	}
 	if d.ignoreAccept {
@@ -266,7 +267,7 @@ func (d *formDischarger) visit(w http.ResponseWriter, r *http.Request) {
 	}
 	if d.visitError {
 		httprequest.WriteJSON(w, http.StatusInternalServerError, testError)
-		d.discharger.FinishInteraction(w, r, nil, testError)
+		d.discharger.FinishInteraction(ctx, w, r, nil, testError)
 		return
 	}
 	methods := map[string]string{
@@ -280,10 +281,11 @@ func (d *formDischarger) visit(w http.ResponseWriter, r *http.Request) {
 }
 
 func (d *formDischarger) form(w http.ResponseWriter, r *http.Request) {
+	ctx := context.TODO()
 	if r.Method == "GET" {
 		if d.getError {
 			httprequest.WriteJSON(w, http.StatusInternalServerError, testError)
-			d.discharger.FinishInteraction(w, r, nil, testError)
+			d.discharger.FinishInteraction(ctx, w, r, nil, testError)
 			return
 		}
 		var sr form.SchemaResponse
@@ -307,7 +309,7 @@ func (d *formDischarger) form(w http.ResponseWriter, r *http.Request) {
 	}
 	if d.postError {
 		httprequest.WriteJSON(w, http.StatusInternalServerError, testError)
-		d.discharger.FinishInteraction(w, r, nil, testError)
+		d.discharger.FinishInteraction(ctx, w, r, nil, testError)
 		return
 	}
 	var lr form.LoginRequest
@@ -316,15 +318,16 @@ func (d *formDischarger) form(w http.ResponseWriter, r *http.Request) {
 		d.errorf(w, r, "bad visit request: %s", err)
 		return
 	}
-	d.discharger.FinishInteraction(w, r, nil, nil)
+	d.discharger.FinishInteraction(ctx, w, r, nil, nil)
 }
 
 func (d *formDischarger) errorf(w http.ResponseWriter, r *http.Request, s string, p ...interface{}) {
+	ctx := context.TODO()
 	err := &httpbakery.Error{
 		Code:    httpbakery.ErrBadRequest,
 		Message: fmt.Sprintf(s, p...),
 	}
-	d.discharger.FinishInteraction(w, r, nil, err)
+	d.discharger.FinishInteraction(ctx, w, r, nil, err)
 }
 
 var testError = &httpbakery.Error{

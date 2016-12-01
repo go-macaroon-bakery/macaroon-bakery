@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/juju/httprequest"
+	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2-unstable"
 
@@ -31,9 +32,11 @@ const (
 )
 
 var (
-	errorMapper httprequest.ErrorMapper = ErrorToResponse
-	handleJSON                          = errorMapper.HandleJSON
-	writeError                          = errorMapper.WriteError
+	httpReqServer = httprequest.Server{
+		ErrorMapper: ErrorToResponse,
+	}
+	handleJSON = httpReqServer.HandleJSON
+	writeError = httpReqServer.WriteError
 )
 
 // Error holds the type of a response from an httpbakery HTTP request,
@@ -109,7 +112,7 @@ func (e *Error) ErrorInfo() *ErrorInfo {
 // marshaled as JSON for the given error. This allows a third party
 // package to integrate bakery errors into their error responses when
 // they encounter an error with a *bakery.Error cause.
-func ErrorToResponse(err error) (int, interface{}) {
+func ErrorToResponse(ctx context.Context, err error) (int, interface{}) {
 	errorBody := errorResponseBody(err)
 	var body interface{} = errorBody
 	status := http.StatusInternalServerError
@@ -178,7 +181,7 @@ func badRequestErrorf(f string, a ...interface{}) error {
 // indicating that the client should discharge the macaroon to allow the
 // original request to be accepted.
 func WriteDischargeRequiredError(w http.ResponseWriter, m *macaroon.Macaroon, path string, originalErr error) {
-	writeError(w, NewDischargeRequiredError(m, path, originalErr))
+	writeError(context.Background(), w, NewDischargeRequiredError(m, path, originalErr))
 }
 
 // WriteDischargeRequiredErrorForRequest is like NewDischargeRequiredError
@@ -189,7 +192,7 @@ func WriteDischargeRequiredError(w http.ResponseWriter, m *macaroon.Macaroon, pa
 // WriteDischargeRequiredError, because it enables
 // in-browser macaroon discharge.
 func WriteDischargeRequiredErrorForRequest(w http.ResponseWriter, m *macaroon.Macaroon, path string, originalErr error, req *http.Request) {
-	writeError(w, NewDischargeRequiredErrorForRequest(m, path, originalErr, req))
+	writeError(context.Background(), w, NewDischargeRequiredErrorForRequest(m, path, originalErr, req))
 }
 
 // NewDischargeRequiredError returns an error of type *Error that

@@ -4,7 +4,6 @@ import (
 	"net"
 	"net/http"
 
-	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
 
@@ -159,7 +158,7 @@ func (s *CheckersSuite) TestCheckers(c *gc.C) {
 	checker := httpbakery.NewChecker()
 	for i, test := range checkerTests {
 		c.Logf("test %d: %s", i, test.about)
-		ctxt := httpbakery.ContextWithRequest(context.Background(), test.req)
+		ctxt := httpbakery.ContextWithRequest(testContext, test.req)
 		for j, check := range test.checks {
 			c.Logf("\tcheck %d", j)
 

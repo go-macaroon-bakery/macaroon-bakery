@@ -264,12 +264,13 @@ func (d *InteractiveDischarger) CheckThirdPartyCaveat(ctxt context.Context, req 
 var dischargeNamespace = httpbakery.NewChecker().Namespace()
 
 func (d *InteractiveDischarger) wait(w http.ResponseWriter, r *http.Request) {
+	ctx := context.TODO()
 	r.ParseForm()
 	d.mu.Lock()
 	discharge, ok := d.waiting[r.Form.Get("waitid")]
 	d.mu.Unlock()
 	if !ok {
-		code, body := httpbakery.ErrorToResponse(errgo.Newf("invalid waitid %q", r.Form.Get("waitid")))
+		code, body := httpbakery.ErrorToResponse(ctx, errgo.Newf("invalid waitid %q", r.Form.Get("waitid")))
 		httprequest.WriteJSON(w, code, body)
 		return
 	}
@@ -285,12 +286,12 @@ func (d *InteractiveDischarger) wait(w http.ResponseWriter, r *http.Request) {
 		err = res.err
 		cavs = res.cavs
 	case <-time.After(5 * time.Minute):
-		code, body := httpbakery.ErrorToResponse(errgo.New("timeout waiting for interaction to complete"))
+		code, body := httpbakery.ErrorToResponse(ctx, errgo.New("timeout waiting for interaction to complete"))
 		httprequest.WriteJSON(w, code, body)
 		return
 	}
 	if err != nil {
-		code, body := httpbakery.ErrorToResponse(err)
+		code, body := httpbakery.ErrorToResponse(ctx, err)
 		httprequest.WriteJSON(w, code, body)
 		return
 	}
@@ -299,14 +300,14 @@ func (d *InteractiveDischarger) wait(w http.ResponseWriter, r *http.Request) {
 	})
 	m, cavs, err := bakery.Discharge(context.Background(), d.Key, check, discharge.cavId)
 	if err != nil {
-		code, body := httpbakery.ErrorToResponse(err)
+		code, body := httpbakery.ErrorToResponse(ctx, err)
 		httprequest.WriteJSON(w, code, body)
 		return
 	}
 	for _, cav := range cavs {
 		// TODO obtain the namespace from the client.
 		if err := bakery.AddCaveat(context.TODO(), d.Key, d.Locator, m, cav, dischargeNamespace); err != nil {
-			code, body := httpbakery.ErrorToResponse(err)
+			code, body := httpbakery.ErrorToResponse(ctx, err)
 			httprequest.WriteJSON(w, code, body)
 			return
 		}
@@ -325,13 +326,13 @@ func (d *InteractiveDischarger) wait(w http.ResponseWriter, r *http.Request) {
 // particular interaction is complete. It causes any waiting requests to
 // return. If err is not nil then it will be returned by the
 // corresponding /wait request.
-func (d *InteractiveDischarger) FinishInteraction(w http.ResponseWriter, r *http.Request, cavs []checkers.Caveat, err error) {
+func (d *InteractiveDischarger) FinishInteraction(ctx context.Context, w http.ResponseWriter, r *http.Request, cavs []checkers.Caveat, err error) {
 	r.ParseForm()
 	d.mu.Lock()
 	discharge, ok := d.waiting[r.Form.Get("waitid")]
 	d.mu.Unlock()
 	if !ok {
-		code, body := httpbakery.ErrorToResponse(errgo.Newf("invalid waitid %q", r.Form.Get("waitid")))
+		code, body := httpbakery.ErrorToResponse(ctx, errgo.Newf("invalid waitid %q", r.Form.Get("waitid")))
 		httprequest.WriteJSON(w, code, body)
 		return
 	}

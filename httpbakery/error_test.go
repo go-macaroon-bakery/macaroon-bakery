@@ -80,7 +80,7 @@ func (s *ErrorSuite) TestNewInteractionRequiredError(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 
 	err = httpbakery.NewInteractionRequiredError("/visit", "/wait", nil, req)
-	code, resp := httpbakery.ErrorToResponse(err)
+	code, resp := httpbakery.ErrorToResponse(testContext, err)
 	c.Assert(code, gc.Equals, http.StatusProxyAuthRequired)
 
 	data, err := json.Marshal(resp)
@@ -100,7 +100,7 @@ func (s *ErrorSuite) TestNewInteractionRequiredError(c *gc.C) {
 	req.Header.Set("Bakery-Protocol-Version", "1")
 
 	err = httpbakery.NewInteractionRequiredError("/visit", "/wait", nil, req)
-	code, resp = httpbakery.ErrorToResponse(err)
+	code, resp = httpbakery.ErrorToResponse(testContext, err)
 	c.Assert(code, gc.Equals, http.StatusUnauthorized)
 
 	h := make(http.Header)
@@ -124,7 +124,7 @@ func (s *ErrorSuite) TestNewInteractionRequiredError(c *gc.C) {
 	req.Header.Set("Bakery-Protocol-Version", "2")
 
 	err = httpbakery.NewInteractionRequiredError("/visit", "/wait", nil, req)
-	code, resp = httpbakery.ErrorToResponse(err)
+	code, resp = httpbakery.ErrorToResponse(testContext, err)
 	c.Assert(code, gc.Equals, http.StatusUnauthorized)
 
 	h = make(http.Header)

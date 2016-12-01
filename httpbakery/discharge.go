@@ -76,7 +76,7 @@ type DischargerParams struct {
 	// If set, it should handle errors that it does not understand
 	// by falling back to calling ErrorToResponse to ensure
 	// that the standard bakery errors are marshaled in the expected way.
-	ErrorToResponse func(err error) (int, interface{})
+	ErrorToResponse func(ctx context.Context, err error) (int, interface{})
 }
 
 // Discharger represents a third-party caveat discharger.
@@ -140,13 +140,18 @@ func (d *Discharger) AddMuxHandlers(mux *http.ServeMux, rootPath string) {
 
 // Handlers returns a slice of handlers that can handle a third-party
 // caveat discharge service when added to an httprouter.Router.
+// TODO provide some way of customizing the context so that
+// ErrorToResponse can see a request-specific context.
 func (d *Discharger) Handlers() []httprequest.Handler {
-	f := func(p httprequest.Params) (dischargeHandler, error) {
+	f := func(p httprequest.Params) (dischargeHandler, context.Context, error) {
 		return dischargeHandler{
 			discharger: d,
-		}, nil
+		}, p.Context, nil
 	}
-	return httprequest.ErrorMapper(d.p.ErrorToResponse).Handlers(f)
+	srv := httprequest.Server{
+		ErrorMapper: d.p.ErrorToResponse,
+	}
+	return srv.Handlers(f)
 }
 
 //go:generate httprequest-generate-client gopkg.in/macaroon-bakery.v2-unstable/httpbakery dischargeHandler dischargeClient

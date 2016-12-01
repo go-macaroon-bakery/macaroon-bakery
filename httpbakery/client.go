@@ -429,7 +429,7 @@ func (c *Client) AcquireDischarge(ctx context.Context, cav macaroon.Caveat) (*ma
 	} else {
 		id64 = base64.RawURLEncoding.EncodeToString(cav.Id)
 	}
-	resp, err := dclient.Discharge(&dischargeRequest{
+	resp, err := dclient.Discharge(ctx, &dischargeRequest{
 		Id:   id,
 		Id64: id64,
 	})
@@ -472,7 +472,7 @@ func (c *Client) interact(ctx context.Context, location, visitURLStr, waitURLStr
 	}
 	switch {
 	case c.WebPageVisitor != nil:
-		err = c.WebPageVisitor.VisitWebPage(c, map[string]*url.URL{
+		err = c.WebPageVisitor.VisitWebPage(ctx, c, map[string]*url.URL{
 			UserInteractionMethod: visitURL,
 		})
 	case c.VisitWebPage != nil:

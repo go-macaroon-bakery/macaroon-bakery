@@ -5,6 +5,7 @@ import (
 	"net/url"
 
 	"github.com/juju/httprequest"
+	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 )
 
@@ -25,7 +26,7 @@ var ErrMethodNotSupported = errgo.New("interaction method not supported")
 // A Visitor implementation should return ErrMethodNotSupported if it
 // cannot handle any of the supplied methods.
 type Visitor interface {
-	VisitWebPage(client *Client, methodURLs map[string]*url.URL) error
+	VisitWebPage(ctx context.Context, client *Client, methodURLs map[string]*url.URL) error
 }
 
 const (
@@ -55,7 +56,7 @@ func NewMultiVisitor(methods ...Visitor) Visitor {
 // finds one that recognizes the method. If a Visitor returns an error
 // other than ErrMethodNotSupported the error will be immediately
 // returned to the caller; its cause will not be masked.
-func (v multiVisitor) VisitWebPage(client *Client, methodURLs map[string]*url.URL) error {
+func (v multiVisitor) VisitWebPage(ctx context.Context, client *Client, methodURLs map[string]*url.URL) error {
 	// The Client implementation will always include a UserInteractionMethod
 	// entry taken from the VisitURL field in the error, so use that
 	// to find the set of supported interaction methods.
@@ -63,7 +64,7 @@ func (v multiVisitor) VisitWebPage(client *Client, methodURLs map[string]*url.UR
 	if u == nil {
 		return errgo.Newf("cannot get interaction methods because no %q URL found", UserInteractionMethod)
 	}
-	if urls, err := GetInteractionMethods(client, u); err == nil {
+	if urls, err := GetInteractionMethods(ctx, client, u); err == nil {
 		// We succeeded in getting the set of interaction methods from
 		// the discharger. Use them.
 		methodURLs = urls
@@ -79,7 +80,7 @@ func (v multiVisitor) VisitWebPage(client *Client, methodURLs map[string]*url.UR
 	// Go through all the Visitors, looking for one that supports one
 	// of the methods we have found.
 	for _, m := range v.supportedMethods {
-		err := m.VisitWebPage(client, methodURLs)
+		err := m.VisitWebPage(ctx, client, methodURLs)
 		if err == nil {
 			return nil
 		}
@@ -99,7 +100,7 @@ func (v multiVisitor) VisitWebPage(client *Client, methodURLs map[string]*url.UR
 // response as a map[string]string.
 //
 // It uses the given Doer to execute the HTTP GET request.
-func GetInteractionMethods(client httprequest.Doer, u *url.URL) (map[string]*url.URL, error) {
+func GetInteractionMethods(ctx context.Context, client httprequest.Doer, u *url.URL) (map[string]*url.URL, error) {
 	httpReqClient := &httprequest.Client{
 		Doer: client,
 	}
@@ -109,7 +110,7 @@ func GetInteractionMethods(client httprequest.Doer, u *url.URL) (map[string]*url
 	}
 	req.Header.Set("Accept", "application/json")
 	var methodURLStrs map[string]string
-	if err := httpReqClient.Do(req, nil, &methodURLStrs); err != nil {
+	if err := httpReqClient.Do(ctx, req, &methodURLStrs); err != nil {
 		return nil, errgo.Mask(err)
 	}
 	// Make all the URLs relative to the request URL.

@@ -17,6 +17,7 @@ import (
 
 	"github.com/juju/httprequest"
 	"github.com/juju/loggo"
+	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
@@ -225,7 +226,7 @@ func (v *Visitor) findAgent(u *url.URL) (agent, bool) {
 }
 
 // VisitWebPage implements httpbakery.Visitor.VisitWebPage
-func (v *Visitor) VisitWebPage(client *httpbakery.Client, m map[string]*url.URL) error {
+func (v *Visitor) VisitWebPage(ctx context.Context, client *httpbakery.Client, m map[string]*url.URL) error {
 	url := m[httpbakery.UserInteractionMethod]
 	a, ok := v.findAgent(url)
 	if !ok {
@@ -243,7 +244,7 @@ func (v *Visitor) VisitWebPage(client *httpbakery.Client, m map[string]*url.URL)
 	}
 	setCookie(req, a.Username, &a.Key.Public)
 	var resp agentResponse
-	if err := c.Do(req, nil, &resp); err != nil {
+	if err := c.Do(ctx, req, &resp); err != nil {
 		return errgo.Mask(err)
 	}
 	if !resp.AgentLogin {
