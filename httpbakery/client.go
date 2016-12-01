@@ -14,6 +14,7 @@ import (
 	"github.com/juju/httprequest"
 	"github.com/juju/loggo"
 	"golang.org/x/net/context"
+	"golang.org/x/net/context/ctxhttp"
 	"golang.org/x/net/publicsuffix"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2-unstable"
@@ -146,7 +147,7 @@ type Client struct {
 type DischargeAcquirer interface {
 	// AcquireDischarge should return a discharge macaroon for the given third
 	// party caveat.
-	AcquireDischarge(cav macaroon.Caveat) (*macaroon.Macaroon, error)
+	AcquireDischarge(ctx context.Context, cav macaroon.Caveat) (*macaroon.Macaroon, error)
 }
 
 // NewClient returns a new Client containing an HTTP client
@@ -155,25 +156,6 @@ func NewClient() *Client {
 	return &Client{
 		Client: NewHTTPClient(),
 	}
-}
-
-// Do sends the given HTTP request and returns its response. If the
-// request fails with a discharge-required error, any required discharge
-// macaroons will be acquired, and the request will be repeated with
-// those attached. Do may add headers to req.Header.
-//
-// If the required discharges were refused by a third party, an error
-// with a *DischargeError cause will be returned.
-//
-// If interaction is required by the user, the visitWebPage function is
-// called with a URL to be opened in a web browser. If visitWebPage
-// returns an error, an error with a *InteractionError cause will be
-// returned. See OpenWebBrowser for a possible implementation of
-// visitWebPage.
-//
-// Do may add headers to req.Header.
-func (c *Client) Do(req *http.Request) (*http.Response, error) {
-	return c.do(req, nil)
 }
 
 // DischargeAll attempts to acquire discharge macaroons for all the
@@ -187,8 +169,8 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 //
 // The returned macaroon slice will not be stored in the client
 // cookie jar (see SetCookie if you need to do that).
-func (c *Client) DischargeAll(m *macaroon.Macaroon) (macaroon.Slice, error) {
-	return bakery.DischargeAllWithKey(context.TODO(), m, c.dischargeAcquirer().AcquireDischarge, c.Key)
+func (c *Client) DischargeAll(ctx context.Context, m *macaroon.Macaroon) (macaroon.Slice, error) {
+	return bakery.DischargeAllWithKey(ctx, m, c.dischargeAcquirer().AcquireDischarge, c.Key)
 }
 
 func (c *Client) dischargeAcquirer() DischargeAcquirer {
@@ -198,20 +180,30 @@ func (c *Client) dischargeAcquirer() DischargeAcquirer {
 	return c
 }
 
-// relativeURL returns newPath relative to an original URL.
-func relativeURL(base, new string) (*url.URL, error) {
-	if new == "" {
-		return nil, errgo.Newf("empty URL")
-	}
-	baseURL, err := url.Parse(base)
-	if err != nil {
-		return nil, errgo.Notef(err, "cannot parse URL")
-	}
-	newURL, err := url.Parse(new)
-	if err != nil {
-		return nil, errgo.Notef(err, "cannot parse URL")
-	}
-	return baseURL.ResolveReference(newURL), nil
+// Do is like DoWithContext, except the context is automatically derived.
+// If using go version 1.7 or later the context will be taken from the
+// given request, otherwise context.Background() will be used.
+func (c *Client) Do(req *http.Request) (*http.Response, error) {
+	return c.do(contextFromRequest(req), req, nil)
+}
+
+// DoWithContext sends the given HTTP request and returns its response.
+// If the request fails with a discharge-required error, any required
+// discharge macaroons will be acquired, and the request will be repeated
+// with those attached.
+//
+// If the required discharges were refused by a third party, an error
+// with a *DischargeError cause will be returned.
+//
+// If interaction is required by the user, the client's WebPageVisitor,
+// or VisitWebPage function will be used to perform interaction. An error
+// with a *InteractionError cause will be returned if this interaction
+// fails. See WebBrowserVisitor for a possible implementation of
+// WebPageVisitor.
+//
+// DoWithContext may add headers to req.Header.
+func (c *Client) DoWithContext(ctx context.Context, req *http.Request) (*http.Response, error) {
+	return c.do(ctx, req, nil)
 }
 
 // DoWithCustomError is like Do except it allows a client
@@ -230,17 +222,17 @@ func relativeURL(base, new string) (*url.URL, error) {
 // need for it should be avoided when creating new APIs,
 // as it makes the endpoints less amenable to generic tools.
 func (c *Client) DoWithCustomError(req *http.Request, getError func(resp *http.Response) error) (*http.Response, error) {
-	return c.do(req, getError)
+	return c.do(contextFromRequest(req), req, getError)
 }
 
-func (c *Client) do(req *http.Request, getError func(resp *http.Response) error) (*http.Response, error) {
+func (c *Client) do(ctx context.Context, req *http.Request, getError func(resp *http.Response) error) (*http.Response, error) {
 	logger.Debugf("client do %s %s {", req.Method, req.URL)
-	resp, err := c.do1(req, getError)
+	resp, err := c.do1(ctx, req, getError)
 	logger.Debugf("} -> error %#v", err)
 	return resp, err
 }
 
-func (c *Client) do1(req *http.Request, getError func(resp *http.Response) error) (*http.Response, error) {
+func (c *Client) do1(ctx context.Context, req *http.Request, getError func(resp *http.Response) error) (*http.Response, error) {
 	if getError == nil {
 		getError = DefaultGetError
 	}
@@ -261,25 +253,25 @@ func (c *Client) do1(req *http.Request, getError func(resp *http.Response) error
 	// the macaroon in it.
 	retry := 0
 	for {
-		resp, err := c.do2(rreq, getError)
+		resp, err := c.do2(ctx, rreq, getError)
 		if err == nil || !isDischargeRequiredError(err) {
 			return resp, errgo.Mask(err, errgo.Any)
 		}
 		if retry++; retry > maxDischargeRetries {
 			return nil, errgo.NoteMask(err, fmt.Sprintf("too many (%d) discharge requests", retry-1), errgo.Any)
 		}
-		if err1 := c.HandleError(req.URL, err); err1 != nil {
+		if err1 := c.HandleError(ctx, req.URL, err); err1 != nil {
 			return nil, errgo.Mask(err1, errgo.Any)
 		}
 		logger.Infof("discharge succeeded; retry %d", retry)
 	}
 }
 
-func (c *Client) do2(req *retryableRequest, getError func(resp *http.Response) error) (*http.Response, error) {
+func (c *Client) do2(ctx context.Context, req *retryableRequest, getError func(resp *http.Response) error) (*http.Response, error) {
 	if err := req.try(); err != nil {
 		return nil, errgo.Mask(err)
 	}
-	httpResp, err := c.Client.Do(req.req)
+	httpResp, err := ctxhttp.Do(ctx, c.Client, req.req)
 	if err != nil {
 		return nil, errgo.Mask(err, errgo.Any)
 	}
@@ -301,7 +293,7 @@ func (c *Client) do2(req *retryableRequest, getError func(resp *http.Response) e
 // nil.
 //
 // For any other kind of error, the original error will be returned.
-func (c *Client) HandleError(reqURL *url.URL, err error) error {
+func (c *Client) HandleError(ctx context.Context, reqURL *url.URL, err error) error {
 	respErr, ok := errgo.Cause(err).(*Error)
 	if !ok {
 		return err
@@ -313,7 +305,7 @@ func (c *Client) HandleError(reqURL *url.URL, err error) error {
 		return errgo.New("no macaroon found in discharge-required response")
 	}
 	mac := respErr.Info.Macaroon
-	macaroons, err := bakery.DischargeAllWithKey(context.TODO(), mac, c.dischargeAcquirer().AcquireDischarge, c.Key)
+	macaroons, err := bakery.DischargeAllWithKey(ctx, mac, c.dischargeAcquirer().AcquireDischarge, c.Key)
 	if err != nil {
 		return errgo.Mask(err, errgo.Any)
 	}
@@ -429,7 +421,7 @@ func appendURLElem(u, elem string) string {
 
 // AcquireDischarge implements DischargeAcquirer by requesting a discharge
 // macaroon from the caveat location as an HTTP URL.
-func (c *Client) AcquireDischarge(cav macaroon.Caveat) (*macaroon.Macaroon, error) {
+func (c *Client) AcquireDischarge(ctx context.Context, cav macaroon.Caveat) (*macaroon.Macaroon, error) {
 	dclient := newDischargeClient(cav.Location, c)
 	var id, id64 string
 	if utf8.Valid(cav.Id) {
@@ -460,7 +452,7 @@ func (c *Client) AcquireDischarge(cav macaroon.Caveat) (*macaroon.Macaroon, erro
 	// the relative URL calculations work correctly even when
 	// cav.Location doesn't have a trailing slash.
 	loc := appendURLElem(cav.Location, "")
-	m, err := c.interact(loc, cause.Info.VisitURL, cause.Info.WaitURL)
+	m, err := c.interact(ctx, loc, cause.Info.VisitURL, cause.Info.WaitURL)
 	if err != nil {
 		return nil, errgo.Mask(err, IsDischargeError, IsInteractionError)
 	}
@@ -469,7 +461,7 @@ func (c *Client) AcquireDischarge(cav macaroon.Caveat) (*macaroon.Macaroon, erro
 
 // interact gathers a macaroon by directing the user to interact with a
 // web page.
-func (c *Client) interact(location, visitURLStr, waitURLStr string) (*macaroon.Macaroon, error) {
+func (c *Client) interact(ctx context.Context, location, visitURLStr, waitURLStr string) (*macaroon.Macaroon, error) {
 	visitURL, err := relativeURL(location, visitURLStr)
 	if err != nil {
 		return nil, errgo.Notef(err, "cannot make relative visit URL")
@@ -493,7 +485,7 @@ func (c *Client) interact(location, visitURLStr, waitURLStr string) (*macaroon.M
 			Reason: err,
 		}
 	}
-	waitResp, err := c.Client.Get(waitURL.String())
+	waitResp, err := ctxhttp.Get(ctx, c.Client, waitURL.String())
 	if err != nil {
 		return nil, errgo.Notef(err, "cannot get %q", waitURL)
 	}
@@ -516,6 +508,22 @@ func (c *Client) interact(location, visitURLStr, waitURLStr string) (*macaroon.M
 		return nil, errgo.New("no macaroon found in wait response")
 	}
 	return resp.Macaroon, nil
+}
+
+// relativeURL returns newPath relative to an original URL.
+func relativeURL(base, new string) (*url.URL, error) {
+	if new == "" {
+		return nil, errgo.Newf("empty URL")
+	}
+	baseURL, err := url.Parse(base)
+	if err != nil {
+		return nil, errgo.Notef(err, "cannot parse URL")
+	}
+	newURL, err := url.Parse(new)
+	if err != nil {
+		return nil, errgo.Notef(err, "cannot parse URL")
+	}
+	return baseURL.ResolveReference(newURL), nil
 }
 
 // TODO(rog) move a lot of the code below into server.go, as it's

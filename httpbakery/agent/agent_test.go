@@ -105,7 +105,7 @@ func (s *agentSuite) TestAgentLogin(c *gc.C) {
 			bakery.LoginOp,
 		)
 		c.Assert(err, gc.IsNil)
-		ms, err := client.DischargeAll(m)
+		ms, err := client.DischargeAll(context.Background(), m)
 		if test.expectError != "" {
 			c.Assert(err, gc.ErrorMatches, test.expectError)
 			continue
@@ -129,7 +129,7 @@ func (s *agentSuite) TestNoCookieError(c *gc.C) {
 	)
 
 	c.Assert(err, gc.IsNil)
-	_, err = client.DischargeAll(m)
+	_, err = client.DischargeAll(context.Background(), m)
 	c.Assert(err, gc.ErrorMatches, "cannot get discharge from .*: cannot start interactive session: no suitable agent found")
 	_, ok := errgo.Cause(err).(*httpbakery.InteractionError)
 	c.Assert(ok, gc.Equals, true)
@@ -190,7 +190,7 @@ func (s *agentSuite) TestMultipleAgents(c *gc.C) {
 		bakery.LoginOp,
 	)
 	c.Assert(err, gc.IsNil)
-	ms, err := client.DischargeAll(m)
+	ms, err := client.DischargeAll(context.Background(), m)
 	c.Assert(err, gc.IsNil)
 	authInfo, err := s.bakery.Checker.Auth(ms).Allow(context.Background(), bakery.LoginOp)
 	c.Assert(err, gc.IsNil)

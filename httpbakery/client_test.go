@@ -238,7 +238,7 @@ func assertDischargeServerDischargesConditionForVersion(c *gc.C, cond string, ve
 	}, nil)
 	c.Assert(err, gc.IsNil)
 	client := httpbakery.NewClient()
-	ms, err := client.DischargeAll(m)
+	ms, err := client.DischargeAll(context.TODO(), m)
 	c.Assert(err, gc.IsNil)
 	c.Check(ms, gc.HasLen, 2)
 	c.Check(called, gc.Equals, 1)
@@ -502,7 +502,7 @@ func (s *ClientSuite) TestDischargeAcquirer(c *gc.C) {
 	cl := httpbakery.NewClient()
 	cl.DischargeAcquirer = ta
 
-	ms, err := cl.DischargeAll(m)
+	ms, err := cl.DischargeAll(context.Background(), m)
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 2)
 
@@ -527,7 +527,7 @@ type testAcquirer struct {
 }
 
 // AcquireDischarge implements httpbakery.DischargeAcquirer.
-func (ta *testAcquirer) AcquireDischarge(cav macaroon.Caveat) (*macaroon.Macaroon, error) {
+func (ta *testAcquirer) AcquireDischarge(_ context.Context, cav macaroon.Caveat) (*macaroon.Macaroon, error) {
 	ta.acquireCaveat = cav
 	err := ta.dischargeMacaroon.AddFirstPartyCaveat("must foo")
 	if err != nil {
@@ -1026,7 +1026,7 @@ func (s *ClientSuite) TestHandleError(c *gc.C) {
 		},
 	}
 	client := httpbakery.NewClient()
-	err = client.HandleError(u, respErr)
+	err = client.HandleError(context.Background(), u, respErr)
 	c.Assert(err, gc.Equals, nil)
 	// No cookies at the original location.
 	c.Assert(client.Client.Jar.Cookies(u), gc.HasLen, 0)
@@ -1076,7 +1076,7 @@ func (s *ClientSuite) TestHandleErrorDifferentError(c *gc.C) {
 		Code:    "another code",
 	}
 	client := httpbakery.NewClient()
-	err := client.HandleError(&url.URL{}, berr)
+	err := client.HandleError(context.Background(), &url.URL{}, berr)
 	c.Assert(err, gc.Equals, berr)
 }
 

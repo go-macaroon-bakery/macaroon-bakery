@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/juju/testing"
+	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/macaroon.v2-unstable"
 
@@ -55,7 +56,7 @@ func (*DischargeSuite) TestDischargeAllManyDischarges(c *gc.C) {
 		}
 	}
 	addCaveats(m0)
-	getDischarge := func(cav macaroon.Caveat) (*macaroon.Macaroon, error) {
+	getDischarge := func(_ context.Context, cav macaroon.Caveat) (*macaroon.Macaroon, error) {
 		m, err := macaroon.New([]byte("root key "+string(cav.Id)), cav.Id, "", macaroonCurrentVersion)
 		c.Assert(err, gc.IsNil)
 		addCaveats(m)

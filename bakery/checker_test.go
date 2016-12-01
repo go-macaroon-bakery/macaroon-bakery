@@ -917,7 +917,7 @@ func (c *client) requestMacaroons(svc *service) []macaroon.Slice {
 }
 
 func (c *client) dischargeAll(ctxt context.Context, m *macaroon.Macaroon, ns *checkers.Namespace) (macaroon.Slice, error) {
-	return bakery.DischargeAll(ctxt, m, func(cav macaroon.Caveat) (*macaroon.Macaroon, error) {
+	return bakery.DischargeAll(ctxt, m, func(_ context.Context, cav macaroon.Caveat) (*macaroon.Macaroon, error) {
 		d := c.dischargers[cav.Location]
 		if d == nil {
 			return nil, errgo.Newf("third party discharger %q not found", cav.Location)
