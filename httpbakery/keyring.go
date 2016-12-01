@@ -53,7 +53,7 @@ func (kr *ThirdPartyLocator) AllowInsecure() {
 // by first looking in the backing cache and, if that fails,
 // making an HTTP request to find the information associated
 // with the given discharge location.
-func (kr *ThirdPartyLocator) ThirdPartyInfo(ctxt context.Context, loc string) (bakery.ThirdPartyInfo, error) {
+func (kr *ThirdPartyLocator) ThirdPartyInfo(ctx context.Context, loc string) (bakery.ThirdPartyInfo, error) {
 	u, err := url.Parse(loc)
 	if err != nil {
 		return bakery.ThirdPartyInfo{}, errgo.Notef(err, "invalid discharge URL %q", loc)
@@ -61,11 +61,11 @@ func (kr *ThirdPartyLocator) ThirdPartyInfo(ctxt context.Context, loc string) (b
 	if u.Scheme != "https" && !kr.allowInsecure {
 		return bakery.ThirdPartyInfo{}, errgo.Newf("untrusted discharge URL %q", loc)
 	}
-	info, err := kr.cache.ThirdPartyInfo(ctxt, loc)
+	info, err := kr.cache.ThirdPartyInfo(ctx, loc)
 	if err == nil {
 		return info, nil
 	}
-	info, err = ThirdPartyInfoForLocation(kr.client, loc)
+	info, err = ThirdPartyInfoForLocation(ctx, kr.client, loc)
 	if err != nil {
 		return bakery.ThirdPartyInfo{}, errgo.Mask(err)
 	}
@@ -77,9 +77,9 @@ func (kr *ThirdPartyLocator) ThirdPartyInfo(ctxt context.Context, loc string) (b
 // discharge server running at the given location URL. Note that this is
 // insecure if an http: URL scheme is used. If client is nil,
 // http.DefaultClient will be used.
-func ThirdPartyInfoForLocation(client httprequest.Doer, url string) (bakery.ThirdPartyInfo, error) {
+func ThirdPartyInfoForLocation(ctx context.Context, client httprequest.Doer, url string) (bakery.ThirdPartyInfo, error) {
 	dclient := newDischargeClient(url, client)
-	info, err := dclient.DischargeInfo(&dischargeInfoRequest{})
+	info, err := dclient.DischargeInfo(ctx, &dischargeInfoRequest{})
 	if err == nil {
 		return bakery.ThirdPartyInfo{
 			PublicKey: *info.PublicKey,
@@ -91,7 +91,7 @@ func ThirdPartyInfoForLocation(client httprequest.Doer, url string) (bakery.Thir
 		return bakery.ThirdPartyInfo{}, errgo.Mask(err)
 	}
 	// The new endpoint isn't there, so try the old one.
-	pkResp, err := dclient.PublicKey(&publicKeyRequest{})
+	pkResp, err := dclient.PublicKey(ctx, &publicKeyRequest{})
 	if err != nil {
 		return bakery.ThirdPartyInfo{}, errgo.Mask(err)
 	}

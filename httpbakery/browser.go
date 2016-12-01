@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/juju/webbrowser"
+	"golang.org/x/net/context"
 )
 
 // OpenWebBrowser opens a web browser at the
@@ -31,7 +32,7 @@ var WebBrowserVisitor Visitor = webBrowserVisitor{}
 
 type webBrowserVisitor struct{}
 
-func (webBrowserVisitor) VisitWebPage(client *Client, methodURLs map[string]*url.URL) error {
+func (webBrowserVisitor) VisitWebPage(ctx context.Context, client *Client, methodURLs map[string]*url.URL) error {
 	u := methodURLs[UserInteractionMethod]
 	if u == nil {
 		return ErrMethodNotSupported

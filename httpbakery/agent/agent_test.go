@@ -62,19 +62,19 @@ var agentLoginTests = []struct {
 			Message: "test error",
 		})
 	},
-	expectError: `cannot get discharge from ".*": cannot start interactive session: test error`,
+	expectError: `cannot get discharge from ".*": cannot start interactive session: Get http://.*: test error`,
 }, {
 	about: "unexpected response",
 	loginHandler: func(d *Discharger, w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("OK"))
 	},
-	expectError: `cannot get discharge from ".*": cannot start interactive session: GET http://.*: unexpected content type text/plain; want application/json; content: OK`,
+	expectError: `cannot get discharge from ".*": cannot start interactive session: Get http://.*: unexpected content type text/plain; want application/json; content: OK`,
 }, {
 	about: "unexpected error response",
 	loginHandler: func(d *Discharger, w http.ResponseWriter, _ *http.Request) {
 		d.writeJSON(w, http.StatusBadRequest, httpbakery.Error{})
 	},
-	expectError: `cannot get discharge from ".*": cannot start interactive session: httprequest: no error message found`,
+	expectError: `cannot get discharge from ".*": cannot start interactive session: Get http://.*: no error message found`,
 }, {
 	about: "incorrect JSON",
 	loginHandler: func(d *Discharger, w http.ResponseWriter, _ *http.Request) {

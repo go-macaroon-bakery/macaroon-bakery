@@ -6,6 +6,7 @@ import (
 
 	"github.com/juju/httprequest"
 	"github.com/juju/loggo"
+	"golang.org/x/net/context"
 	"golang.org/x/net/publicsuffix"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/juju/environschema.v1"
@@ -95,15 +96,15 @@ type Visitor struct {
 // schema. It calls v.handler.Handle using the downloaded schema and then
 // submits the returned form. Any error produced by v.handler.Handle will
 // not have it's cause masked.
-func (v Visitor) VisitWebPage(client *httpbakery.Client, methodURLs map[string]*url.URL) error {
-	return v.visitWebPage(client, methodURLs)
+func (v Visitor) VisitWebPage(ctx context.Context, client *httpbakery.Client, methodURLs map[string]*url.URL) error {
+	return v.visitWebPage(ctx, client, methodURLs)
 }
 
 // visitWebPage is the internal version of VisitWebPage that operates
 // on a Doer rather than an httpbakery.Client, so that we
 // can remain compatible with the historic
 // signature of the VisitWebPage function.
-func (v Visitor) visitWebPage(doer httprequest.Doer, methodURLs map[string]*url.URL) error {
+func (v Visitor) visitWebPage(ctx context.Context, doer httprequest.Doer, methodURLs map[string]*url.URL) error {
 	schemaURL := methodURLs[InteractionMethod]
 	if schemaURL == nil {
 		return httpbakery.ErrMethodNotSupported
@@ -113,7 +114,7 @@ func (v Visitor) visitWebPage(doer httprequest.Doer, methodURLs map[string]*url.
 		Doer: doer,
 	}
 	var s SchemaResponse
-	if err := httpReqClient.CallURL(schemaURL.String(), &SchemaRequest{}, &s); err != nil {
+	if err := httpReqClient.CallURL(ctx, schemaURL.String(), &SchemaRequest{}, &s); err != nil {
 		return errgo.Notef(err, "cannot get schema")
 	}
 	if len(s.Schema) == 0 {
@@ -135,7 +136,7 @@ func (v Visitor) visitWebPage(doer httprequest.Doer, methodURLs map[string]*url.
 			Form: form,
 		},
 	}
-	if err := httpReqClient.CallURL(schemaURL.String(), &lr, nil); err != nil {
+	if err := httpReqClient.CallURL(ctx, schemaURL.String(), &lr, nil); err != nil {
 		return errgo.Notef(err, "cannot submit form")
 	}
 	return nil

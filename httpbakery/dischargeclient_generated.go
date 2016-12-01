@@ -5,6 +5,7 @@ package httpbakery
 
 import (
 	"github.com/juju/httprequest"
+	"golang.org/x/net/context"
 )
 
 type dischargeClient struct {
@@ -12,22 +13,22 @@ type dischargeClient struct {
 }
 
 // Discharge discharges a third party caveat.
-func (c *dischargeClient) Discharge(p *dischargeRequest) (*dischargeResponse, error) {
+func (c *dischargeClient) Discharge(ctx context.Context, p *dischargeRequest) (*dischargeResponse, error) {
 	var r *dischargeResponse
-	err := c.Client.Call(p, &r)
+	err := c.Client.Call(ctx, p, &r)
 	return r, err
 }
 
 // DischargeInfo returns information on the discharger.
-func (c *dischargeClient) DischargeInfo(p *dischargeInfoRequest) (dischargeInfoResponse, error) {
+func (c *dischargeClient) DischargeInfo(ctx context.Context, p *dischargeInfoRequest) (dischargeInfoResponse, error) {
 	var r dischargeInfoResponse
-	err := c.Client.Call(p, &r)
+	err := c.Client.Call(ctx, p, &r)
 	return r, err
 }
 
 // PublicKey returns the public key of the discharge service.
-func (c *dischargeClient) PublicKey(p *publicKeyRequest) (publicKeyResponse, error) {
+func (c *dischargeClient) PublicKey(ctx context.Context, p *publicKeyRequest) (publicKeyResponse, error) {
 	var r publicKeyResponse
-	err := c.Client.Call(p, &r)
+	err := c.Client.Call(ctx, p, &r)
 	return r, err
 }

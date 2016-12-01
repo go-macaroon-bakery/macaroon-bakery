@@ -8,6 +8,7 @@ import (
 
 	jujutesting "github.com/juju/testing"
 	jc "github.com/juju/testing/checkers"
+	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
 
@@ -27,9 +28,9 @@ func (*VisitorSuite) TestGetInteractionMethodsGetFailure(c *gc.C) {
 	}))
 	defer srv.Close()
 
-	methods, err := httpbakery.GetInteractionMethods(http.DefaultClient, mustParseURL(srv.URL))
+	methods, err := httpbakery.GetInteractionMethods(testContext, http.DefaultClient, mustParseURL(srv.URL))
 	c.Assert(methods, gc.IsNil)
-	c.Assert(err, gc.ErrorMatches, `GET .*: cannot unmarshal error response \(status 418 I'm a teapot\): unexpected content type text/plain; want application/json; content: failure`)
+	c.Assert(err, gc.ErrorMatches, `Get .*: cannot unmarshal error response \(status 418 I'm a teapot\): unexpected content type text/plain; want application/json; content: failure`)
 }
 
 func (*VisitorSuite) TestGetInteractionMethodsSuccess(c *gc.C) {
@@ -39,7 +40,7 @@ func (*VisitorSuite) TestGetInteractionMethodsSuccess(c *gc.C) {
 	}))
 	defer srv.Close()
 
-	methods, err := httpbakery.GetInteractionMethods(http.DefaultClient, mustParseURL(srv.URL))
+	methods, err := httpbakery.GetInteractionMethods(testContext, http.DefaultClient, mustParseURL(srv.URL))
 	c.Assert(err, gc.IsNil)
 	c.Assert(methods, jc.DeepEquals, map[string]*url.URL{
 		"method": {
@@ -57,14 +58,14 @@ func (*VisitorSuite) TestGetInteractionMethodsInvalidURL(c *gc.C) {
 	}))
 	defer srv.Close()
 
-	methods, err := httpbakery.GetInteractionMethods(http.DefaultClient, mustParseURL(srv.URL))
+	methods, err := httpbakery.GetInteractionMethods(testContext, http.DefaultClient, mustParseURL(srv.URL))
 	c.Assert(methods, gc.IsNil)
 	c.Assert(err, gc.ErrorMatches, `invalid URL for interaction method "method": parse :::: missing protocol scheme`)
 }
 
 func (*VisitorSuite) TestMultiVisitorNoUserInteractionMethod(c *gc.C) {
 	v := httpbakery.NewMultiVisitor()
-	err := v.VisitWebPage(httpbakery.NewClient(), nil)
+	err := v.VisitWebPage(testContext, httpbakery.NewClient(), nil)
 	c.Assert(err, gc.ErrorMatches, `cannot get interaction methods because no "interactive" URL found`)
 }
 
@@ -87,7 +88,7 @@ func (*VisitorSuite) TestMultiVisitorNoInteractionMethods(c *gc.C) {
 			return nil
 		}),
 	)
-	err := v.VisitWebPage(httpbakery.NewClient(), methods)
+	err := v.VisitWebPage(testContext, httpbakery.NewClient(), methods)
 	c.Assert(err, gc.IsNil)
 	c.Assert(initialPage, gc.Equals, 1)
 	c.Assert(visited, gc.Equals, 1)
@@ -113,9 +114,10 @@ func (*VisitorSuite) TestMultiVisitorSequence(c *gc.C) {
 			return nil
 		}),
 	)
-	err := v.VisitWebPage(httpbakery.NewClient(), map[string]*url.URL{
+	err := v.VisitWebPage(testContext, httpbakery.NewClient(), map[string]*url.URL{
 		httpbakery.UserInteractionMethod: mustParseURL(srv.URL),
 	})
+
 	c.Assert(err, gc.IsNil)
 	c.Assert(firstCalled, gc.Equals, 1)
 	c.Assert(secondCalled, gc.Equals, 1)
@@ -141,9 +143,10 @@ func (*VisitorSuite) TestUserInteractionFallback(c *gc.C) {
 			return nil
 		}),
 	)
-	err := v.VisitWebPage(httpbakery.NewClient(), map[string]*url.URL{
+	err := v.VisitWebPage(testContext, httpbakery.NewClient(), map[string]*url.URL{
 		httpbakery.UserInteractionMethod: mustParseURL(srv.URL),
 	})
+
 	c.Assert(err, gc.IsNil)
 	c.Assert(called, gc.Equals, 1)
 }
@@ -161,14 +164,15 @@ func (*VisitorSuite) TestMultiVisitorVisitorError(c *gc.C) {
 			return testError
 		}),
 	)
-	err := v.VisitWebPage(httpbakery.NewClient(), map[string]*url.URL{
+	err := v.VisitWebPage(testContext, httpbakery.NewClient(), map[string]*url.URL{
 		httpbakery.UserInteractionMethod: mustParseURL(srv.URL),
 	})
+
 	c.Assert(errgo.Cause(err), gc.Equals, testError)
 }
 
 type visitorFunc func(*httpbakery.Client, map[string]*url.URL) error
 
-func (f visitorFunc) VisitWebPage(c *httpbakery.Client, m map[string]*url.URL) error {
+func (f visitorFunc) VisitWebPage(ctx context.Context, c *httpbakery.Client, m map[string]*url.URL) error {
 	return f(c, m)
 }
