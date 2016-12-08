@@ -4,10 +4,10 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
-	"net/http/httptest"
 	"net/url"
 	"time"
 
+	"github.com/juju/httprequest"
 	jc "github.com/juju/testing/checkers"
 	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
@@ -16,6 +16,7 @@ import (
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakerytest"
 	"gopkg.in/macaroon-bakery.v2-unstable/httpbakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/httpbakery/agent"
 )
@@ -23,62 +24,68 @@ import (
 var _ httpbakery.Visitor = (*agent.Visitor)(nil)
 
 type agentSuite struct {
-	bakery       *bakery.Bakery
-	dischargeKey *bakery.PublicKey
-	discharger   *Discharger
-	server       *httptest.Server
+	agentBakery *bakery.Bakery
+	bakery      *bakery.Bakery
+	discharger  *bakerytest.InteractiveDischarger
+	handle      func(ctx context.Context, w http.ResponseWriter, req *http.Request)
 }
 
 var _ = gc.Suite(&agentSuite{})
 
-func (s *agentSuite) SetUpSuite(c *gc.C) {
-	locator := bakery.NewThirdPartyStore()
-	s.discharger = newDischarger(c, locator)
+func (s *agentSuite) SetUpTest(c *gc.C) {
+	s.discharger = bakerytest.NewInteractiveDischarger(nil, s)
 
 	key, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
+	s.agentBakery = bakery.New(bakery.BakeryParams{
+		IdentityClient: idmClient{s.discharger.Location()},
+		Key:            key,
+	})
+
+	key, err = bakery.GenerateKey()
+	c.Assert(err, gc.IsNil)
 	s.bakery = bakery.New(bakery.BakeryParams{
-		Locator:        locator,
-		IdentityClient: idmClient{s.discharger.URL},
+		Locator:        s.discharger,
+		IdentityClient: idmClient{s.discharger.Location()},
 		Key:            key,
 	})
 }
 
-func (s *agentSuite) TearDownSuite(c *gc.C) {
+func (s *agentSuite) TearDownTest(c *gc.C) {
 	s.discharger.Close()
 }
 
 var agentLoginTests = []struct {
 	about        string
-	loginHandler func(*Discharger, http.ResponseWriter, *http.Request)
+	loginHandler func(context.Context, http.ResponseWriter, *http.Request)
 	expectError  string
 }{{
 	about: "success",
 }, {
 	about: "error response",
-	loginHandler: func(d *Discharger, w http.ResponseWriter, _ *http.Request) {
-		d.writeJSON(w, http.StatusBadRequest, httpbakery.Error{
+	loginHandler: func(_ context.Context, w http.ResponseWriter, _ *http.Request) {
+		httprequest.WriteJSON(w, http.StatusBadRequest, httpbakery.Error{
 			Code:    "bad request",
 			Message: "test error",
 		})
 	},
-	expectError: `cannot get discharge from ".*": cannot start interactive session: Get http://.*: test error`,
+	expectError: `cannot get discharge from ".*": cannot start interactive session: Get http(s)?://.*: test error`,
 }, {
 	about: "unexpected response",
-	loginHandler: func(d *Discharger, w http.ResponseWriter, _ *http.Request) {
+	loginHandler: func(_ context.Context, w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("OK"))
 	},
-	expectError: `cannot get discharge from ".*": cannot start interactive session: Get http://.*: unexpected content type text/plain; want application/json; content: OK`,
+	expectError: `cannot get discharge from ".*": cannot start interactive session: Get http(s)?://.*: unexpected content type text/plain; want application/json; content: OK`,
 }, {
 	about: "unexpected error response",
-	loginHandler: func(d *Discharger, w http.ResponseWriter, _ *http.Request) {
-		d.writeJSON(w, http.StatusBadRequest, httpbakery.Error{})
+	loginHandler: func(_ context.Context, w http.ResponseWriter, _ *http.Request) {
+		httprequest.WriteJSON(w, http.StatusBadRequest, httpbakery.Error{})
 	},
-	expectError: `cannot get discharge from ".*": cannot start interactive session: Get http://.*: no error message found`,
+	expectError: `cannot get discharge from ".*": cannot start interactive session: Get http(s)?://.*: no error message found`,
 }, {
 	about: "incorrect JSON",
-	loginHandler: func(d *Discharger, w http.ResponseWriter, _ *http.Request) {
-		d.writeJSON(w, http.StatusOK, httpbakery.Error{
+	loginHandler: func(_ context.Context, w http.ResponseWriter, _ *http.Request) {
+		httprequest.WriteJSON(w, http.StatusOK, httpbakery.Error{
 			Code:    "bad request",
 			Message: "test error",
 		})
@@ -89,11 +96,11 @@ var agentLoginTests = []struct {
 func (s *agentSuite) TestAgentLogin(c *gc.C) {
 	for i, test := range agentLoginTests {
 		c.Logf("%d. %s", i, test.about)
-		s.discharger.LoginHandler = test.loginHandler
+		s.handle = test.loginHandler
 		key, err := bakery.GenerateKey()
 		c.Assert(err, gc.IsNil)
 		visitor := new(agent.Visitor)
-		err = visitor.AddAgent(agent.Agent{URL: s.discharger.URL, Username: "test-user", Key: key})
+		err = visitor.AddAgent(agent.Agent{URL: s.discharger.Location(), Username: "test-user", Key: key})
 		c.Assert(err, gc.IsNil)
 		client := httpbakery.NewClient()
 		client.WebPageVisitor = visitor
@@ -101,7 +108,7 @@ func (s *agentSuite) TestAgentLogin(c *gc.C) {
 			context.Background(),
 			macaroon.LatestVersion,
 			time.Now().Add(time.Minute),
-			identityCaveats(s.discharger.URL),
+			identityCaveats(s.discharger.Location()),
 			bakery.LoginOp,
 		)
 		c.Assert(err, gc.IsNil)
@@ -124,7 +131,7 @@ func (s *agentSuite) TestNoCookieError(c *gc.C) {
 		context.Background(),
 		macaroon.LatestVersion,
 		time.Now().Add(time.Minute),
-		identityCaveats(s.discharger.URL),
+		identityCaveats(s.discharger.Location()),
 		bakery.LoginOp,
 	)
 
@@ -136,7 +143,7 @@ func (s *agentSuite) TestNoCookieError(c *gc.C) {
 }
 
 func (s *agentSuite) TestMultipleAgents(c *gc.C) {
-	u := s.discharger.URL
+	u := s.discharger.Location()
 
 	visitor := new(agent.Visitor)
 	key1, err := bakery.GenerateKey()
@@ -144,41 +151,40 @@ func (s *agentSuite) TestMultipleAgents(c *gc.C) {
 	visitor.AddAgent(agent.Agent{URL: u, Username: "test-user-1", Key: key1})
 	key2, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
-	visitor.AddAgent(agent.Agent{URL: u + "/login", Username: "test-user-2", Key: key2})
+	visitor.AddAgent(agent.Agent{URL: u + "/visit", Username: "test-user-2", Key: key2})
 	key3, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
-	visitor.AddAgent(agent.Agent{URL: u + "/login", Username: "test-user-3", Key: key3})
+	visitor.AddAgent(agent.Agent{URL: u + "/visit", Username: "test-user-3", Key: key3})
 	key4, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
-	visitor.AddAgent(agent.Agent{URL: u + "/login/login", Username: "test-user-4", Key: key4})
+	visitor.AddAgent(agent.Agent{URL: u + "/visit/visit", Username: "test-user-4", Key: key4})
 	key5, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
 	visitor.AddAgent(agent.Agent{URL: u + "/discharge", Username: "test-user-5", Key: key5})
-	s.discharger.LoginHandler = func(d *Discharger, w http.ResponseWriter, req *http.Request) {
-		al, err := d.GetAgentLogin(req)
+	s.handle = func(ctx context.Context, w http.ResponseWriter, req *http.Request) {
+		username, userPublicKey, err := agent.LoginCookie(req)
 		if err != nil {
-			d.writeJSON(w, http.StatusBadRequest, httpbakery.Error{
+			httprequest.WriteJSON(w, http.StatusBadRequest, httpbakery.Error{
 				Code:    "bad request",
 				Message: err.Error(),
 			})
 			return
 		}
-		if al.Username != "test-user-3" {
-			d.writeJSON(w, http.StatusBadRequest, httpbakery.Error{
+		if username != "test-user-3" {
+			httprequest.WriteJSON(w, http.StatusBadRequest, httpbakery.Error{
 				Code:    "bad request",
-				Message: fmt.Sprintf(`got unexpected user %q, expected "test-user-3"`, al.Username),
+				Message: fmt.Sprintf(`got unexpected user %q, expected "test-user-3"`, username),
 			})
 			return
 		}
-		if *al.PublicKey != key3.Public {
-			d.writeJSON(w, http.StatusBadRequest, httpbakery.Error{
+		if *userPublicKey != key3.Public {
+			httprequest.WriteJSON(w, http.StatusBadRequest, httpbakery.Error{
 				Code:    "bad request",
 				Message: `got unexpected public key`,
 			})
 			return
 		}
-		d.LoginHandler = nil
-		d.login(w, req)
+		s.defaultHandle(ctx, w, req)
 	}
 	client := httpbakery.NewClient()
 	client.WebPageVisitor = visitor
@@ -186,7 +192,7 @@ func (s *agentSuite) TestMultipleAgents(c *gc.C) {
 		context.Background(),
 		macaroon.LatestVersion,
 		time.Now().Add(time.Minute),
-		identityCaveats(s.discharger.URL),
+		identityCaveats(s.discharger.Location()),
 		bakery.LoginOp,
 	)
 	c.Assert(err, gc.IsNil)
@@ -464,3 +470,53 @@ var testKey = func() *bakery.KeyPair {
 	}
 	return key
 }()
+
+var ages = time.Now().Add(time.Hour)
+
+// Serve HTTP implements the default login handler for the agent login
+// tests. This is overrided by s.handle if it is non-nil.
+func (s *agentSuite) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// TODO take context from request.
+	ctx := httpbakery.ContextWithRequest(context.TODO(), req)
+	req.ParseForm()
+	if s.handle != nil {
+		s.handle(ctx, w, req)
+		return
+	}
+	s.defaultHandle(ctx, w, req)
+}
+
+func (s *agentSuite) defaultHandle(ctx context.Context, w http.ResponseWriter, req *http.Request) {
+	username, userPublicKey, err := agent.LoginCookie(req)
+	if err != nil {
+		httprequest.WriteJSON(w, http.StatusBadRequest, httpbakery.Error{
+			Message: fmt.Sprintf("cannot read agent login: %s", err),
+		})
+		return
+	}
+	_, authErr := s.agentBakery.Checker.Auth(httpbakery.RequestMacaroons(req)...).Allow(ctx, bakery.LoginOp)
+	if authErr == nil {
+		cavs := []checkers.Caveat{
+			checkers.DeclaredCaveat("username", username),
+		}
+		s.discharger.FinishInteraction(ctx, w, req, cavs, nil)
+		httprequest.WriteJSON(w, http.StatusOK, agent.AgentResponse{
+			AgentLogin: true,
+		})
+		return
+	}
+	version := httpbakery.RequestVersion(req)
+	macaroonVersion := bakery.MacaroonVersion(version)
+	m, err := s.agentBakery.Oven.NewMacaroon(ctx, macaroonVersion, ages, []checkers.Caveat{
+		bakery.LocalThirdPartyCaveat(userPublicKey, version),
+		checkers.DeclaredCaveat("username", username),
+	}, bakery.LoginOp)
+
+	if err != nil {
+		httprequest.WriteJSON(w, http.StatusInternalServerError, httpbakery.Error{
+			Message: fmt.Sprintf("cannot create macaroon: %s", err),
+		})
+		return
+	}
+	httpbakery.WriteDischargeRequiredError(w, m, "", authErr)
+}
