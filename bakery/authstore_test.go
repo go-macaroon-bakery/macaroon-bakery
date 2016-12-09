@@ -35,8 +35,8 @@ type macaroonId struct {
 	Ops []bakery.Op
 }
 
-func (s *macaroonStore) NewMacaroon(ctxt context.Context, ops []bakery.Op, caveats []checkers.Caveat, ns *checkers.Namespace) (*macaroon.Macaroon, error) {
-	rootKey, id, err := s.rootKeyStore.RootKey(ctxt)
+func (s *macaroonStore) NewMacaroon(ctx context.Context, ops []bakery.Op, caveats []checkers.Caveat, ns *checkers.Namespace) (*bakery.Macaroon, error) {
+	rootKey, id, err := s.rootKeyStore.RootKey(ctx)
 	if err != nil {
 		return nil, errgo.Mask(err)
 	}
@@ -46,19 +46,17 @@ func (s *macaroonStore) NewMacaroon(ctxt context.Context, ops []bakery.Op, cavea
 		Ops: ops,
 	}
 	data, _ := json.Marshal(mid)
-	m, err := macaroon.New(rootKey, data, "", macaroon.LatestVersion)
+	m, err := bakery.NewMacaroon(rootKey, data, "", bakery.LatestVersion, ns)
 	if err != nil {
 		return nil, errgo.Mask(err)
 	}
-	for _, cav := range caveats {
-		if err := bakery.AddCaveat(ctxt, s.key, s.locator, m, cav, ns); err != nil {
-			return nil, errgo.Notef(err, "cannot add caveat")
-		}
+	if err := m.AddCaveats(ctx, caveats, s.key, s.locator); err != nil {
+		return nil, errgo.Mask(err)
 	}
 	return m, nil
 }
 
-func (s *macaroonStore) MacaroonOps(ctxt context.Context, ms macaroon.Slice) (ops []bakery.Op, conditions []string, err error) {
+func (s *macaroonStore) MacaroonOps(ctx context.Context, ms macaroon.Slice) (ops []bakery.Op, conditions []string, err error) {
 	if len(ms) == 0 {
 		return nil, nil, &bakery.VerificationError{
 			Reason: errgo.Newf("no macaroons in slice"),
@@ -71,7 +69,7 @@ func (s *macaroonStore) MacaroonOps(ctxt context.Context, ms macaroon.Slice) (op
 			Reason: errgo.Notef(err, "bad macaroon id"),
 		}
 	}
-	rootKey, err := s.rootKeyStore.Get(ctxt, mid.Id)
+	rootKey, err := s.rootKeyStore.Get(ctx, mid.Id)
 	if err != nil {
 		if errgo.Cause(err) == bakery.ErrNotFound {
 			return nil, nil, &bakery.VerificationError{
@@ -95,11 +93,11 @@ type macaroonStoreWithError struct {
 	err error
 }
 
-func (s macaroonStoreWithError) NewMacaroon(ctxt context.Context, ops []bakery.Op, caveats []checkers.Caveat, ns *checkers.Namespace) (*macaroon.Macaroon, error) {
+func (s macaroonStoreWithError) NewMacaroon(ctx context.Context, ops []bakery.Op, caveats []checkers.Caveat, ns *checkers.Namespace) (*macaroon.Macaroon, error) {
 	return nil, errgo.Mask(s.err, errgo.Any)
 }
 
-func (s macaroonStoreWithError) MacaroonOps(ctxt context.Context, ms macaroon.Slice) (ops []bakery.Op, conditions []string, err error) {
+func (s macaroonStoreWithError) MacaroonOps(ctx context.Context, ms macaroon.Slice) (ops []bakery.Op, conditions []string, err error) {
 	return nil, nil, errgo.Mask(s.err, errgo.Any)
 }
 

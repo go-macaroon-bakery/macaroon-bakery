@@ -11,11 +11,14 @@ import (
 	"github.com/julienschmidt/httprouter"
 	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
-	"gopkg.in/macaroon.v2-unstable"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
 )
+
+// legacyNamespace holds the standard namespace as used by
+// pre-version3 macaroons.
+var legacyNamespace = checkers.New(nil).Namespace()
 
 // ThirdPartyCaveatChecker is used to check third party caveats.
 type ThirdPartyCaveatChecker interface {
@@ -170,49 +173,47 @@ type dischargeRequest struct {
 	httprequest.Route `httprequest:"POST /discharge"`
 	Id                string `httprequest:"id,form"`
 	Id64              string `httprequest:"id64,form"`
-
-	// TODO(rog) pass the namespace in here too.
-
-	// TODO(rog) If/when caveat ids can be passed
-	// around independently of the macaroons themselves,
-	// then this field could be used by a client to specify
-	// the id to give to the discharge macaroon.
-	// MacaroonId string `httprequest:"macaroon-id,form"`
+	Caveat            string `httprequest:"caveat64,form"`
 }
 
 // dischargeResponse contains the response from a /discharge POST request.
 type dischargeResponse struct {
-	Macaroon *macaroon.Macaroon `json:",omitempty"`
+	Macaroon *bakery.Macaroon `json:",omitempty"`
 }
-
-// TODO remove the need for this by acquiring the namespace
-// from the discharge request.
-var dischargeNamespace = NewChecker().Namespace()
 
 // Discharge discharges a third party caveat.
 func (h dischargeHandler) Discharge(p httprequest.Params, r *dischargeRequest) (*dischargeResponse, error) {
 	var id []byte
 	if r.Id64 != "" {
-		var err error
-		id, err = base64.RawURLEncoding.DecodeString(r.Id64)
+		id1, err := base64.RawURLEncoding.DecodeString(r.Id64)
 		if err != nil {
 			return nil, errgo.Notef(err, "bad base64-encoded caveat id: %v", err)
 		}
+		id = id1
 	} else {
 		id = []byte(r.Id)
 	}
-	m, caveats, err := bakery.Discharge(p.Context, h.discharger.p.Key, bakery.ThirdPartyCaveatCheckerFunc(
-		func(ctxt context.Context, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
-			return h.discharger.p.Checker.CheckThirdPartyCaveat(ctxt, p.Request, cav)
-		},
-	), id)
+	var caveat []byte
+	if r.Caveat != "" {
+		caveat1, err := base64.RawURLEncoding.DecodeString(r.Caveat)
+		if err != nil {
+			return nil, errgo.Notef(err, "bad base64-encoded caveat: %v", err)
+		}
+		caveat = caveat1
+	}
+	m, err := bakery.Discharge(p.Context, bakery.DischargeParams{
+		Id:     id,
+		Caveat: caveat,
+		Key:    h.discharger.p.Key,
+		Checker: bakery.ThirdPartyCaveatCheckerFunc(
+			func(ctx context.Context, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+				return h.discharger.p.Checker.CheckThirdPartyCaveat(ctx, p.Request, cav)
+			},
+		),
+		Locator: h.discharger.p.Locator,
+	})
 	if err != nil {
 		return nil, errgo.NoteMask(err, "cannot discharge", errgo.Any)
-	}
-	for _, cav := range caveats {
-		if err := bakery.AddCaveat(p.Context, h.discharger.p.Key, h.discharger.p.Locator, m, cav, dischargeNamespace); err != nil {
-			return nil, errgo.Mask(err)
-		}
 	}
 	return &dischargeResponse{m}, nil
 }

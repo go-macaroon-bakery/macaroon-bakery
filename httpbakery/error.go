@@ -8,7 +8,6 @@ import (
 	"github.com/juju/httprequest"
 	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
-	"gopkg.in/macaroon.v2-unstable"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 )
@@ -63,7 +62,7 @@ type ErrorInfo struct {
 	// discharged, may allow access to a service.
 	// This field is associated with the ErrDischargeRequired
 	// error code.
-	Macaroon *macaroon.Macaroon `json:",omitempty"`
+	Macaroon *bakery.Macaroon `json:",omitempty"`
 
 	// MacaroonPath holds the URL path to be associated
 	// with the macaroon. The macaroon is potentially
@@ -180,7 +179,7 @@ func badRequestErrorf(f string, a ...interface{}) error {
 // NewDischargeRequiredError and writes it to the given response writer,
 // indicating that the client should discharge the macaroon to allow the
 // original request to be accepted.
-func WriteDischargeRequiredError(w http.ResponseWriter, m *macaroon.Macaroon, path string, originalErr error) {
+func WriteDischargeRequiredError(w http.ResponseWriter, m *bakery.Macaroon, path string, originalErr error) {
 	writeError(context.Background(), w, NewDischargeRequiredError(m, path, originalErr))
 }
 
@@ -191,7 +190,7 @@ func WriteDischargeRequiredError(w http.ResponseWriter, m *macaroon.Macaroon, pa
 // This function should always be used in preference to
 // WriteDischargeRequiredError, because it enables
 // in-browser macaroon discharge.
-func WriteDischargeRequiredErrorForRequest(w http.ResponseWriter, m *macaroon.Macaroon, path string, originalErr error, req *http.Request) {
+func WriteDischargeRequiredErrorForRequest(w http.ResponseWriter, m *bakery.Macaroon, path string, originalErr error, req *http.Request) {
 	writeError(context.Background(), w, NewDischargeRequiredErrorForRequest(m, path, originalErr, req))
 }
 
@@ -202,7 +201,7 @@ func WriteDischargeRequiredErrorForRequest(w http.ResponseWriter, m *macaroon.Ma
 // path and may be relative. When the client stores the discharged
 // macaroon as a cookie this will be the path associated with the
 // cookie. See ErrorInfo.MacaroonPath for more information.
-func NewDischargeRequiredError(m *macaroon.Macaroon, path string, originalErr error) error {
+func NewDischargeRequiredError(m *bakery.Macaroon, path string, originalErr error) error {
 	return NewDischargeRequiredErrorWithVersion(m, path, originalErr, bakery.Version0)
 }
 
@@ -242,7 +241,7 @@ func NewInteractionRequiredError(visitURL, waitURL string, originalErr error, re
 //
 //	err := NewDischargeRequiredErrorForRequest(...)
 //	err.(*httpbakery.Error).Info.CookieNameSuffix = cookieName
-func NewDischargeRequiredErrorForRequest(m *macaroon.Macaroon, path string, originalErr error, req *http.Request) error {
+func NewDischargeRequiredErrorForRequest(m *bakery.Macaroon, path string, originalErr error, req *http.Request) error {
 	v := RequestVersion(req)
 	return NewDischargeRequiredErrorWithVersion(m, path, originalErr, v)
 }
@@ -250,7 +249,7 @@ func NewDischargeRequiredErrorForRequest(m *macaroon.Macaroon, path string, orig
 // NewDischargeRequiredErrorWithVersion is like NewDischargeRequiredErrorForRequest
 // except that instead of inferring the client version from
 // the request, the version is explicit.
-func NewDischargeRequiredErrorWithVersion(m *macaroon.Macaroon, path string, originalErr error, v bakery.Version) error {
+func NewDischargeRequiredErrorWithVersion(m *bakery.Macaroon, path string, originalErr error, v bakery.Version) error {
 	if originalErr == nil {
 		originalErr = ErrDischargeRequired
 	}

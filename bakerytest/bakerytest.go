@@ -167,8 +167,8 @@ type dischargeResult struct {
 }
 
 type discharge struct {
-	cavId []byte
-	c     chan dischargeResult
+	caveatInfo *bakery.ThirdPartyCaveatInfo
+	c          chan dischargeResult
 }
 
 // InteractiveDischarger is a Discharger that always requires interraction to
@@ -254,7 +254,10 @@ func (d *InteractiveDischarger) CheckThirdPartyCaveat(ctxt context.Context, req 
 	d.mu.Lock()
 	id := fmt.Sprintf("%d", d.id)
 	d.id++
-	d.waiting[id] = discharge{cav.CaveatId, make(chan dischargeResult, 1)}
+	d.waiting[id] = discharge{
+		caveatInfo: cav,
+		c:          make(chan dischargeResult, 1),
+	}
 	d.mu.Unlock()
 	visitURL := "/visit?waitid=" + id
 	waitURL := "/wait?waitid=" + id
@@ -298,19 +301,17 @@ func (d *InteractiveDischarger) wait(w http.ResponseWriter, r *http.Request) {
 	check := bakery.ThirdPartyCaveatCheckerFunc(func(_ context.Context, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 		return cavs, nil
 	})
-	m, cavs, err := bakery.Discharge(context.Background(), d.Key, check, discharge.cavId)
+	m, err := bakery.Discharge(context.Background(), bakery.DischargeParams{
+		Id:      discharge.caveatInfo.Id,
+		Caveat:  discharge.caveatInfo.Caveat,
+		Key:     d.Key,
+		Checker: check,
+		Locator: d.Locator,
+	})
 	if err != nil {
 		code, body := httpbakery.ErrorToResponse(ctx, err)
 		httprequest.WriteJSON(w, code, body)
 		return
-	}
-	for _, cav := range cavs {
-		// TODO obtain the namespace from the client.
-		if err := bakery.AddCaveat(context.TODO(), d.Key, d.Locator, m, cav, dischargeNamespace); err != nil {
-			code, body := httpbakery.ErrorToResponse(ctx, err)
-			httprequest.WriteJSON(w, code, body)
-			return
-		}
 	}
 
 	httprequest.WriteJSON(

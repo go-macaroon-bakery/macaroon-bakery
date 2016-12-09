@@ -28,7 +28,6 @@ func NewNamespace(uriToPrefix map[string]string) *Namespace {
 	}
 	for uri, prefix := range uriToPrefix {
 		ns.Register(uri, prefix)
-		ns.uriToPrefix[uri] = prefix
 	}
 	return ns
 }
@@ -175,6 +174,9 @@ func invalidSchemaRune(r rune) bool {
 	return unicode.IsSpace(r)
 }
 
+// IsValidSchemaURI reports whether the given argument is suitable for
+// use as a namespace schema URI. It must be non-empty, a valid UTF-8
+// string and it must not contain white space.
 func IsValidSchemaURI(uri string) bool {
 	// TODO more stringent requirements?
 	return len(uri) > 0 &&

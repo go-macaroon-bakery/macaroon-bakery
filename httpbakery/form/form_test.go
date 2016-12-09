@@ -13,7 +13,6 @@ import (
 	gc "gopkg.in/check.v1"
 	"gopkg.in/juju/environschema.v1"
 	esform "gopkg.in/juju/environschema.v1/form"
-	"gopkg.in/macaroon.v2-unstable"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
@@ -149,7 +148,7 @@ func (s *formSuite) TestFormLogin(c *gc.C) {
 	for i, test := range formLoginTests {
 		c.Logf("test %d: %s", i, test.about)
 		d.dischargeOptions = test.opts
-		m, err := b.Oven.NewMacaroon(context.TODO(), macaroon.LatestVersion, ages, []checkers.Caveat{{
+		m, err := b.Oven.NewMacaroon(context.TODO(), bakery.LatestVersion, ages, []checkers.Caveat{{
 			Location:  d.discharger.Location(),
 			Condition: "test condition",
 		}}, bakery.LoginOp)
@@ -210,7 +209,7 @@ func (s *formSuite) TestFormTitle(c *gc.C) {
 	})
 	for i, test := range formTitleTests {
 		c.Logf("test %d: %s", i, test.host)
-		m, err := b.Oven.NewMacaroon(context.TODO(), macaroon.LatestVersion, ages, []checkers.Caveat{{
+		m, err := b.Oven.NewMacaroon(context.TODO(), bakery.LatestVersion, ages, []checkers.Caveat{{
 			Location:  "https://" + test.host,
 			Condition: "test condition",
 		}}, bakery.LoginOp)
