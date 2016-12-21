@@ -171,7 +171,7 @@ type discharge struct {
 	c          chan dischargeResult
 }
 
-// InteractiveDischarger is a Discharger that always requires interraction to
+// InteractiveDischarger is a Discharger that always requires interaction to
 // complete the discharge.
 type InteractiveDischarger struct {
 	Discharger
@@ -194,7 +194,7 @@ type InteractiveDischarger struct {
 // Additional endpoints may be added to Mux as necessary.
 //
 // The /discharge endpoint generates a error with the code
-// httpbakery.ErrInterractionRequired. The visitURL and waitURL will
+// httpbakery.ErrInteractionRequired. The visitURL and waitURL will
 // point to the /visit and /wait endpoints of the InteractiveDischarger
 // respectively. These URLs will also carry context information in query
 // parameters, any handlers should be careful to preserve this context
@@ -208,9 +208,7 @@ type InteractiveDischarger struct {
 // so long as FinishInteraction is called when no further interaction is
 // required.
 //
-// The /wait endpoint blocks until FinishInteraction has been called by
-// the corresponding /visit endpoint, or another endpoint triggered by
-// visitHandler.
+// The /wait endpoint blocks until FinishInteraction has been called.
 //
 // If locator is non-nil, it will be used to find public keys
 // for any third party caveats returned by the checker.
