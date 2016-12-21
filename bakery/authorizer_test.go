@@ -20,7 +20,7 @@ var _ = gc.Suite(&authorizerSuite{})
 func (*authorizerSuite) TestAuthorizerFunc(c *gc.C) {
 	f := func(ctxt context.Context, id bakery.Identity, op bakery.Op) (bool, []checkers.Caveat, error) {
 		c.Assert(ctxt, gc.Equals, testContext)
-		c.Assert(id, gc.Equals, simpleIdentity("bob"))
+		c.Assert(id, gc.Equals, bakery.SimpleIdentity("bob"))
 		switch op.Entity {
 		case "a":
 			return false, nil, nil
@@ -40,7 +40,7 @@ func (*authorizerSuite) TestAuthorizerFunc(c *gc.C) {
 		c.Fatalf("unexpected entity: %q", op.Entity)
 		return false, nil, nil
 	}
-	allowed, caveats, err := bakery.AuthorizerFunc(f).Authorize(testContext, simpleIdentity("bob"), []bakery.Op{{"a", "x"}, {"b", "x"}, {"c", "x"}, {"d", "x"}})
+	allowed, caveats, err := bakery.AuthorizerFunc(f).Authorize(testContext, bakery.SimpleIdentity("bob"), []bakery.Op{{"a", "x"}, {"b", "x"}, {"c", "x"}, {"d", "x"}})
 	c.Assert(err, gc.IsNil)
 	c.Assert(allowed, jc.DeepEquals, []bool{false, true, true, true})
 	c.Assert(caveats, jc.DeepEquals, []checkers.Caveat{{

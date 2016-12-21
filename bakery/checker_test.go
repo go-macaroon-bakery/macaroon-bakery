@@ -74,7 +74,7 @@ func (s *checkerSuite) TestAuthorizeWithAuthenticationRequired(c *gc.C) {
 		user:     "bob",
 	}})
 	c.Assert(authInfo, gc.NotNil)
-	c.Assert(authInfo.Identity, gc.Equals, simpleIdentity("bob"))
+	c.Assert(authInfo.Identity, gc.Equals, bakery.SimpleIdentity("bob"))
 	c.Assert(authInfo.Macaroons, gc.HasLen, 1)
 }
 
@@ -223,7 +223,7 @@ func (s *checkerSuite) TestAuthWithThirdPartyCaveats(c *gc.C) {
 	// We make an authorizer that requires a third party discharge
 	// when authorizing.
 	auth := bakery.AuthorizerFunc(func(_ context.Context, id bakery.Identity, op bakery.Op) (bool, []checkers.Caveat, error) {
-		if id == simpleIdentity("bob") && op == readOp("something") {
+		if id == bakery.SimpleIdentity("bob") && op == readOp("something") {
 			return true, []checkers.Caveat{{
 				Condition: "question",
 				Location:  "other third party",
@@ -376,7 +376,7 @@ func (s *checkerSuite) TestLoginOnly(c *gc.C) {
 	ts := newService(auth, ids, locator)
 	authInfo, err := newClient(locator).do(asUser("bob"), ts, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
-	c.Assert(authInfo.Identity, gc.Equals, simpleIdentity("bob"))
+	c.Assert(authInfo.Identity, gc.Equals, bakery.SimpleIdentity("bob"))
 }
 
 func (s *checkerSuite) TestAllowAny(c *gc.C) {
@@ -408,7 +408,7 @@ func (s *checkerSuite) TestAllowAny(c *gc.C) {
 	// All the previous actions should now be allowed.
 	authInfo, allowed, err = client.doAny(asUser("bob"), ts, readOp("e1"), readOp("e2"), bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
-	c.Assert(authInfo.Identity, gc.Equals, simpleIdentity("bob"))
+	c.Assert(authInfo.Identity, gc.Equals, bakery.SimpleIdentity("bob"))
 	c.Assert(authInfo.Macaroons, gc.HasLen, 2)
 	c.Assert(allowed, jc.DeepEquals, []bool{true, true, true})
 }
@@ -423,7 +423,7 @@ func (s *checkerSuite) TestAuthWithIdentityFromContext(c *gc.C) {
 	// context.
 	authInfo, err := newClient(locator).do(contextWithBasicAuth(testContext, "sherlock", "holmes"), ts, readOp("e1"))
 	c.Assert(err, gc.IsNil)
-	c.Assert(authInfo.Identity, gc.Equals, simpleIdentity("sherlock"))
+	c.Assert(authInfo.Identity, gc.Equals, bakery.SimpleIdentity("sherlock"))
 	c.Assert(authInfo.Macaroons, gc.HasLen, 0)
 }
 
@@ -501,13 +501,13 @@ func (s *checkerSuite) TestDuplicateLoginMacaroons(c *gc.C) {
 	client1 := newClient(locator)
 	authInfo, err := client1.do(asUser("bob"), ts, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
-	c.Assert(authInfo.Identity, gc.Equals, simpleIdentity("bob"))
+	c.Assert(authInfo.Identity, gc.Equals, bakery.SimpleIdentity("bob"))
 
 	// Acquire a login macaroon for alice.
 	client2 := newClient(locator)
 	authInfo, err = client2.do(asUser("alice"), ts, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
-	c.Assert(authInfo.Identity, gc.Equals, simpleIdentity("alice"))
+	c.Assert(authInfo.Identity, gc.Equals, bakery.SimpleIdentity("alice"))
 
 	// Combine the two login macaroons into one client.
 	client3 := newClient(locator)
@@ -518,7 +518,7 @@ func (s *checkerSuite) TestDuplicateLoginMacaroons(c *gc.C) {
 	// by "cookie" name)
 	authInfo, err = client3.do(testContext, ts, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
-	c.Assert(authInfo.Identity, gc.Equals, simpleIdentity("bob"))
+	c.Assert(authInfo.Identity, gc.Equals, bakery.SimpleIdentity("bob"))
 	c.Assert(authInfo.Macaroons, gc.HasLen, 1)
 
 	// Try them the other way around and we should authenticate as alice.
@@ -528,7 +528,7 @@ func (s *checkerSuite) TestDuplicateLoginMacaroons(c *gc.C) {
 
 	authInfo, err = client3.do(testContext, ts, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
-	c.Assert(authInfo.Identity, gc.Equals, simpleIdentity("alice"))
+	c.Assert(authInfo.Identity, gc.Equals, bakery.SimpleIdentity("alice"))
 	c.Assert(authInfo.Macaroons, gc.HasLen, 1)
 }
 
@@ -658,7 +658,7 @@ func (ids *idService) DeclaredIdentity(declared map[string]string) (bakery.Ident
 	if !ok {
 		return nil, errgo.Newf("no username declared")
 	}
-	return simpleIdentity(user), nil
+	return bakery.SimpleIdentity(user), nil
 }
 
 type dischargeUserKey struct{}
@@ -672,27 +672,6 @@ func dischargeUserFromContext(ctxt context.Context) string {
 	return username
 }
 
-var _ bakery.ACLIdentity = simpleIdentity("")
-
-type simpleIdentity string
-
-func (simpleIdentity) Domain() string {
-	return ""
-}
-
-func (id simpleIdentity) Id() string {
-	return string(id)
-}
-
-func (id simpleIdentity) Allow(ctxt context.Context, acl []string) (bool, error) {
-	for _, g := range acl {
-		if string(id) == g {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
 type basicAuthIdService struct{}
 
 func (basicAuthIdService) IdentityFromContext(ctxt context.Context) (bakery.Identity, []checkers.Caveat, error) {
@@ -700,7 +679,7 @@ func (basicAuthIdService) IdentityFromContext(ctxt context.Context) (bakery.Iden
 	if user != "sherlock" || pass != "holmes" {
 		return nil, nil, nil
 	}
-	return simpleIdentity(user), nil, nil
+	return bakery.SimpleIdentity(user), nil, nil
 }
 
 func (basicAuthIdService) DeclaredIdentity(declared map[string]string) (bakery.Identity, error) {

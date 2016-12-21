@@ -58,3 +58,32 @@ func (noIdentities) IdentityFromContext(ctxt context.Context) (Identity, []check
 func (noIdentities) DeclaredIdentity(declared map[string]string) (Identity, error) {
 	return nil, errgo.Newf("no identity declared or possible")
 }
+
+var _ ACLIdentity = SimpleIdentity("")
+
+// SimpleIdentity implements a simple form of identity where
+// the user is represented by a string.
+type SimpleIdentity string
+
+// Domain implements Identity.Domain by always
+// returning the empty domain.
+func (SimpleIdentity) Domain() string {
+	return ""
+}
+
+// Id returns id as a string.
+func (id SimpleIdentity) Id() string {
+	return string(id)
+}
+
+// Allow implements ACLIdentity by allowing the identity access to
+// ACL members that are equal to id. That is, some user u is considered
+// a member of group u and no other.
+func (id SimpleIdentity) Allow(ctxt context.Context, acl []string) (bool, error) {
+	for _, g := range acl {
+		if string(id) == g {
+			return true, nil
+		}
+	}
+	return false, nil
+}
