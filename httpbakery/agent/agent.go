@@ -71,6 +71,25 @@ type agentLogin struct {
 	PublicKey *bakery.PublicKey `json:"public_key"`
 }
 
+// SetUpAuth is a convenience function that makes a new Visitor
+// and adds an agent for the given URL using the given username
+// and the public key of the client.Key.
+func SetUpAuth(client *httpbakery.Client, siteURL string, agentUsername string) error {
+	if client.Key == nil {
+		return errgo.Newf("no key found in client")
+	}
+	var v Visitor
+	if err := v.AddAgent(Agent{
+		URL:      siteURL,
+		Username: agentUsername,
+		Key:      client.Key,
+	}); err != nil {
+		return errgo.Mask(err)
+	}
+	client.WebPageVisitor = &v
+	return nil
+}
+
 // setCookie sets an agent-login cookie with the specified parameters on
 // the given request.
 func setCookie(req *http.Request, username string, key *bakery.PublicKey) {
@@ -232,7 +251,6 @@ func (v *Visitor) VisitWebPage(ctx context.Context, client *httpbakery.Client, m
 	if !ok {
 		return errgo.New("no suitable agent found")
 	}
-	logger.Debugf("attempting login to %v using agent %s", url, a.Username)
 	client1 := *client
 	client1.Key = a.Key
 	c := &httprequest.Client{

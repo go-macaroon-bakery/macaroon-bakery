@@ -48,6 +48,7 @@ func (s *agentSuite) SetUpTest(c *gc.C) {
 		IdentityClient: idmClient{s.discharger.Location()},
 		Key:            key,
 	})
+	s.handle = nil
 }
 
 func (s *agentSuite) TearDownTest(c *gc.C) {
@@ -121,6 +122,28 @@ func (s *agentSuite) TestAgentLogin(c *gc.C) {
 		c.Assert(err, gc.IsNil)
 		c.Assert(authInfo.Identity, gc.Equals, bakery.SimpleIdentity("test-user"))
 	}
+}
+
+func (s *agentSuite) TestSetUpAuth(c *gc.C) {
+	client := httpbakery.NewClient()
+	var err error
+	client.Key, err = bakery.GenerateKey()
+	c.Assert(err, gc.IsNil)
+	err = agent.SetUpAuth(client, s.discharger.Location(), "test-user")
+	c.Assert(err, gc.IsNil)
+	m, err := s.bakery.Oven.NewMacaroon(
+		context.Background(),
+		bakery.LatestVersion,
+		time.Now().Add(time.Minute),
+		identityCaveats(s.discharger.Location()),
+		bakery.LoginOp,
+	)
+	c.Assert(err, gc.IsNil)
+	ms, err := client.DischargeAll(context.Background(), m)
+	c.Assert(err, gc.IsNil)
+	authInfo, err := s.bakery.Checker.Auth(ms).Allow(context.Background(), bakery.LoginOp)
+	c.Assert(err, gc.IsNil)
+	c.Assert(authInfo.Identity, gc.Equals, simpleIdentity("test-user"))
 }
 
 func (s *agentSuite) TestNoCookieError(c *gc.C) {
