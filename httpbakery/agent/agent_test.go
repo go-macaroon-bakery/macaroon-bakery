@@ -119,7 +119,7 @@ func (s *agentSuite) TestAgentLogin(c *gc.C) {
 		c.Assert(err, gc.IsNil)
 		authInfo, err := s.bakery.Checker.Auth(ms).Allow(context.Background(), bakery.LoginOp)
 		c.Assert(err, gc.IsNil)
-		c.Assert(authInfo.Identity, gc.Equals, simpleIdentity("test-user"))
+		c.Assert(authInfo.Identity, gc.Equals, bakery.SimpleIdentity("test-user"))
 	}
 }
 
@@ -199,7 +199,7 @@ func (s *agentSuite) TestMultipleAgents(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	authInfo, err := s.bakery.Checker.Auth(ms).Allow(context.Background(), bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
-	c.Assert(authInfo.Identity, gc.Equals, simpleIdentity("test-user-3"))
+	c.Assert(authInfo.Identity, gc.Equals, bakery.SimpleIdentity("test-user-3"))
 }
 
 func (s *agentSuite) TestLoginCookie(c *gc.C) {
@@ -441,17 +441,7 @@ func identityCaveats(dischargerURL string) []checkers.Caveat {
 }
 
 func (c idmClient) DeclaredIdentity(declared map[string]string) (bakery.Identity, error) {
-	return simpleIdentity(declared["username"]), nil
-}
-
-type simpleIdentity string
-
-func (simpleIdentity) Domain() string {
-	return ""
-}
-
-func (id simpleIdentity) Id() string {
-	return string(id)
+	return bakery.SimpleIdentity(declared["username"]), nil
 }
 
 func mustParseURL(s string) *url.URL {
