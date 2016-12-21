@@ -113,7 +113,6 @@ var resolveCaveatTests = []struct {
 	},
 	expect: checkers.Caveat{
 		Condition: `error caveat "foo" in unregistered namespace "testns"`,
-		Namespace: checkers.StdNamespace,
 	},
 }, {
 	about: "with empty prefix",

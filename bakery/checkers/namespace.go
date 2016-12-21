@@ -136,7 +136,11 @@ func (ns *Namespace) ResolveCaveat(cav Caveat) Caveat {
 	}
 	prefix, ok := ns.Resolve(cav.Namespace)
 	if !ok {
-		return ErrorCaveatf("caveat %q in unregistered namespace %q", cav.Condition, cav.Namespace)
+		errCav := ErrorCaveatf("caveat %q in unregistered namespace %q", cav.Condition, cav.Namespace)
+		if errCav.Namespace != cav.Namespace {
+			prefix, _ = ns.Resolve(errCav.Namespace)
+		}
+		cav = errCav
 	}
 	if prefix != "" {
 		cav.Condition = ConditionWithPrefix(prefix, cav.Condition)
