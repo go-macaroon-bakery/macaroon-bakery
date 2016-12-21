@@ -21,7 +21,7 @@ import (
 
 // NoCaveatChecker is a third party caveat checker that
 // always allows any caveat and adds no third party caveats.
-var NoCaveatChecker = httpbakery.ThirdPartyCaveatCheckerFunc(func(req *http.Request, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+var NoCaveatChecker = httpbakery.ThirdPartyCaveatCheckerFunc(func(ctx context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 	return nil, nil
 })
 
@@ -122,7 +122,7 @@ func NewDischarger(
 // ConditionParser adapts the given function into a httpbakery.ThirdPartyCaveatChecker.
 // It parses the caveat's condition and calls the function with the result.
 func ConditionParser(check func(cond, arg string) ([]checkers.Caveat, error)) httpbakery.ThirdPartyCaveatChecker {
-	f := func(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+	f := func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 		cond, arg, err := checkers.ParseCaveat(cav.Condition)
 		if err != nil {
 			return nil, err
@@ -171,8 +171,9 @@ type discharge struct {
 	c          chan dischargeResult
 }
 
-// InteractiveDischarger is a Discharger that always requires interaction to
-// complete the discharge.
+// InteractiveDischarger is a Discharger that requires interaction to
+// complete the discharge. The SetChecker method can be used
+// to avoid interaction sometimes.
 type InteractiveDischarger struct {
 	Discharger
 	Mux *http.ServeMux
@@ -181,6 +182,7 @@ type InteractiveDischarger struct {
 	mu      sync.Mutex
 	waiting map[string]discharge
 	id      int
+	checker httpbakery.ThirdPartyCaveatChecker
 }
 
 // NewInteractiveDischarger returns a new InteractiveDischarger. The
@@ -234,7 +236,7 @@ func NewInteractiveDischarger(locator bakery.ThirdPartyLocator, visitHandler htt
 	bd := httpbakery.NewDischarger(httpbakery.DischargerParams{
 		Key:     key,
 		Locator: locator,
-		Checker: d,
+		Checker: httpbakery.ThirdPartyCaveatCheckerFunc(d.checkThirdPartyCaveat),
 	})
 	bd.AddMuxHandlers(d.Mux, "/")
 	startSkipVerify()
@@ -244,6 +246,24 @@ func NewInteractiveDischarger(locator bakery.ThirdPartyLocator, visitHandler htt
 		server:  server,
 	}
 	return d
+}
+
+func (d *InteractiveDischarger) checkThirdPartyCaveat(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+	d.mu.Lock()
+	checker := d.checker
+	d.mu.Unlock()
+	if checker == nil {
+		checker = d
+	}
+	return checker.CheckThirdPartyCaveat(ctx, req, cav)
+}
+
+// SetChecker sets a checker that will be used to check third party caveats.
+// The checker may call d.CheckThirdPartyCaveat if it decides to discharge interactively.
+func (d *InteractiveDischarger) SetChecker(c httpbakery.ThirdPartyCaveatChecker) {
+	d.mu.Lock()
+	d.checker = c
+	d.mu.Unlock()
 }
 
 // CheckThirdPartyCaveat implements httpbakery.ThirdPartyCaveatDischarger

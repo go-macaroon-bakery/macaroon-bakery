@@ -218,7 +218,7 @@ func (s *ClientSuite) TestDischargeServerWithStringCaveatId(c *gc.C) {
 
 func assertDischargeServerDischargesConditionForVersion(c *gc.C, cond string, version bakery.Version) {
 	called := 0
-	checker := func(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+	checker := func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 		called++
 		c.Check(cav.Condition, gc.Equals, cond)
 		return nil, nil
@@ -311,7 +311,7 @@ func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
 	// service so that each one can know the location
 	// to discharge at.
 	db1 := newBakery("loc", locator, nil)
-	key2, h2 := newHTTPDischarger(db1, httpbakery.ThirdPartyCaveatCheckerFunc(func(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+	key2, h2 := newHTTPDischarger(db1, httpbakery.ThirdPartyCaveatCheckerFunc(func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 		called[2]++
 		if cav.Condition != "is-ok" {
 			return nil, fmt.Errorf("unrecognized caveat at srv2")
@@ -326,7 +326,7 @@ func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
 	})
 
 	db2 := newBakery("loc", locator, nil)
-	key1, h1 := newHTTPDischarger(db2, httpbakery.ThirdPartyCaveatCheckerFunc(func(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+	key1, h1 := newHTTPDischarger(db2, httpbakery.ThirdPartyCaveatCheckerFunc(func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 		called[1]++
 		if _, err := db2.Checker.Auth(httpbakery.RequestMacaroons(req)...).Allow(testContext, testOp); err != nil {
 			c.Logf("returning discharge required error")
@@ -372,7 +372,7 @@ func (s *ClientSuite) TestTwoDischargesRequired(c *gc.C) {
 	// layer of security.
 
 	dischargeCount := 0
-	checker := func(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+	checker := func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 		c.Check(cav.Condition, gc.Equals, "is-ok")
 		dischargeCount++
 		return nil, nil
@@ -397,7 +397,7 @@ func (s *ClientSuite) TestTwoDischargesRequired(c *gc.C) {
 }
 
 func (s *ClientSuite) TestTooManyDischargesRequired(c *gc.C) {
-	checker := func(req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+	checker := func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 		return nil, nil
 	}
 	discharger := bakerytest.NewDischarger(nil, httpbakery.ThirdPartyCaveatCheckerFunc(checker))
