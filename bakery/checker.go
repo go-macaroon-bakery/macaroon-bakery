@@ -295,7 +295,13 @@ func (a *AuthChecker) allowAny(ctxt context.Context, ops []Op) (authed, used []b
 			authed[i] = true
 			numAuthed++
 			used[mindex] = true
+			// Use the first authorized macaroon only.
 			break
+		}
+		if op == LoginOp && !authed[i] && a.identity != nil {
+			// Allow LoginOp when there's an authenticated user even
+			// when there's no macaroon that specifically authorizes it.
+			authed[i] = true
 		}
 	}
 	if a.identity != nil {
