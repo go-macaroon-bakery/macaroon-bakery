@@ -36,10 +36,10 @@ type ThirdPartyCaveatChecker interface {
 
 // ThirdPartyCaveatCheckerFunc implements ThirdPartyCaveatChecker
 // by calling a function.
-type ThirdPartyCaveatCheckerFunc func(req *http.Request, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error)
+type ThirdPartyCaveatCheckerFunc func(ctx context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error)
 
-func (f ThirdPartyCaveatCheckerFunc) CheckThirdPartyCaveat(ctxt context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
-	return f(req, info)
+func (f ThirdPartyCaveatCheckerFunc) CheckThirdPartyCaveat(ctx context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+	return f(ctx, req, info)
 }
 
 // newDischargeClient returns a discharge client that addresses the
