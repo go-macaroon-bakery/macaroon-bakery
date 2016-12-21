@@ -92,6 +92,7 @@ func New(p BakeryParams) *Bakery {
 		Checker:         p.Checker,
 		MacaroonOpStore: oven,
 		IdentityClient:  p.IdentityClient,
+		Authorizer:      p.Authorizer,
 	})
 	return &Bakery{
 		Oven:    oven,
