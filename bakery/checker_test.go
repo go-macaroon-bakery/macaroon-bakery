@@ -427,6 +427,18 @@ func (s *checkerSuite) TestAuthWithIdentityFromContext(c *gc.C) {
 	c.Assert(authInfo.Macaroons, gc.HasLen, 0)
 }
 
+func (s *checkerSuite) TestAuthLoginOpWithIdentityFromContext(c *gc.C) {
+	locator := make(dischargerLocator)
+	ids := basicAuthIdService{}
+	ts := newService(nil, ids, locator)
+
+	// Check that we can use LoginOp when auth isn't granted through macaroons.
+	authInfo, err := newClient(locator).do(contextWithBasicAuth(testContext, "sherlock", "holmes"), ts, bakery.LoginOp)
+	c.Assert(err, gc.IsNil)
+	c.Assert(authInfo.Identity, gc.Equals, simpleIdentity("sherlock"))
+	c.Assert(authInfo.Macaroons, gc.HasLen, 0)
+}
+
 func (s *checkerSuite) TestOperationAllowCaveat(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
