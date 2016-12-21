@@ -49,6 +49,22 @@ type Macaroon struct {
 	caveatIdPrefix []byte
 }
 
+// NewLegacyMacaroon returns a new macaroon holding m.
+// This should only be used when there's no alternative
+// (for example when m has been unmarshaled
+// from some alternative format).
+func NewLegacyMacaroon(m *macaroon.Macaroon) (*Macaroon, error) {
+	v, err := bakeryVersion(m.Version())
+	if err != nil {
+		return nil, errgo.Mask(err)
+	}
+	return &Macaroon{
+		m:         m,
+		version:   v,
+		namespace: legacyNamespace(),
+	}, nil
+}
+
 type macaroonJSON struct {
 	Macaroon *macaroon.Macaroon `json:"m"`
 	Version  Version            `json:"v"`
@@ -145,13 +161,11 @@ func (m *Macaroon) unmarshalJSONOldFormat(data []byte) error {
 	if err := json.Unmarshal(data, &m1); err != nil {
 		return errgo.Mask(err)
 	}
-	m.m = m1
-	v, err := bakeryVersion(m1.Version())
+	m2, err := NewLegacyMacaroon(m1)
 	if err != nil {
 		return errgo.Mask(err)
 	}
-	m.version = v
-	m.namespace = legacyNamespace()
+	*m = *m2
 	return nil
 }
 
@@ -178,7 +192,7 @@ func base64Decode(data []byte) ([]byte, error) {
 // version, so it's only of use when decoding legacy formats
 // (in Macaroon.UnmarshalJSON).
 //
-// It will return an error if it doesn't recognise the version.
+// It will return an error if it doesn't recognize the version.
 func bakeryVersion(v macaroon.Version) (Version, error) {
 	switch v {
 	case macaroon.V1:
