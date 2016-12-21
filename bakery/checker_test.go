@@ -435,7 +435,7 @@ func (s *checkerSuite) TestAuthLoginOpWithIdentityFromContext(c *gc.C) {
 	// Check that we can use LoginOp when auth isn't granted through macaroons.
 	authInfo, err := newClient(locator).do(contextWithBasicAuth(testContext, "sherlock", "holmes"), ts, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
-	c.Assert(authInfo.Identity, gc.Equals, simpleIdentity("sherlock"))
+	c.Assert(authInfo.Identity, gc.Equals, bakery.SimpleIdentity("sherlock"))
 	c.Assert(authInfo.Macaroons, gc.HasLen, 0)
 }
 

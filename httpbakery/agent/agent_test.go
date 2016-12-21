@@ -143,7 +143,7 @@ func (s *agentSuite) TestSetUpAuth(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	authInfo, err := s.bakery.Checker.Auth(ms).Allow(context.Background(), bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
-	c.Assert(authInfo.Identity, gc.Equals, simpleIdentity("test-user"))
+	c.Assert(authInfo.Identity, gc.Equals, bakery.SimpleIdentity("test-user"))
 }
 
 func (s *agentSuite) TestNoCookieError(c *gc.C) {
