@@ -148,6 +148,16 @@ func GenerateKey() (*KeyPair, error) {
 	return &key, nil
 }
 
+// MustGenerateKey is like GenerateKey but panics if GenerateKey returns
+// an error - useful in tests.
+func MustGenerateKey() *KeyPair {
+	key, err := GenerateKey()
+	if err != nil {
+		panic(errgo.Notef(err, "cannot generate key"))
+	}
+	return key
+}
+
 // String implements the fmt.Stringer interface
 // by returning the base64 representation of the
 // public key part of key.
