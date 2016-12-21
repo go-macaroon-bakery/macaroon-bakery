@@ -20,8 +20,13 @@ var ErrMethodNotSupported = errgo.New("interaction method not supported")
 // single entry with the UserInteractionMethod key, specifying that the
 // associated URL should be opened in a web browser for the user to
 // interact with.
+// TODO this is confusing and error prone because it's not actually
+// possible to use most visitors without putting them inside NewMultiVisitor
+// even though the interface fits. Consider having two interface types - one
+// for the top level and one for individual implementations; alternatively
+// consider including MultiVisitor as a standard part of Client.
 //
-// See FallbackVisitor for a way to gain access to alternative methods.
+// See NewMultiVisitor for a way to gain access to alternative methods.
 //
 // A Visitor implementation should return ErrMethodNotSupported if it
 // cannot handle any of the supplied methods.
