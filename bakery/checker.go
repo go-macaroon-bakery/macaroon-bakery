@@ -362,12 +362,13 @@ func (a *AuthChecker) allowAny(ctxt context.Context, ops []Op) (authed, used []b
 		allErrors := make([]error, 0, len(a.initErrors)+len(errors))
 		allErrors = append(allErrors, a.initErrors...)
 		allErrors = append(allErrors, errors...)
+		var err error
 		if len(allErrors) > 0 {
 			// TODO return all errors?
 			logger.Infof("all auth errors: %q", allErrors)
-			return authed, used, errgo.Mask(allErrors[0])
+			err = allErrors[0]
 		}
-		return authed, used, ErrPermissionDenied
+		return authed, used, errgo.WithCausef(err, ErrPermissionDenied, "")
 	}
 	return authed, used, &DischargeRequiredError{
 		Message: "some operations have extra caveats",
