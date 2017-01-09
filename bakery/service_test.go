@@ -140,7 +140,7 @@ func (s *ServiceSuite) TestMacaroonPaperFig6FailsWithoutDischarges(c *gc.C) {
 
 	// client makes request to ts
 	_, err = ts.Checker.Auth(macaroon.Slice{tsMacaroon.M()}).Allow(testContext, bakery.LoginOp)
-	c.Assert(err, gc.ErrorMatches, `verification failed: cannot find discharge macaroon for caveat .*`, gc.Commentf("%#v", err))
+	c.Assert(err, gc.ErrorMatches, `permission denied: verification failed: cannot find discharge macaroon for caveat .*`, gc.Commentf("%#v", err))
 }
 
 // TestMacaroonPaperFig6FailsWithBindingOnTamperedSignature runs a similar test as TestMacaroonPaperFig6
@@ -175,7 +175,7 @@ func (s *ServiceSuite) TestMacaroonPaperFig6FailsWithBindingOnTamperedSignature(
 	// client makes request to ts.
 	_, err = ts.Checker.Auth(d).Allow(testContext, bakery.LoginOp)
 	// TODO fix this error message.
-	c.Assert(err, gc.ErrorMatches, "verification failed: signature mismatch after caveat verification")
+	c.Assert(err, gc.ErrorMatches, "permission denied: verification failed: signature mismatch after caveat verification")
 }
 
 func discharge(ctx context.Context, oven *bakery.Oven, checker bakery.ThirdPartyCaveatChecker, cav macaroon.Caveat, payload []byte) (*bakery.Macaroon, error) {
@@ -275,7 +275,7 @@ func (s *ServiceSuite) TestNeedDeclared(c *gc.C) {
 
 	ctxt = checkers.ContextWithDeclared(testContext, declared)
 	_, err = firstParty.Checker.Auth(d).Allow(testContext, bakery.LoginOp)
-	c.Assert(err, gc.ErrorMatches, `cannot authorize login macaroon: caveat "declared foo a" not satisfied: got foo=null, expected "a"`)
+	c.Assert(err, gc.ErrorMatches, `permission denied: cannot authorize login macaroon: caveat "declared foo a" not satisfied: got foo=null, expected "a"`)
 }
 
 func (s *ServiceSuite) TestDischargeTwoNeedDeclared(c *gc.C) {
@@ -346,7 +346,7 @@ func (s *ServiceSuite) TestDischargeTwoNeedDeclared(c *gc.C) {
 	})
 	ctxt = checkers.ContextWithDeclared(testContext, declared)
 	_, err = firstParty.Checker.Auth(d).Allow(testContext, bakery.LoginOp)
-	c.Assert(err, gc.ErrorMatches, `cannot authorize login macaroon: caveat "declared foo fooval1" not satisfied: got foo=null, expected "fooval1"`)
+	c.Assert(err, gc.ErrorMatches, `permission denied: cannot authorize login macaroon: caveat "declared foo fooval1" not satisfied: got foo=null, expected "fooval1"`)
 }
 
 func (s *ServiceSuite) TestDischargeMacaroonCannotBeUsedAsNormalMacaroon(c *gc.C) {
