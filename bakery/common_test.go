@@ -31,6 +31,7 @@ var testChecker = func() *checkers.Checker {
 	c.Register("str", "testns", strCheck)
 	c.Register("true", "testns", trueCheck)
 	checkers.RegisterDeclaredCaveat(c, "declared", checkers.StdNamespace)
+	checkers.RegisterDeclaredCaveat(c, "somedecl", "testns")
 	return c
 }()
 
@@ -122,7 +123,7 @@ func trueCheck(ctx context.Context, cond, args string) error {
 func strCheck(ctx context.Context, cond, args string) error {
 	expect, _ := ctx.Value(strKey{}).(string)
 	if args != expect {
-		return fmt.Errorf("%s doesn't match %s", cond, expect)
+		return fmt.Errorf("%q doesn't match %q", cond, expect)
 	}
 	return nil
 }
@@ -131,7 +132,7 @@ type thirdPartyStrcmpChecker string
 
 func (c thirdPartyStrcmpChecker) CheckThirdPartyCaveat(_ context.Context, cavInfo *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 	if string(cavInfo.Condition) != string(c) {
-		return nil, fmt.Errorf("%s doesn't match %s", cavInfo.Condition, c)
+		return nil, fmt.Errorf("%q doesn't match %q", cavInfo.Condition, c)
 	}
 	return nil, nil
 }

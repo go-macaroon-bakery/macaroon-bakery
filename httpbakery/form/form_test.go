@@ -149,8 +149,8 @@ func (s *formSuite) TestFormLogin(c *gc.C) {
 		c.Logf("test %d: %s", i, test.about)
 		d.dischargeOptions = test.opts
 		m, err := b.Oven.NewMacaroon(context.TODO(), bakery.LatestVersion, ages, []checkers.Caveat{{
-			Location:  d.discharger.Location(),
-			Condition: "test condition",
+			Location:            d.discharger.Location(),
+			ThirdPartyCondition: []byte("test condition"),
 		}}, bakery.LoginOp)
 
 		c.Assert(err, gc.Equals, nil)
@@ -210,8 +210,8 @@ func (s *formSuite) TestFormTitle(c *gc.C) {
 	for i, test := range formTitleTests {
 		c.Logf("test %d: %s", i, test.host)
 		m, err := b.Oven.NewMacaroon(context.TODO(), bakery.LatestVersion, ages, []checkers.Caveat{{
-			Location:  "https://" + test.host,
-			Condition: "test condition",
+			Location:            "https://" + test.host,
+			ThirdPartyCondition: []byte("test condition"),
 		}}, bakery.LoginOp)
 
 		c.Assert(err, gc.Equals, nil)

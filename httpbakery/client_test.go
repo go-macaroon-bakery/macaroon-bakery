@@ -231,8 +231,8 @@ func assertDischargeServerDischargesConditionForVersion(c *gc.C, cond string, ve
 	m, err := bakery.NewMacaroon([]byte("root key"), []byte("id"), "location", version, nil)
 	c.Assert(err, gc.IsNil)
 	err = m.AddCaveat(context.TODO(), checkers.Caveat{
-		Location:  discharger.Location(),
-		Condition: cond,
+		Location:            discharger.Location(),
+		ThirdPartyCondition: []byte(cond),
 	}, bKey, discharger)
 	c.Assert(err, gc.IsNil)
 	client := httpbakery.NewClient()
@@ -423,10 +423,10 @@ func (s *ClientSuite) serverRequiringMultipleDischarges(n int, discharger *baker
 			w.Write([]byte("ok"))
 			return
 		}
-		caveats := []checkers.Caveat{{
-			Location:  discharger.Location(),
-			Condition: "is-ok",
+		caveats := []checkers.Caveat{{Location: discharger.Location(),
+			ThirdPartyCondition: []byte("is-ok"),
 		}}
+
 		if n--; n > 0 {
 			// We've got more attempts to go, so add a first party caveat that
 			// will cause the macaroon to fail verification and so trigger
@@ -1009,8 +1009,8 @@ func (s *ClientSuite) TestHandleError(c *gc.C) {
 	defer srv.Close()
 
 	m, err := b.Oven.NewMacaroon(testContext, bakery.LatestVersion, ages, []checkers.Caveat{{
-		Location:  d.Location(),
-		Condition: "something",
+		Location:            d.Location(),
+		ThirdPartyCondition: []byte("something"),
 	}}, testOp)
 
 	c.Assert(err, gc.IsNil)
@@ -1271,10 +1271,10 @@ func newDischargeRequiredError(hp serverHandlerParams, checkErr error, req *http
 	}
 	var caveats []checkers.Caveat
 	if hp.authLocation != "" {
-		caveats = []checkers.Caveat{{
-			Location:  hp.authLocation,
-			Condition: "is-ok",
+		caveats = []checkers.Caveat{{Location: hp.authLocation,
+			ThirdPartyCondition: []byte("is-ok"),
 		}}
+
 	}
 	if hp.caveats != nil {
 		caveats = append(caveats, hp.caveats()...)

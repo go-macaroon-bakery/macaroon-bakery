@@ -141,7 +141,7 @@ func (c *Checker) Namespace() *Namespace {
 // CheckFirstPartyCaveat implements bakery.FirstPartyCaveatChecker
 // by checking the caveat against all registered caveats conditions.
 func (c *Checker) CheckFirstPartyCaveat(ctx context.Context, cav string) error {
-	cond, arg, err := ParseCaveat(cav)
+	cond, arg, err := ParseCondition(cav)
 	if err != nil {
 		// If we can't parse it, perhaps it's in some other format,
 		// return a not-recognised error.
@@ -169,18 +169,39 @@ func checkError(ctx context.Context, _, arg string) error {
 var ErrCaveatNotRecognized = errgo.New("caveat not recognized")
 
 // Caveat represents a condition that must be true for a check to
-// complete successfully. If Location is non-empty, the caveat must be
-// discharged by a third party at the given location.
-// The Namespace field holds the namespace URI of the
-// condition - if it is non-empty, it will be converted to
-// a namespace prefix before adding to the macaroon.
+// complete successfully. It can represent either a first-party
+// or a third-party caveat.
 type Caveat struct {
+	// Location holds the third-party caveat location.
+	// If this is non-empty, the caveat represents a
+	// third party caveat that must be discharged at this
+	// location, otherwise the caveat represents a first-party
+	// caveat.
+	Location string
+
+	// Condition holds a first-party caveat condition.
+	// This is valid only when Location is empty.
 	Condition string
+
+	// Namespace holds the schema namespace URI of
+	// the first party caveat condition. This is valid only
+	// when Location is empty.
+	//
+	// If this is non-empty, it will be converted via a Namespace
+	// to a namespace prefix before adding to the macaroon.
 	Namespace string
-	Location  string
+
+	// ThirdPartyCondition holds a third-party caveat condition.
+	// This is valid only when Location is non-empty.
+	ThirdPartyCondition []byte
+
+	// For third-party caveats only, NeedDeclared holds any declaration
+	// caveats that must be included when the third party discharges
+	// the caveat. This is valid only when Location is non-empty.
+	NeedDeclared []string
 }
 
-// Condition builds a caveat condition from the given name and argument.
+// Condition builds a first-party caveat condition from the given name and argument.
 func Condition(name, arg string) string {
 	if arg == "" {
 		return name
@@ -195,13 +216,13 @@ func firstParty(name, arg string) Caveat {
 	}
 }
 
-// ParseCaveat parses a caveat into an identifier, identifying the
-// checker that should be used, and the argument to the checker (the
-// rest of the string).
+// ParseCondition parses a first-party caveat condition into an
+// identifier, identifying the checker that should be used, and the
+// argument to the checker (the rest of the string).
 //
 // The identifier is taken from all the characters before the first
 // space character.
-func ParseCaveat(cav string) (cond, arg string, err error) {
+func ParseCondition(cav string) (cond, arg string, err error) {
 	if cav == "" {
 		return "", "", fmt.Errorf("empty caveat")
 	}

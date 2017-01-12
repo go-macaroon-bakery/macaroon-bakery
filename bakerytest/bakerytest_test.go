@@ -44,8 +44,8 @@ func (s *suite) TestDischargerSimple(c *gc.C) {
 		Key:      mustGenerateKey(),
 	})
 	m, err := b.Oven.NewMacaroon(context.Background(), bakery.LatestVersion, ages, []checkers.Caveat{{
-		Location:  d.Location(),
-		Condition: "something",
+		Location:            d.Location(),
+		ThirdPartyCondition: []byte("something"),
 	}}, dischargeOp)
 
 	c.Assert(err, gc.IsNil)
@@ -68,8 +68,8 @@ func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 	defer d1.Close()
 	d2checker := func(cond, arg string) ([]checkers.Caveat, error) {
 		return []checkers.Caveat{{
-			Location:  d1.Location(),
-			Condition: "x" + cond,
+			Location:            d1.Location(),
+			ThirdPartyCondition: []byte("x" + cond),
 		}}, nil
 	}
 	d2 := bakerytest.NewDischarger(d1, bakerytest.ConditionParser(d2checker))
@@ -89,8 +89,8 @@ func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 		Key:      mustGenerateKey(),
 	})
 	m, err := b.Oven.NewMacaroon(context.Background(), bakery.LatestVersion, ages, []checkers.Caveat{{
-		Location:  d2.Location(),
-		Condition: "true",
+		Location:            d2.Location(),
+		ThirdPartyCondition: []byte("true"),
 	}}, dischargeOp)
 
 	c.Assert(err, gc.IsNil)
@@ -103,8 +103,8 @@ func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 
 	err = b.Oven.AddCaveat(context.Background(), m, checkers.Caveat{
-		Location:  d2.Location(),
-		Condition: "nope",
+		Location:            d2.Location(),
+		ThirdPartyCondition: []byte("nope"),
 	})
 	c.Assert(err, gc.IsNil)
 
@@ -165,8 +165,8 @@ func (s *suite) TestInteractiveDischarger(c *gc.C) {
 		Key:      mustGenerateKey(),
 	})
 	m, err := b.Oven.NewMacaroon(context.Background(), bakery.LatestVersion, ages, []checkers.Caveat{{
-		Location:  d.Location(),
-		Condition: "something",
+		Location:            d.Location(),
+		ThirdPartyCondition: []byte("something"),
 	}}, dischargeOp)
 
 	c.Assert(err, gc.IsNil)
@@ -202,8 +202,8 @@ func (s *suite) TestLoginDischargerError(c *gc.C) {
 		Key:      mustGenerateKey(),
 	})
 	m, err := b.Oven.NewMacaroon(context.Background(), bakery.LatestVersion, ages, []checkers.Caveat{{
-		Location:  d.Location(),
-		Condition: "something",
+		Location:            d.Location(),
+		ThirdPartyCondition: []byte("something"),
 	}}, dischargeOp)
 
 	c.Assert(err, gc.IsNil)
@@ -236,8 +236,8 @@ func (s *suite) TestInteractiveDischargerURL(c *gc.C) {
 		Key:      mustGenerateKey(),
 	})
 	m, err := b.Oven.NewMacaroon(context.Background(), bakery.LatestVersion, ages, []checkers.Caveat{{
-		Location:  d.Location(),
-		Condition: "something",
+		Location:            d.Location(),
+		ThirdPartyCondition: []byte("something"),
 	}}, dischargeOp)
 
 	c.Assert(err, gc.IsNil)

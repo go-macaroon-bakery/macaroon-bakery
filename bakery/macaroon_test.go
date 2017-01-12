@@ -95,8 +95,8 @@ func (*macaroonSuite) TestAddThirdPartyCaveat(c *gc.C) {
 		}
 		bakery.SetMacaroonCaveatIdPrefix(m, test.baseId)
 		err = m.AddCaveat(testContext, checkers.Caveat{
-			Location:  "as-loc",
-			Condition: "something",
+			Location:            "as-loc",
+			ThirdPartyCondition: []byte("something"),
 		}, as.Oven.Key(), locator)
 		c.Assert(err, gc.IsNil)
 		c.Assert(m.M().Caveats()[len(test.existingCaveatIds)].Id, jc.DeepEquals, test.expectId)
@@ -114,8 +114,8 @@ func (*macaroonSuite) TestMarshalJSONLatestVersion(c *gc.C) {
 	m, err := bakery.NewMacaroon([]byte("root key"), []byte("id"), "location", bakery.LatestVersion, ns)
 	c.Assert(err, gc.IsNil)
 	err = m.AddCaveat(testContext, checkers.Caveat{
-		Location:  "as-loc",
-		Condition: "something",
+		Location:            "as-loc",
+		ThirdPartyCondition: []byte("something"),
 	}, as.Oven.Key(), locator)
 	c.Assert(err, gc.IsNil)
 
@@ -155,8 +155,8 @@ func (*macaroonSuite) testMarshalJSONWithVersion(c *gc.C, version bakery.Version
 	m, err := bakery.NewMacaroon([]byte("root key"), []byte("id"), "location", version, ns)
 	c.Assert(err, gc.IsNil)
 	err = m.AddCaveat(testContext, checkers.Caveat{
-		Location:  "as-loc",
-		Condition: "something",
+		Location:            "as-loc",
+		ThirdPartyCondition: []byte("something"),
 	}, as.Oven.Key(), locator)
 	c.Assert(err, gc.IsNil)
 
@@ -227,8 +227,8 @@ func (*macaroonSuite) TestClone(c *gc.C) {
 	m, err := bakery.NewMacaroon([]byte("root key"), []byte("id"), "location", bakery.LatestVersion, ns)
 	c.Assert(err, gc.IsNil)
 	err = m.AddCaveat(testContext, checkers.Caveat{
-		Location:  "as-loc",
-		Condition: "something",
+		Location:            "as-loc",
+		ThirdPartyCondition: []byte("something"),
 	}, as.Oven.Key(), locator)
 	c.Assert(err, gc.IsNil)
 
@@ -239,8 +239,8 @@ func (*macaroonSuite) TestClone(c *gc.C) {
 	c.Assert(bakery.MacaroonCaveatData(m), gc.DeepEquals, bakery.MacaroonCaveatData(m1))
 
 	err = m.AddCaveat(testContext, checkers.Caveat{
-		Location:  "as-loc",
-		Condition: "something",
+		Location:            "as-loc",
+		ThirdPartyCondition: []byte("something"),
 	}, as.Oven.Key(), locator)
 	c.Assert(err, gc.IsNil)
 

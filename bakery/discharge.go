@@ -156,7 +156,7 @@ func checkThirdPartyCaveatPreVersion3(ctx context.Context, cavInfo *ThirdPartyCa
 	// Note that we don't check the error - we allow the
 	// third party checker to see caveats that we can't
 	// understand.
-	cond, arg, _ := checkers.ParseCaveat(string(cavInfo.Condition))
+	cond, arg, _ := checkers.ParseCondition(string(cavInfo.Condition))
 	if cond != "need-declared" {
 		return checker.CheckThirdPartyCaveat(ctx, cavInfo)
 	}
@@ -190,7 +190,7 @@ func checkThirdPartyCaveatPreVersion3(ctx context.Context, cavInfo *ThirdPartyCa
 		}
 		// Note that we ignore the error. We allow the service to
 		// generate caveats that we don't understand here.
-		cond, arg, _ := checkers.ParseCaveat(cav.Condition)
+		cond, arg, _ := checkers.ParseCondition(cav.Condition)
 		if cond != "declared" {
 			continue
 		}
@@ -229,6 +229,10 @@ type ThirdPartyCaveatInfo struct {
 	// This is the only field that most third party dischargers will
 	// need to consider.
 	Condition []byte
+
+	// NeedDeclared holds all the caveats that the first party
+	// expects to be added.
+	NeedDeclared []string
 
 	// FirstPartyPublicKey holds the public key of the party
 	// that created the third party caveat.

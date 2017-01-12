@@ -27,14 +27,12 @@ func (*authorizerSuite) TestAuthorizerFunc(c *gc.C) {
 		case "b":
 			return true, nil, nil
 		case "c":
-			return true, []checkers.Caveat{{
-				Location:  "somewhere",
-				Condition: "c",
+			return true, []checkers.Caveat{{Location: "somewhere",
+				ThirdPartyCondition: []byte("c"),
 			}}, nil
 		case "d":
-			return true, []checkers.Caveat{{
-				Location:  "somewhere",
-				Condition: "d",
+			return true, []checkers.Caveat{{Location: "somewhere",
+				ThirdPartyCondition: []byte("d"),
 			}}, nil
 		}
 		c.Fatalf("unexpected entity: %q", op.Entity)
@@ -44,11 +42,11 @@ func (*authorizerSuite) TestAuthorizerFunc(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	c.Assert(allowed, jc.DeepEquals, []bool{false, true, true, true})
 	c.Assert(caveats, jc.DeepEquals, []checkers.Caveat{{
-		Location:  "somewhere",
-		Condition: "c",
+		Location:            "somewhere",
+		ThirdPartyCondition: []byte("c"),
 	}, {
-		Location:  "somewhere",
-		Condition: "d",
+		Location:            "somewhere",
+		ThirdPartyCondition: []byte("d"),
 	}})
 }
 

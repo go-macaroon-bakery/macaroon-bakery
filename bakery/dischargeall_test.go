@@ -97,8 +97,8 @@ func (*DischargeSuite) TestDischargeAllManyDischargesWithRealThirdPartyCaveats(c
 				break
 			}
 			caveats = append(caveats, checkers.Caveat{
-				Location:  addBakery(),
-				Condition: "something",
+				Location:            addBakery(),
+				ThirdPartyCondition: []byte("something"),
 			})
 			stillRequired--
 		}
@@ -109,8 +109,8 @@ func (*DischargeSuite) TestDischargeAllManyDischargesWithRealThirdPartyCaveats(c
 	m0, err := bakery.NewMacaroon(rootKey, []byte("id0"), "ts-loc", bakery.LatestVersion, nil)
 	c.Assert(err, gc.IsNil)
 	err = m0.AddCaveat(testContext, checkers.Caveat{
-		Location:  addBakery(),
-		Condition: "something",
+		Location:            addBakery(),
+		ThirdPartyCondition: []byte("something"),
 	}, ts.Oven.Key(), locator)
 	c.Assert(err, gc.IsNil)
 	// We've added a caveat (the first) so one less caveat is required.

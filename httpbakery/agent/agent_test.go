@@ -461,9 +461,8 @@ func (c idmClient) IdentityFromContext(ctx context.Context) (bakery.Identity, []
 }
 
 func identityCaveats(dischargerURL string) []checkers.Caveat {
-	return []checkers.Caveat{{
-		Location:  dischargerURL,
-		Condition: "test condition",
+	return []checkers.Caveat{{Location: dischargerURL,
+		ThirdPartyCondition: []byte("test condition"),
 	}}
 }
 
