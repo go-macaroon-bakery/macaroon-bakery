@@ -31,7 +31,7 @@ type ThirdPartyCaveatChecker interface {
 	// Note than when used in the context of a discharge handler
 	// created by Discharger, any returned errors will be marshaled
 	// as documented in DischargeHandler.ErrorMapper.
-	CheckThirdPartyCaveat(ctxt context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error)
+	CheckThirdPartyCaveat(ctx context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error)
 }
 
 // ThirdPartyCaveatCheckerFunc implements ThirdPartyCaveatChecker
@@ -127,7 +127,7 @@ func NewDischarger(p DischargerParams) *Discharger {
 
 type emptyLocator struct{}
 
-func (emptyLocator) ThirdPartyInfo(ctxt context.Context, loc string) (bakery.ThirdPartyInfo, error) {
+func (emptyLocator) ThirdPartyInfo(ctx context.Context, loc string) (bakery.ThirdPartyInfo, error) {
 	return bakery.ThirdPartyInfo{}, bakery.ErrNotFound
 }
 

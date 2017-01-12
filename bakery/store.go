@@ -12,7 +12,7 @@ import (
 type RootKeyStore interface {
 	// Get returns the root key for the given id.
 	// If the item is not there, it returns ErrNotFound.
-	Get(ctxt context.Context, id []byte) ([]byte, error)
+	Get(ctx context.Context, id []byte) ([]byte, error)
 
 	// RootKey returns the root key to be used for making a new
 	// macaroon, and an id that can be used to look it up later with
@@ -24,7 +24,7 @@ type RootKeyStore interface {
 	// Note that there is no need for it to return a new root key
 	// for every call - keys may be reused, although some key
 	// cycling is over time is advisable.
-	RootKey(ctxt context.Context) (rootKey []byte, id []byte, err error)
+	RootKey(ctx context.Context) (rootKey []byte, id []byte, err error)
 }
 
 // NewMemRootKeyStore returns an implementation of
@@ -78,7 +78,7 @@ type MacaroonOpStore interface {
 	// because the macaroon signature failed or the root key
 	// was not found - any other error will be treated as fatal
 	// by Checker and cause authorization to terminate.
-	MacaroonOps(ctxt context.Context, ms macaroon.Slice) ([]Op, []string, error)
+	MacaroonOps(ctx context.Context, ms macaroon.Slice) ([]Op, []string, error)
 }
 
 // OpsStore defines a persistent store for operation sets
@@ -99,7 +99,7 @@ type OpsStore interface {
 	//
 	// Implementations may assume that the operations
 	// are in canonical order and contain no duplicates.
-	PutOps(ctxt context.Context, key string, ops []Op, expiry time.Time) error
+	PutOps(ctx context.Context, key string, ops []Op, expiry time.Time) error
 
 	// GetOps returns the set of operations for a given key.
 	// If the key was not found, it should return an error with an
@@ -112,7 +112,7 @@ type OpsStore interface {
 	// whole set of operations. Then an implementation
 	// might be able to scale more easily to large sets of
 	// operations, for example by using a bloom filter.
-	GetOps(ctxt context.Context, key string) ([]Op, error)
+	GetOps(ctx context.Context, key string) ([]Op, error)
 }
 
 type memOpsStore struct {

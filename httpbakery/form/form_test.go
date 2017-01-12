@@ -348,8 +348,8 @@ type testLocator struct {
 	locator bakery.ThirdPartyLocator
 }
 
-func (l testLocator) ThirdPartyInfo(ctxt context.Context, loc string) (bakery.ThirdPartyInfo, error) {
-	return l.locator.ThirdPartyInfo(ctxt, l.loc)
+func (l testLocator) ThirdPartyInfo(ctx context.Context, loc string) (bakery.ThirdPartyInfo, error) {
+	return l.locator.ThirdPartyInfo(ctx, l.loc)
 }
 
 type titleTestFiller struct {

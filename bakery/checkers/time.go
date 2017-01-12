@@ -16,21 +16,21 @@ type Clock interface {
 
 type timeKey struct{}
 
-func ContextWithClock(ctxt context.Context, clock Clock) context.Context {
+func ContextWithClock(ctx context.Context, clock Clock) context.Context {
 	if clock == nil {
-		return ctxt
+		return ctx
 	}
-	return context.WithValue(ctxt, timeKey{}, clock)
+	return context.WithValue(ctx, timeKey{}, clock)
 }
 
-func clockFromContext(ctxt context.Context) Clock {
-	c, _ := ctxt.Value(timeKey{}).(Clock)
+func clockFromContext(ctx context.Context) Clock {
+	c, _ := ctx.Value(timeKey{}).(Clock)
 	return c
 }
 
-func checkTimeBefore(ctxt context.Context, _, arg string) error {
+func checkTimeBefore(ctx context.Context, _, arg string) error {
 	var now time.Time
-	if clock := clockFromContext(ctxt); clock != nil {
+	if clock := clockFromContext(ctx); clock != nil {
 		now = clock.Now()
 	} else {
 		now = time.Now()

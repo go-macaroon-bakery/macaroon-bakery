@@ -123,8 +123,8 @@ func (c *Checker) Auth(mss ...macaroon.Slice) *AuthChecker {
 // of the AuthChecker is called, using the context passed in then.
 //
 // To find out any declared identity without requiring a login,
-// use Allow(ctxt); to require authentication but no additional operations,
-// use Allow(ctxt, LoginOp).
+// use Allow(ctx); to require authentication but no additional operations,
+// use Allow(ctx, LoginOp).
 type AuthChecker struct {
 	// Checker is used to check first party caveats.
 	*Checker
@@ -151,14 +151,14 @@ type AuthChecker struct {
 	declarationCondition string
 }
 
-func (a *AuthChecker) init(ctxt context.Context) error {
+func (a *AuthChecker) init(ctx context.Context) error {
 	a.initOnce.Do(func() {
-		a.initError = a.initOnceFunc(ctxt)
+		a.initError = a.initOnceFunc(ctx)
 	})
 	return a.initError
 }
 
-func (a *AuthChecker) initOnceFunc(ctxt context.Context) error {
+func (a *AuthChecker) initOnceFunc(ctx context.Context) error {
 	if cav := a.p.IdentityClient.DeclarationCaveat(); cav.Condition != "" {
 		// Don't use ResolveCaveat because we want to return an error immediately
 		// if we can't resolve the namespace.
@@ -171,7 +171,7 @@ func (a *AuthChecker) initOnceFunc(ctxt context.Context) error {
 	a.authIndexes = make(map[Op][]int)
 	a.conditions = make([][]string, len(a.macaroons))
 	for i, ms := range a.macaroons {
-		ops, conditions, err := a.p.MacaroonOpStore.MacaroonOps(ctxt, ms)
+		ops, conditions, err := a.p.MacaroonOpStore.MacaroonOps(ctx, ms)
 		if err != nil {
 			if !isVerificationError(err) {
 				return errgo.Notef(err, "cannot retrieve macaroon")
@@ -203,7 +203,7 @@ func (a *AuthChecker) initOnceFunc(ctxt context.Context) error {
 		// If the conditions fail, we won't use the macaroon for
 		// identity, but we can still potentially use it for its
 		// other operations if the conditions succeed for those.
-		declared, err := a.checkConditions(ctxt, LoginOp, conditions)
+		declared, err := a.checkConditions(ctx, LoginOp, conditions)
 		if err != nil {
 			a.initErrors = append(a.initErrors, errgo.Notef(err, "cannot authorize login macaroon"))
 			continue
@@ -223,7 +223,7 @@ func (a *AuthChecker) initOnceFunc(ctxt context.Context) error {
 	}
 	if a.identity == nil {
 		// No identity yet, so try to get one based on the context.
-		identity, caveats, err := a.p.IdentityClient.IdentityFromContext(ctxt)
+		identity, caveats, err := a.p.IdentityClient.IdentityFromContext(ctx)
 		if err != nil {
 			a.initErrors = append(a.initErrors, errgo.Notef(err, "could not determine identity"))
 		}
@@ -251,8 +251,8 @@ func (a *AuthChecker) initOnceFunc(ctxt context.Context) error {
 // be *DischargeRequiredError holding the operations that remain to
 // be authorized in order to allow authorization to
 // proceed.
-func (a *AuthChecker) Allow(ctxt context.Context, ops ...Op) (*AuthInfo, error) {
-	authInfo, _, err := a.AllowAny(ctxt, ops...)
+func (a *AuthChecker) Allow(ctx context.Context, ops ...Op) (*AuthInfo, error) {
+	authInfo, _, err := a.AllowAny(ctx, ops...)
 	if err != nil {
 		return nil, err
 	}
@@ -273,8 +273,8 @@ func (a *AuthChecker) Allow(ctxt context.Context, ops ...Op) (*AuthInfo, error) 
 //
 // The LoginOp operation is treated specially - it is always required if
 // present in ops.
-func (a *AuthChecker) AllowAny(ctxt context.Context, ops ...Op) (*AuthInfo, []bool, error) {
-	authed, used, err := a.allowAny(ctxt, ops)
+func (a *AuthChecker) AllowAny(ctx context.Context, ops ...Op) (*AuthInfo, []bool, error) {
+	authed, used, err := a.allowAny(ctx, ops)
 	return a.newAuthInfo(used), authed, err
 }
 
@@ -295,8 +295,8 @@ func (a *AuthChecker) newAuthInfo(used []bool) *AuthInfo {
 // authInfo struct, it returns a slice describing which operations have
 // been successfully authorized and a slice describing which macaroons
 // have been used in the authorization.
-func (a *AuthChecker) allowAny(ctxt context.Context, ops []Op) (authed, used []bool, err error) {
-	if err := a.init(ctxt); err != nil {
+func (a *AuthChecker) allowAny(ctx context.Context, ops []Op) (authed, used []bool, err error) {
+	if err := a.init(ctx); err != nil {
 		return nil, nil, errgo.Mask(err)
 	}
 	used = make([]bool, len(a.macaroons))
@@ -305,7 +305,7 @@ func (a *AuthChecker) allowAny(ctxt context.Context, ops []Op) (authed, used []b
 	var errors []error
 	for i, op := range ops {
 		for _, mindex := range a.authIndexes[op] {
-			_, err := a.checkConditions(ctxt, op, a.conditions[mindex])
+			_, err := a.checkConditions(ctx, op, a.conditions[mindex])
 			if err != nil {
 				errors = append(errors, err)
 				continue
@@ -351,7 +351,7 @@ func (a *AuthChecker) allowAny(ctxt context.Context, ops []Op) (authed, used []b
 	logger.Debugf("operations needed after authz macaroons: %#v", need)
 
 	// Try to authorize the operations even if we haven't got an authenticated user.
-	oks, caveats, err := a.p.Authorizer.Authorize(ctxt, a.identity, need)
+	oks, caveats, err := a.p.Authorizer.Authorize(ctx, a.identity, need)
 	if err != nil {
 		return authed, used, errgo.Notef(err, "cannot check permissions")
 	}
@@ -408,7 +408,7 @@ func (a *AuthChecker) allowAny(ctxt context.Context, ops []Op) (authed, used []b
 // that grant LoginOp rights.
 //
 // The operations must include at least one non-LoginOp operation.
-func (a *AuthChecker) AllowCapability(ctxt context.Context, ops ...Op) ([]string, error) {
+func (a *AuthChecker) AllowCapability(ctx context.Context, ops ...Op) ([]string, error) {
 	nops := 0
 	for _, op := range ops {
 		if op != LoginOp {
@@ -418,7 +418,7 @@ func (a *AuthChecker) AllowCapability(ctxt context.Context, ops ...Op) ([]string
 	if nops == 0 {
 		return nil, errgo.Newf("no non-login operations required in capability")
 	}
-	_, used, err := a.allowAny(ctxt, ops)
+	_, used, err := a.allowAny(ctx, ops)
 	if err != nil {
 		return nil, errgo.Mask(err, isDischargeRequiredError)
 	}

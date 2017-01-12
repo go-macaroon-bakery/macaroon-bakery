@@ -21,7 +21,7 @@ type IdentityClient interface {
 	// (for example because of a database access error) - it's
 	// OK to return all zero values when there's
 	// no identity found and no third party to address caveats to.
-	IdentityFromContext(ctxt context.Context) (Identity, []checkers.Caveat, error)
+	IdentityFromContext(ctx context.Context) (Identity, []checkers.Caveat, error)
 
 	// DeclarationCaveat returns the caveat that is used to declare
 	// the identity. By convention, the condition should have no argument.
@@ -56,7 +56,7 @@ type noIdentities struct{}
 
 // IdentityFromContext implements IdentityClient.IdentityFromContext by
 // never returning a declared identity or any caveats.
-func (noIdentities) IdentityFromContext(ctxt context.Context) (Identity, []checkers.Caveat, error) {
+func (noIdentities) IdentityFromContext(ctx context.Context) (Identity, []checkers.Caveat, error) {
 	return nil, nil, nil
 }
 
@@ -92,7 +92,7 @@ func (id SimpleIdentity) Id() string {
 // Allow implements ACLIdentity by allowing the identity access to
 // ACL members that are equal to id. That is, some user u is considered
 // a member of group u and no other.
-func (id SimpleIdentity) Allow(ctxt context.Context, acl []string) (bool, error) {
+func (id SimpleIdentity) Allow(ctx context.Context, acl []string) (bool, error) {
 	for _, g := range acl {
 		if string(id) == g {
 			return true, nil

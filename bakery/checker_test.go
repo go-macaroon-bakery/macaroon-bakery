@@ -236,13 +236,13 @@ func (s *checkerSuite) TestAuthWithThirdPartyCaveats(c *gc.C) {
 
 	locator["other third party"] = &discharger{
 		key: mustGenerateKey(),
-		checker: bakery.ThirdPartyCaveatCheckerFunc(func(ctxt context.Context, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+		checker: bakery.ThirdPartyCaveatCheckerFunc(func(ctx context.Context, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 			if string(info.Condition) != "question" {
 				return nil, errgo.Newf("third party condition not recognized")
 			}
 			s.discharges = append(s.discharges, dischargeRecord{
 				location: "other third party",
-				user:     dischargeUserFromContext(ctxt),
+				user:     dischargeUserFromContext(ctx),
 			})
 			return nil, nil
 		}),
@@ -607,13 +607,13 @@ func writeOp(entity string) bakery.Op {
 // or the slice contains "everyone", authorization is granted.
 type opAuthorizer map[bakery.Op][]string
 
-func (auth opAuthorizer) Authorize(ctxt context.Context, id bakery.Identity, ops []bakery.Op) (allowed []bool, caveats []checkers.Caveat, err error) {
+func (auth opAuthorizer) Authorize(ctx context.Context, id bakery.Identity, ops []bakery.Op) (allowed []bool, caveats []checkers.Caveat, err error) {
 	return bakery.ACLAuthorizer{
 		AllowPublic: true,
-		GetACL: func(ctxt context.Context, op bakery.Op) ([]string, error) {
+		GetACL: func(ctx context.Context, op bakery.Op) ([]string, error) {
 			return auth[op], nil
 		},
-	}.Authorize(ctxt, id, ops)
+	}.Authorize(ctx, id, ops)
 }
 
 type idService struct {
@@ -637,11 +637,11 @@ func (s *checkerSuite) newIdService(location string, locator dischargerLocator) 
 	return ids
 }
 
-func (ids *idService) CheckThirdPartyCaveat(ctxt context.Context, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+func (ids *idService) CheckThirdPartyCaveat(ctx context.Context, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 	if string(info.Condition) != "is-authenticated-user" {
 		return nil, errgo.Newf("third party condition not recognized")
 	}
-	username := dischargeUserFromContext(ctxt)
+	username := dischargeUserFromContext(ctx)
 	if username == "" {
 		return nil, errgo.Newf("no current user")
 	}
@@ -654,7 +654,7 @@ func (ids *idService) CheckThirdPartyCaveat(ctxt context.Context, info *bakery.T
 	}, nil
 }
 
-func (ids *idService) IdentityFromContext(ctxt context.Context) (bakery.Identity, []checkers.Caveat, error) {
+func (ids *idService) IdentityFromContext(ctx context.Context) (bakery.Identity, []checkers.Caveat, error) {
 	return nil, []checkers.Caveat{{
 		Location:  ids.location,
 		Condition: "is-authenticated-user",
@@ -678,19 +678,19 @@ func (ids *idService) DeclaredIdentity(val string) (bakery.Identity, error) {
 
 type dischargeUserKey struct{}
 
-func contextWithDischargeUser(ctxt context.Context, username string) context.Context {
-	return context.WithValue(ctxt, dischargeUserKey{}, username)
+func contextWithDischargeUser(ctx context.Context, username string) context.Context {
+	return context.WithValue(ctx, dischargeUserKey{}, username)
 }
 
-func dischargeUserFromContext(ctxt context.Context) string {
-	username, _ := ctxt.Value(dischargeUserKey{}).(string)
+func dischargeUserFromContext(ctx context.Context) string {
+	username, _ := ctx.Value(dischargeUserKey{}).(string)
 	return username
 }
 
 type basicAuthIdService struct{}
 
-func (basicAuthIdService) IdentityFromContext(ctxt context.Context) (bakery.Identity, []checkers.Caveat, error) {
-	user, pass := basicAuthFromContext(ctxt)
+func (basicAuthIdService) IdentityFromContext(ctx context.Context) (bakery.Identity, []checkers.Caveat, error) {
+	user, pass := basicAuthFromContext(ctx)
 	if user != "sherlock" || pass != "holmes" {
 		return nil, nil, nil
 	}
@@ -731,24 +731,24 @@ func newService(auth bakery.Authorizer, idm bakery.IdentityClient, locator baker
 // using the given macaroons for authorization.
 // It may return a dischargeRequiredError containing a macaroon
 // that needs to be discharged.
-func (svc *service) do(ctxt context.Context, ms []macaroon.Slice, ops ...bakery.Op) (*bakery.AuthInfo, error) {
-	authInfo, err := svc.checker.Auth(ms...).Allow(ctxt, ops...)
+func (svc *service) do(ctx context.Context, ms []macaroon.Slice, ops ...bakery.Op) (*bakery.AuthInfo, error) {
+	authInfo, err := svc.checker.Auth(ms...).Allow(ctx, ops...)
 	return authInfo, svc.maybeDischargeRequiredError(err)
 }
 
 // doAny makes a request to the service to perform any of the given
 // operations. It reports which operations have succeeded.
-func (svc *service) doAny(ctxt context.Context, ms []macaroon.Slice, ops ...bakery.Op) (*bakery.AuthInfo, []bool, error) {
-	authInfo, allowed, err := svc.checker.Auth(ms...).AllowAny(ctxt, ops...)
+func (svc *service) doAny(ctx context.Context, ms []macaroon.Slice, ops ...bakery.Op) (*bakery.AuthInfo, []bool, error) {
+	authInfo, allowed, err := svc.checker.Auth(ms...).AllowAny(ctx, ops...)
 	return authInfo, allowed, svc.maybeDischargeRequiredError(err)
 }
 
-func (svc *service) capability(ctxt context.Context, ms []macaroon.Slice, ops ...bakery.Op) (*bakery.Macaroon, error) {
-	conds, err := svc.checker.Auth(ms...).AllowCapability(ctxt, ops...)
+func (svc *service) capability(ctx context.Context, ms []macaroon.Slice, ops ...bakery.Op) (*bakery.Macaroon, error) {
+	conds, err := svc.checker.Auth(ms...).AllowCapability(ctx, ops...)
 	if err != nil {
 		return nil, svc.maybeDischargeRequiredError(err)
 	}
-	m, err := svc.store.NewMacaroon(ctxt, ops, nil, svc.checker.Namespace())
+	m, err := svc.store.NewMacaroon(ctx, ops, nil, svc.checker.Namespace())
 	if err != nil {
 		return nil, errgo.Mask(err)
 	}
@@ -794,8 +794,8 @@ func (*dischargeRequiredError) Error() string {
 	return "discharge required"
 }
 
-func (d *discharger) discharge(ctxt context.Context, cav macaroon.Caveat, payload []byte) (*bakery.Macaroon, error) {
-	m, err := bakery.Discharge(ctxt, bakery.DischargeParams{
+func (d *discharger) discharge(ctx context.Context, cav macaroon.Caveat, payload []byte) (*bakery.Macaroon, error) {
+	m, err := bakery.Discharge(ctx, bakery.DischargeParams{
 		Id:      cav.Id,
 		Caveat:  payload,
 		Key:     d.key,
@@ -811,7 +811,7 @@ func (d *discharger) discharge(ctxt context.Context, cav macaroon.Caveat, payloa
 type dischargerLocator map[string]*discharger
 
 // ThirdPartyInfo implements the bakery.ThirdPartyLocator interface.
-func (l dischargerLocator) ThirdPartyInfo(ctxt context.Context, loc string) (bakery.ThirdPartyInfo, error) {
+func (l dischargerLocator) ThirdPartyInfo(ctx context.Context, loc string) (bakery.ThirdPartyInfo, error) {
 	d, ok := l[loc]
 	if !ok {
 		return bakery.ThirdPartyInfo{}, bakery.ErrNotFound
@@ -843,38 +843,38 @@ const maxRetries = 3
 // do performs a set of operations on the given service.
 // It includes all the macaroons in c.macaroons[svc] as authorization
 // information on the request.
-func (c *client) do(ctxt context.Context, svc *service, ops ...bakery.Op) (*bakery.AuthInfo, error) {
+func (c *client) do(ctx context.Context, svc *service, ops ...bakery.Op) (*bakery.AuthInfo, error) {
 	var authInfo *bakery.AuthInfo
-	err := c.doFunc(ctxt, svc, func(ms []macaroon.Slice) (err error) {
-		authInfo, err = svc.do(ctxt, ms, ops...)
+	err := c.doFunc(ctx, svc, func(ms []macaroon.Slice) (err error) {
+		authInfo, err = svc.do(ctx, ms, ops...)
 		return
 	})
 	return authInfo, err
 }
 
-func (c *client) doAny(ctxt context.Context, svc *service, ops ...bakery.Op) (*bakery.AuthInfo, []bool, error) {
-	return svc.doAny(ctxt, c.requestMacaroons(svc), ops...)
+func (c *client) doAny(ctx context.Context, svc *service, ops ...bakery.Op) (*bakery.AuthInfo, []bool, error) {
+	return svc.doAny(ctx, c.requestMacaroons(svc), ops...)
 }
 
 // capability returns a capability macaroon for the given operations.
-func (c *client) capability(ctxt context.Context, svc *service, ops ...bakery.Op) (*bakery.Macaroon, error) {
+func (c *client) capability(ctx context.Context, svc *service, ops ...bakery.Op) (*bakery.Macaroon, error) {
 	var m *bakery.Macaroon
-	err := c.doFunc(ctxt, svc, func(ms []macaroon.Slice) (err error) {
-		m, err = svc.capability(ctxt, ms, ops...)
+	err := c.doFunc(ctx, svc, func(ms []macaroon.Slice) (err error) {
+		m, err = svc.capability(ctx, ms, ops...)
 		return
 	})
 	return m, err
 }
 
-func (c *client) dischargedCapability(ctxt context.Context, svc *service, ops ...bakery.Op) (macaroon.Slice, error) {
-	m, err := c.capability(ctxt, svc, ops...)
+func (c *client) dischargedCapability(ctx context.Context, svc *service, ops ...bakery.Op) (macaroon.Slice, error) {
+	m, err := c.capability(ctx, svc, ops...)
 	if err != nil {
 		return nil, errgo.Mask(err)
 	}
-	return c.dischargeAll(ctxt, m)
+	return c.dischargeAll(ctx, m)
 }
 
-func (c *client) doFunc(ctxt context.Context, svc *service, f func(ms []macaroon.Slice) error) error {
+func (c *client) doFunc(ctx context.Context, svc *service, f func(ms []macaroon.Slice) error) error {
 	var prevErr error
 	for i := 0; i < maxRetries; i++ {
 		err := f(c.requestMacaroons(svc))
@@ -883,7 +883,7 @@ func (c *client) doFunc(ctxt context.Context, svc *service, f func(ms []macaroon
 			return err
 		}
 		prevErr = err
-		ms, err := c.dischargeAll(ctxt, derr.m)
+		ms, err := c.dischargeAll(ctx, derr.m)
 		if err != nil {
 			return errgo.Mask(err)
 		}

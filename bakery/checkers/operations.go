@@ -14,12 +14,12 @@ type opKey struct{}
 // given operations. An allow caveat will succeed only if one of the allowed
 // operations is in ops; a deny caveat will succeed only if none of the denied
 // operations are in ops.
-func ContextWithOperations(ctxt context.Context, ops ...string) context.Context {
-	return context.WithValue(ctxt, opKey{}, ops)
+func ContextWithOperations(ctx context.Context, ops ...string) context.Context {
+	return context.WithValue(ctx, opKey{}, ops)
 }
 
-func operationsFromContext(ctxt context.Context) []string {
-	ops, _ := ctxt.Value(opKey{}).([]string)
+func operationsFromContext(ctx context.Context) []string {
+	ops, _ := ctx.Value(opKey{}).([]string)
 	return ops
 }
 
@@ -51,20 +51,20 @@ func operationCaveat(cond string, op []string) Caveat {
 	return firstParty(cond, strings.Join(op, " "))
 }
 
-func checkAllow(ctxt context.Context, _, arg string) error {
-	return checkOperation(ctxt, true, arg)
+func checkAllow(ctx context.Context, _, arg string) error {
+	return checkOperation(ctx, true, arg)
 }
 
-func checkDeny(ctxt context.Context, _, arg string) error {
-	return checkOperation(ctxt, false, arg)
+func checkDeny(ctx context.Context, _, arg string) error {
+	return checkOperation(ctx, false, arg)
 }
 
 // checkOperation checks an allow or a deny caveat. The needOps
 // parameter specifies whether we require all the operations in the
 // caveat to be declared in the context.
-func checkOperation(ctxt context.Context, needOps bool, arg string) error {
-	ctxtOps := operationsFromContext(ctxt)
-	if len(ctxtOps) == 0 {
+func checkOperation(ctx context.Context, needOps bool, arg string) error {
+	ctxOps := operationsFromContext(ctx)
+	if len(ctxOps) == 0 {
 		if needOps {
 			f := strings.Fields(arg)
 			if len(f) == 0 {
@@ -76,7 +76,7 @@ func checkOperation(ctxt context.Context, needOps bool, arg string) error {
 	}
 
 	fields := strings.Fields(arg)
-	for _, op := range ctxtOps {
+	for _, op := range ctxOps {
 		if err := checkOneOp(op, needOps, fields); err != nil {
 			return errgo.Mask(err)
 		}
@@ -84,16 +84,16 @@ func checkOperation(ctxt context.Context, needOps bool, arg string) error {
 	return nil
 }
 
-func checkOneOp(ctxtOp string, needOp bool, fields []string) error {
+func checkOneOp(ctxOp string, needOp bool, fields []string) error {
 	var found bool
 	for _, op := range fields {
-		if op == ctxtOp {
+		if op == ctxOp {
 			found = true
 			break
 		}
 	}
 	if found != needOp {
-		return fmt.Errorf("%s not allowed", ctxtOp)
+		return fmt.Errorf("%s not allowed", ctxOp)
 	}
 	return nil
 }

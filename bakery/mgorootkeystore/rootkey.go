@@ -218,7 +218,7 @@ type store struct {
 }
 
 // Get implements bakery.RootKeyStore.Get.
-func (s *store) Get(ctxt context.Context, id []byte) ([]byte, error) {
+func (s *store) Get(ctx context.Context, id []byte) ([]byte, error) {
 	s.keys.mu.Lock()
 	defer s.keys.mu.Unlock()
 
