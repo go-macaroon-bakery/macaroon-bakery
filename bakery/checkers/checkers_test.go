@@ -1,14 +1,12 @@
 package checkers_test
 
 import (
-	"fmt"
 	"time"
 
 	jc "github.com/juju/testing/checkers"
 	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
-	"gopkg.in/macaroon.v2-unstable"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
 )
@@ -102,42 +100,29 @@ var checkerTests = []struct {
 }, {
 	about: "declared, no entries",
 	checks: []checkTest{{
-		caveat:      checkers.DeclaredCaveat("a", "aval").Condition,
-		expectError: `caveat "declared a aval" not satisfied: got a=null, expected "aval"`,
+		caveat:      "t:declared-foo aval",
+		expectError: `caveat "t:declared-foo aval" not satisfied: got "aval", expected ""`,
 	}, {
-		caveat:      checkers.CondDeclared,
-		expectError: `caveat "declared" not satisfied: declared caveat has no value`,
+		caveat: "t:declared-foo",
+	}, {
+		caveat: "t:declared-foo ",
 	}},
 }, {
 	about: "declared, some entries",
 	addContext: func(ctxt context.Context) context.Context {
-		return checkers.ContextWithDeclared(ctxt, map[string]string{
-			"a":   "aval",
-			"b":   "bval",
-			"spc": " a b",
+		return checkers.ContextWithDeclared(ctxt, checkers.Declared{
+			Condition: "t:declared-foo",
+			Value:     "aval",
 		})
 	},
 	checks: []checkTest{{
-		caveat: checkers.DeclaredCaveat("a", "aval").Condition,
+		caveat: "t:declared-foo aval",
 	}, {
-		caveat: checkers.DeclaredCaveat("b", "bval").Condition,
+		caveat:      "t:declared-foo bval",
+		expectError: `caveat "t:declared-foo bval" not satisfied: got "bval", expected "aval"`,
 	}, {
-		caveat: checkers.DeclaredCaveat("spc", " a b").Condition,
-	}, {
-		caveat:      checkers.DeclaredCaveat("a", "bval").Condition,
-		expectError: `caveat "declared a bval" not satisfied: got a="aval", expected "bval"`,
-	}, {
-		caveat:      checkers.DeclaredCaveat("a", " aval").Condition,
-		expectError: `caveat "declared a  aval" not satisfied: got a="aval", expected " aval"`,
-	}, {
-		caveat:      checkers.DeclaredCaveat("spc", "a b").Condition,
-		expectError: `caveat "declared spc a b" not satisfied: got spc=" a b", expected "a b"`,
-	}, {
-		caveat:      checkers.DeclaredCaveat("", "a b").Condition,
-		expectError: `caveat "error invalid caveat 'declared' key \\"\\"" not satisfied: bad caveat`,
-	}, {
-		caveat:      checkers.DeclaredCaveat("a b", "a b").Condition,
-		expectError: `caveat "error invalid caveat 'declared' key \\"a b\\"" not satisfied: bad caveat`,
+		caveat:      "t:declared-foo  aval",
+		expectError: `caveat "t:declared-foo  aval" not satisfied: got " aval", expected "aval"`,
 	}},
 }, {
 	about: "error caveat",
@@ -169,6 +154,7 @@ func (s *CheckersSuite) TestCheckers(c *gc.C) {
 	checker.Namespace().Register("testns", "t")
 	checker.Register("a", "testns", argChecker(c, "t:a", "aval"))
 	checker.Register("b", "testns", argChecker(c, "t:b", "bval"))
+	checkers.RegisterDeclaredCaveat(checker, "declared-foo", "testns")
 	for i, test := range checkerTests {
 		c.Logf("test %d: %s", i, test.about)
 		ctxt := context.Background()
@@ -192,157 +178,103 @@ func (s *CheckersSuite) TestCheckers(c *gc.C) {
 }
 
 var inferDeclaredTests = []struct {
-	about     string
-	caveats   [][]checkers.Caveat
-	expect    map[string]string
-	namespace map[string]string
+	about      string
+	declCond   string
+	conditions []string
+	expect     checkers.Declared
 }{{
-	about:  "no macaroons",
-	expect: map[string]string{},
-}, {
-	about: "single macaroon with one declaration",
-	caveats: [][]checkers.Caveat{{{
-		Condition: "declared foo bar",
-	}}},
-	expect: map[string]string{
-		"foo": "bar",
+	about:    "no conditions",
+	declCond: "declared-foo",
+	expect: checkers.Declared{
+		Condition: "declared-foo",
 	},
 }, {
-	about: "only one argument to declared",
-	caveats: [][]checkers.Caveat{{{
-		Condition: "declared foo",
-	}}},
-	expect: map[string]string{},
-}, {
-	about: "spaces in value",
-	caveats: [][]checkers.Caveat{{{
-		Condition: "declared foo bar bloggs",
-	}}},
-	expect: map[string]string{
-		"foo": "bar bloggs",
+	about:      "single macaroon with one declaration, empty prefix",
+	conditions: []string{"declared-foo bar"},
+	declCond:   "declared-foo",
+	expect: checkers.Declared{
+		Condition: "declared-foo",
+		Value:     "bar",
 	},
 }, {
-	about: "attribute with declared prefix",
-	caveats: [][]checkers.Caveat{{{
-		Condition: "declaredccf foo",
-	}}},
-	expect: map[string]string{},
+	about:      "spaces in value",
+	conditions: []string{"declared-foo foo bar"},
+	declCond:   "declared-foo",
+	expect: checkers.Declared{
+		Condition: "declared-foo",
+		Value:     "foo bar",
+	},
 }, {
-	about: "several macaroons with different declares",
-	caveats: [][]checkers.Caveat{{
-		checkers.DeclaredCaveat("a", "aval"),
-		checkers.DeclaredCaveat("b", "bval"),
-	}, {
-		checkers.DeclaredCaveat("c", "cval"),
-		checkers.DeclaredCaveat("d", "dval"),
-	}},
-	expect: map[string]string{
-		"a": "aval",
-		"b": "bval",
-		"c": "cval",
-		"d": "dval",
+	about:      "condition with declared prefix",
+	declCond:   "declared-foo",
+	conditions: []string{"declared-fooccf foo"},
+	expect: checkers.Declared{
+		Condition: "declared-foo",
+	},
+}, {
+	about:      "condition with no arguments",
+	declCond:   "declared-foo",
+	conditions: []string{"declared-fooccf foo"},
+	expect: checkers.Declared{
+		Condition: "declared-foo",
+	},
+}, {
+	about: "several different caveats",
+	conditions: []string{
+		"declared-foo a",
+		"bar b",
+		"x y",
+	},
+	declCond: "declared-foo",
+	expect: checkers.Declared{
+		Condition: "declared-foo",
+		Value:     "a",
 	},
 }, {
 	about: "duplicate values",
-	caveats: [][]checkers.Caveat{{
-		checkers.DeclaredCaveat("a", "aval"),
-		checkers.DeclaredCaveat("a", "aval"),
-		checkers.DeclaredCaveat("b", "bval"),
-	}, {
-		checkers.DeclaredCaveat("a", "aval"),
-		checkers.DeclaredCaveat("b", "bval"),
-		checkers.DeclaredCaveat("c", "cval"),
-		checkers.DeclaredCaveat("d", "dval"),
-	}},
-	expect: map[string]string{
-		"a": "aval",
-		"b": "bval",
-		"c": "cval",
-		"d": "dval",
+	conditions: []string{
+		"declared-foo a",
+		"declared-foo a",
+	},
+	declCond: "declared-foo",
+	expect: checkers.Declared{
+		Condition: "declared-foo",
+		Value:     "a",
+	},
+}, {
+	about: "one empty, one not",
+	conditions: []string{
+		"declared-foo aval",
+		"declared-foo",
+	},
+	declCond: "declared-foo",
+	expect: checkers.Declared{
+		Condition: "declared-foo",
 	},
 }, {
 	about: "conflicting values",
-	caveats: [][]checkers.Caveat{{
-		checkers.DeclaredCaveat("a", "aval"),
-		checkers.DeclaredCaveat("a", "conflict"),
-		checkers.DeclaredCaveat("b", "bval"),
-	}, {
-		checkers.DeclaredCaveat("a", "conflict"),
-		checkers.DeclaredCaveat("b", "another conflict"),
-		checkers.DeclaredCaveat("c", "cval"),
-		checkers.DeclaredCaveat("d", "dval"),
-	}},
-	expect: map[string]string{
-		"c": "cval",
-		"d": "dval",
+	conditions: []string{
+		"declared-foo aval",
+		"declared-foo bval",
+	},
+	declCond: "declared-foo",
+	expect: checkers.Declared{
+		Condition: "declared-foo",
 	},
 }, {
-	about: "third party caveats ignored",
-	caveats: [][]checkers.Caveat{{{
-		Condition: "declared a no conflict",
-		Location:  "location",
-	},
-		checkers.DeclaredCaveat("a", "aval"),
-	}},
-	expect: map[string]string{
-		"a": "aval",
-	},
-}, {
-	about: "unparseable caveats ignored",
-	caveats: [][]checkers.Caveat{{{
-		Condition: " bad",
-	},
-		checkers.DeclaredCaveat("a", "aval"),
-	}},
-	expect: map[string]string{
-		"a": "aval",
-	},
-}, {
-	about: "infer with namespace",
-	namespace: map[string]string{
-		checkers.StdNamespace: "",
-		"testns":              "t",
-	},
-	caveats: [][]checkers.Caveat{{
-		checkers.DeclaredCaveat("a", "aval"),
-		// A declared caveat from a different namespace doesn't
-		// interfere.
-		caveatWithNamespace(checkers.DeclaredCaveat("a", "bval"), "testns"),
-	}},
-	expect: map[string]string{
-		"a": "aval",
+	about:      "unparseable caveats ignored",
+	conditions: []string{" bad", "a aval"},
+	declCond:   "a",
+	expect: checkers.Declared{
+		Condition: "a",
+		Value:     "aval",
 	},
 }}
 
-func caveatWithNamespace(cav checkers.Caveat, uri string) checkers.Caveat {
-	cav.Namespace = uri
-	return cav
-}
-
 func (*CheckersSuite) TestInferDeclared(c *gc.C) {
 	for i, test := range inferDeclaredTests {
-		if test.namespace == nil {
-			test.namespace = map[string]string{
-				checkers.StdNamespace: "",
-			}
-		}
-		ns := checkers.NewNamespace(test.namespace)
 		c.Logf("test %d: %s", i, test.about)
-		ms := make(macaroon.Slice, len(test.caveats))
-		for i, caveats := range test.caveats {
-			m, err := macaroon.New(nil, []byte(fmt.Sprint(i)), "", macaroon.LatestVersion)
-			c.Assert(err, gc.IsNil)
-			for _, cav := range caveats {
-				cav = ns.ResolveCaveat(cav)
-				if cav.Location == "" {
-					m.AddFirstPartyCaveat(cav.Condition)
-				} else {
-					m.AddThirdPartyCaveat(nil, []byte(cav.Condition), cav.Location)
-				}
-			}
-			ms[i] = m
-		}
-		c.Assert(checkers.InferDeclared(nil, ms), jc.DeepEquals, test.expect)
+		c.Assert(checkers.InferDeclared(test.declCond, test.conditions), gc.Equals, test.expect)
 	}
 }
 

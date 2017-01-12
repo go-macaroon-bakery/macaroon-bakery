@@ -18,7 +18,6 @@ const StdNamespace = "std"
 // First and third party caveat conditions are both defined here,
 // even though notionally they exist in separate name spaces.
 const (
-	CondDeclared   = "declared"
 	CondTimeBefore = "time-before"
 	CondError      = "error"
 	CondAllow      = "allow"
@@ -26,6 +25,7 @@ const (
 )
 
 const (
+	// TODO(rog) remove this.
 	CondNeedDeclared = "need-declared"
 )
 
@@ -50,7 +50,6 @@ type CheckerInfo struct {
 
 var allCheckers = map[string]Func{
 	CondTimeBefore: checkTimeBefore,
-	CondDeclared:   checkDeclared,
 	CondAllow:      checkAllow,
 	CondDeny:       checkDeny,
 	CondError:      checkError,
