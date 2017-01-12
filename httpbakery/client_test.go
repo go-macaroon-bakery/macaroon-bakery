@@ -220,7 +220,7 @@ func assertDischargeServerDischargesConditionForVersion(c *gc.C, cond string, ve
 	called := 0
 	checker := func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 		called++
-		c.Check(cav.Condition, gc.Equals, cond)
+		c.Check(string(cav.Condition), gc.Equals, cond)
 		return nil, nil
 	}
 	discharger := bakerytest.NewDischarger(nil, httpbakery.ThirdPartyCaveatCheckerFunc(checker))
@@ -313,7 +313,7 @@ func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
 	db1 := newBakery("loc", locator, nil)
 	key2, h2 := newHTTPDischarger(db1, httpbakery.ThirdPartyCaveatCheckerFunc(func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 		called[2]++
-		if cav.Condition != "is-ok" {
+		if string(cav.Condition) != "is-ok" {
 			return nil, fmt.Errorf("unrecognized caveat at srv2")
 		}
 		return nil, nil
@@ -335,7 +335,7 @@ func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
 				authLocation: srv2.URL,
 			}, err, req)
 		}
-		if cav.Condition != "is-ok" {
+		if string(cav.Condition) != "is-ok" {
 			return nil, fmt.Errorf("unrecognized caveat at srv1")
 		}
 		return nil, nil
@@ -373,7 +373,7 @@ func (s *ClientSuite) TestTwoDischargesRequired(c *gc.C) {
 
 	dischargeCount := 0
 	checker := func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
-		c.Check(cav.Condition, gc.Equals, "is-ok")
+		c.Check(string(cav.Condition), gc.Equals, "is-ok")
 		dischargeCount++
 		return nil, nil
 	}

@@ -123,7 +123,7 @@ func NewDischarger(
 // It parses the caveat's condition and calls the function with the result.
 func ConditionParser(check func(cond, arg string) ([]checkers.Caveat, error)) httpbakery.ThirdPartyCaveatChecker {
 	f := func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
-		cond, arg, err := checkers.ParseCaveat(cav.Condition)
+		cond, arg, err := checkers.ParseCaveat(string(cav.Condition))
 		if err != nil {
 			return nil, err
 		}

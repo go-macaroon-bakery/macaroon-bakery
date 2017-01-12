@@ -36,7 +36,7 @@ func (s *codecSuite) TestV1RoundTrip(c *gc.C) {
 	c.Assert(res, jc.DeepEquals, &ThirdPartyCaveatInfo{
 		FirstPartyPublicKey: s.firstPartyKey.Public,
 		RootKey:             []byte("a random string"),
-		Condition:           "is-authenticated-user",
+		Condition:           []byte("is-authenticated-user"),
 		Caveat:              cid,
 		ThirdPartyKeyPair:   *s.thirdPartyKey,
 		Version:             Version1,
@@ -54,7 +54,7 @@ func (s *codecSuite) TestV2RoundTrip(c *gc.C) {
 	c.Assert(res, jc.DeepEquals, &ThirdPartyCaveatInfo{
 		FirstPartyPublicKey: s.firstPartyKey.Public,
 		RootKey:             []byte("a random string"),
-		Condition:           "is-authenticated-user",
+		Condition:           []byte("is-authenticated-user"),
 		Caveat:              cid,
 		ThirdPartyKeyPair:   *s.thirdPartyKey,
 		Version:             Version2,
@@ -75,7 +75,7 @@ func (s *codecSuite) TestV3RoundTrip(c *gc.C) {
 	c.Assert(res, jc.DeepEquals, &ThirdPartyCaveatInfo{
 		FirstPartyPublicKey: s.firstPartyKey.Public,
 		RootKey:             []byte("a random string"),
-		Condition:           "is-authenticated-user",
+		Condition:           []byte("is-authenticated-user"),
 		Caveat:              cid,
 		ThirdPartyKeyPair:   *s.thirdPartyKey,
 		Version:             Version3,
@@ -146,7 +146,7 @@ func (s *codecSuite) TestV2EmptyRootKey(c *gc.C) {
 	c.Assert(res, jc.DeepEquals, &ThirdPartyCaveatInfo{
 		FirstPartyPublicKey: s.firstPartyKey.Public,
 		RootKey:             []byte{},
-		Condition:           "is-authenticated-user",
+		Condition:           []byte("is-authenticated-user"),
 		Caveat:              cid,
 		ThirdPartyKeyPair:   *s.thirdPartyKey,
 		Version:             Version2,
@@ -163,7 +163,7 @@ func (s *codecSuite) TestV2LongRootKey(c *gc.C) {
 	c.Assert(res, jc.DeepEquals, &ThirdPartyCaveatInfo{
 		FirstPartyPublicKey: s.firstPartyKey.Public,
 		RootKey:             bytes.Repeat([]byte{0}, 65536),
-		Condition:           "is-authenticated-user",
+		Condition:           []byte("is-authenticated-user"),
 		Caveat:              cid,
 		ThirdPartyKeyPair:   *s.thirdPartyKey,
 		Version:             Version2,

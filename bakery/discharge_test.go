@@ -89,7 +89,7 @@ func (*DischargeSuite) TestDischargeAllManyDischargesWithRealThirdPartyCaveats(c
 	const totalDischargesRequired = 40
 	stillRequired := totalDischargesRequired
 	checker := func(_ context.Context, ci *bakery.ThirdPartyCaveatInfo) (caveats []checkers.Caveat, _ error) {
-		if ci.Condition != "something" {
+		if string(ci.Condition) != "something" {
 			return nil, errgo.Newf("unexpected condition")
 		}
 		for i := 0; i < 3; i++ {

@@ -125,7 +125,7 @@ func strCheck(ctxt context.Context, cond, args string) error {
 type thirdPartyStrcmpChecker string
 
 func (c thirdPartyStrcmpChecker) CheckThirdPartyCaveat(_ context.Context, cavInfo *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
-	if cavInfo.Condition != string(c) {
+	if string(cavInfo.Condition) != string(c) {
 		return nil, fmt.Errorf("%s doesn't match %s", cavInfo.Condition, c)
 	}
 	return nil, nil

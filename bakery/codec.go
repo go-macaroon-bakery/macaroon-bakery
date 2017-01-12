@@ -266,7 +266,7 @@ func decodeCaveatV1(key *KeyPair, caveat []byte) (*ThirdPartyCaveatInfo, error) 
 		return nil, errgo.Notef(err, "cannot decode third party caveat record")
 	}
 	return &ThirdPartyCaveatInfo{
-		Condition:           record.Condition,
+		Condition:           []byte(record.Condition),
 		FirstPartyPublicKey: *wrapper.FirstPartyPublicKey,
 		ThirdPartyKeyPair:   *key,
 		RootKey:             record.RootKey,
@@ -316,18 +316,21 @@ func decodeCaveatV2V3(version Version, key *KeyPair, caveat []byte) (*ThirdParty
 	}, nil
 }
 
-func decodeSecretPartV2V3(version Version, data []byte) (rootKey []byte, ns *checkers.Namespace, condition string, err error) {
+func decodeSecretPartV2V3(version Version, data []byte) (rootKey []byte, ns *checkers.Namespace, condition []byte, err error) {
+	fail := func(err error) ([]byte, *checkers.Namespace, []byte, error) {
+		return nil, nil, nil, err
+	}
 	if len(data) < 1 {
-		return nil, nil, "", errgo.New("secret part too short")
+		return fail(errgo.New("secret part too short"))
 	}
 	gotVersion, data := data[0], data[1:]
 	if version != Version(gotVersion) {
-		return nil, nil, "", errgo.Newf("unexpected secret part version, got %d want %d", gotVersion, version)
+		return fail(errgo.Newf("unexpected secret part version, got %d want %d", gotVersion, version))
 	}
 
 	l, n := binary.Uvarint(data)
 	if n <= 0 || uint64(n)+l > uint64(len(data)) {
-		return nil, nil, "", errgo.Newf("invalid root key length")
+		return fail(errgo.Newf("invalid root key length"))
 	}
 	data = data[n:]
 	rootKey, data = data[:l], data[l:]
@@ -338,18 +341,18 @@ func decodeSecretPartV2V3(version Version, data []byte) (rootKey []byte, ns *che
 
 		l, n = binary.Uvarint(data)
 		if n <= 0 || uint64(n)+l > uint64(len(data)) {
-			return nil, nil, "", errgo.Newf("invalid namespace length")
+			return fail(errgo.Newf("invalid namespace length"))
 		}
 		data = data[n:]
 		nsData, data = data[:l], data[l:]
 		if err := ns1.UnmarshalText(nsData); err != nil {
-			return nil, nil, "", errgo.Notef(err, "cannot unmarshal namespace")
+			return fail(errgo.Notef(err, "cannot unmarshal namespace"))
 		}
 		ns = &ns1
 	} else {
 		ns = legacyNamespace()
 	}
-	return rootKey, ns, string(data), nil
+	return rootKey, ns, data, nil
 }
 
 // appendUvarint appends n to data encoded as a variable-length
