@@ -219,8 +219,8 @@ func (s *ServiceSuite) TestNeedDeclaredPreV3(c *gc.C) {
 
 	// Make sure the macaroons actually check out correctly
 	// when provided with the declared checker.
-	ctxt := checkers.ContextWithDeclared(testContext, declared)
-	_, err = firstParty.Checker.Auth(d).Allow(ctxt, bakery.LoginOp)
+	ctx := checkers.ContextWithDeclared(testContext, declared)
+	_, err = firstParty.Checker.Auth(d).Allow(ctx, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
 
 	// Try again when the third party does add a required declaration.
@@ -241,8 +241,8 @@ func (s *ServiceSuite) TestNeedDeclaredPreV3(c *gc.C) {
 		Value:     "foo a",
 	})
 
-	ctxt = checkers.ContextWithDeclared(testContext, declared)
-	_, err = firstParty.Checker.Auth(d).Allow(ctxt, bakery.LoginOp)
+	ctx = checkers.ContextWithDeclared(testContext, declared)
+	_, err = firstParty.Checker.Auth(d).Allow(ctx, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
 
 	// Try again, but this time pretend a client is sneakily trying
@@ -268,7 +268,7 @@ func (s *ServiceSuite) TestNeedDeclaredPreV3(c *gc.C) {
 		Condition: "declared",
 	})
 
-	ctxt = checkers.ContextWithDeclared(testContext, declared)
+	ctx = checkers.ContextWithDeclared(testContext, declared)
 	_, err = firstParty.Checker.Auth(d).Allow(testContext, bakery.LoginOp)
 	c.Assert(err, gc.ErrorMatches, `cannot authorize login macaroon: caveat "declared foo a" not satisfied: got "foo a", expected ""`)
 }

@@ -15,12 +15,12 @@ type httpRequestKey struct{}
 // ContextWithRequest returns the context with information from the
 // given request attached as context.  This is used by the httpbakery
 // checkers (see RegisterCheckers for details).
-func ContextWithRequest(ctxt context.Context, req *http.Request) context.Context {
-	return context.WithValue(ctxt, httpRequestKey{}, req)
+func ContextWithRequest(ctx context.Context, req *http.Request) context.Context {
+	return context.WithValue(ctx, httpRequestKey{}, req)
 }
 
-func requestFromContext(ctxt context.Context) *http.Request {
-	req, _ := ctxt.Value(httpRequestKey{}).(*http.Request)
+func requestFromContext(ctx context.Context) *http.Request {
+	req, _ := ctx.Value(httpRequestKey{}).(*http.Request)
 	return req
 }
 
@@ -72,8 +72,8 @@ func NewChecker() *checkers.Checker {
 
 // ipAddrCheck implements the IP client address checker
 // for an HTTP request.
-func ipAddrCheck(ctxt context.Context, cond, args string) error {
-	req := requestFromContext(ctxt)
+func ipAddrCheck(ctx context.Context, cond, args string) error {
+	req := requestFromContext(ctx)
 	if req == nil {
 		return errgo.Newf("no IP address found in context")
 	}
@@ -96,8 +96,8 @@ func ipAddrCheck(ctxt context.Context, cond, args string) error {
 
 // clientOriginCheck implements the Origin header checker
 // for an HTTP request.
-func clientOriginCheck(ctxt context.Context, cond, args string) error {
-	req := requestFromContext(ctxt)
+func clientOriginCheck(ctx context.Context, cond, args string) error {
+	req := requestFromContext(ctx)
 	if req == nil {
 		return errgo.Newf("no origin found in context")
 	}

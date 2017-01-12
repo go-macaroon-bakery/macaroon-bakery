@@ -33,7 +33,7 @@ const (
 // cond parameter will hold the caveat condition including any namespace
 // prefix; the arg parameter will hold any additional caveat argument
 // text.
-type Func func(ctxt context.Context, cond, arg string) error
+type Func func(ctx context.Context, cond, arg string) error
 
 // CheckerInfo holds information on a registered checker.
 type CheckerInfo struct {
@@ -140,7 +140,7 @@ func (c *Checker) Namespace() *Namespace {
 
 // CheckFirstPartyCaveat implements bakery.FirstPartyCaveatChecker
 // by checking the caveat against all registered caveats conditions.
-func (c *Checker) CheckFirstPartyCaveat(ctxt context.Context, cav string) error {
+func (c *Checker) CheckFirstPartyCaveat(ctx context.Context, cav string) error {
 	cond, arg, err := ParseCaveat(cav)
 	if err != nil {
 		// If we can't parse it, perhaps it's in some other format,
@@ -151,7 +151,7 @@ func (c *Checker) CheckFirstPartyCaveat(ctxt context.Context, cav string) error 
 	if !ok {
 		return errgo.NoteMask(ErrCaveatNotRecognized, fmt.Sprintf("caveat %q not satisfied", cav), errgo.Any)
 	}
-	if err := cf.Check(ctxt, cond, arg); err != nil {
+	if err := cf.Check(ctx, cond, arg); err != nil {
 		return errgo.NoteMask(err, fmt.Sprintf("caveat %q not satisfied", cav), errgo.Any)
 	}
 	return nil
@@ -159,7 +159,7 @@ func (c *Checker) CheckFirstPartyCaveat(ctxt context.Context, cav string) error 
 
 var errBadCaveat = errgo.New("bad caveat")
 
-func checkError(ctxt context.Context, _, arg string) error {
+func checkError(ctx context.Context, _, arg string) error {
 	return errBadCaveat
 }
 

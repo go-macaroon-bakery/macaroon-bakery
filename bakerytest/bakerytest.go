@@ -151,7 +151,7 @@ func (d *Discharger) Location() string {
 }
 
 // PublicKeyForLocation implements bakery.PublicKeyLocator.
-func (d *Discharger) ThirdPartyInfo(ctxt context.Context, loc string) (bakery.ThirdPartyInfo, error) {
+func (d *Discharger) ThirdPartyInfo(ctx context.Context, loc string) (bakery.ThirdPartyInfo, error) {
 	if loc == d.Location() {
 		return bakery.ThirdPartyInfo{
 			PublicKey: d.Key.Public,
@@ -268,7 +268,7 @@ func (d *InteractiveDischarger) SetChecker(c httpbakery.ThirdPartyCaveatChecker)
 
 // CheckThirdPartyCaveat implements httpbakery.ThirdPartyCaveatDischarger
 // by always returning an interaction-required error.
-func (d *InteractiveDischarger) CheckThirdPartyCaveat(ctxt context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+func (d *InteractiveDischarger) CheckThirdPartyCaveat(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
 	d.mu.Lock()
 	id := fmt.Sprintf("%d", d.id)
 	d.id++

@@ -158,11 +158,11 @@ func (s *CheckersSuite) TestCheckers(c *gc.C) {
 	checker := httpbakery.NewChecker()
 	for i, test := range checkerTests {
 		c.Logf("test %d: %s", i, test.about)
-		ctxt := httpbakery.ContextWithRequest(testContext, test.req)
+		ctx := httpbakery.ContextWithRequest(testContext, test.req)
 		for j, check := range test.checks {
 			c.Logf("\tcheck %d", j)
 
-			err := checker.CheckFirstPartyCaveat(ctxt, checker.Namespace().ResolveCaveat(check.caveat).Condition)
+			err := checker.CheckFirstPartyCaveat(ctx, checker.Namespace().ResolveCaveat(check.caveat).Condition)
 			if check.expectError != "" {
 				c.Assert(err, gc.ErrorMatches, check.expectError)
 				if check.expectCause == nil {

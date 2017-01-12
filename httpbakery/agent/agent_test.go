@@ -456,7 +456,7 @@ type idmClient struct {
 	dischargerURL string
 }
 
-func (c idmClient) IdentityFromContext(ctxt context.Context) (bakery.Identity, []checkers.Caveat, error) {
+func (c idmClient) IdentityFromContext(ctx context.Context) (bakery.Identity, []checkers.Caveat, error) {
 	return nil, identityCaveats(c.dischargerURL), nil
 }
 

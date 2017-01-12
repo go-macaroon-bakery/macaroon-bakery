@@ -544,7 +544,7 @@ func (s *ClientSuite) TestMacaroonCookieName(c *gc.C) {
 	checked := make(map[string]bool)
 	checker := checkers.New(nil)
 	checker.Namespace().Register("testns", "")
-	checker.Register("once", "testns", func(ctxt context.Context, _, arg string) error {
+	checker.Register("once", "testns", func(ctx context.Context, _, arg string) error {
 		if checked[arg] {
 			return errgo.Newf("caveat %q has already been checked once", arg)
 		}
@@ -1297,7 +1297,7 @@ func isSomethingCaveat() checkers.Caveat {
 	}
 }
 
-func checkIsSomething(ctxt context.Context, _, arg string) error {
+func checkIsSomething(ctx context.Context, _, arg string) error {
 	if arg != "something" {
 		return fmt.Errorf(`%v doesn't match "something"`, arg)
 	}

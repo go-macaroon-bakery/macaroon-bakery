@@ -36,12 +36,12 @@ type declaredKey string
 
 // ContextWithDeclared returns a context with attached declared information,
 // as returned from InferDeclared.
-func ContextWithDeclared(ctxt context.Context, declared Declared) context.Context {
-	return context.WithValue(ctxt, declaredKey(declared.Condition), declared.Value)
+func ContextWithDeclared(ctx context.Context, declared Declared) context.Context {
+	return context.WithValue(ctx, declaredKey(declared.Condition), declared.Value)
 }
 
-func declaredFromContext(ctxt context.Context, cond string) string {
-	val, _ := ctxt.Value(declaredKey(cond)).(string)
+func declaredFromContext(ctx context.Context, cond string) string {
+	val, _ := ctx.Value(declaredKey(cond)).(string)
 	return val
 }
 

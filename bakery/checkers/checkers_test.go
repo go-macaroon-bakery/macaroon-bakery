@@ -28,7 +28,7 @@ func (testClock) Now() time.Time {
 // FirstPartyCaveatChecker is declared here so we can avoid a cyclic
 // dependency on the bakery.
 type FirstPartyCaveatChecker interface {
-	CheckFirstPartyCaveat(ctxt context.Context, caveat string) error
+	CheckFirstPartyCaveat(ctx context.Context, caveat string) error
 }
 
 type checkTest struct {
@@ -71,8 +71,8 @@ var checkerTests = []struct {
 	}},
 }, {
 	about: "time from clock",
-	addContext: func(ctxt context.Context) context.Context {
-		return checkers.ContextWithClock(ctxt, testClock{})
+	addContext: func(ctx context.Context) context.Context {
+		return checkers.ContextWithClock(ctx, testClock{})
 	},
 	checks: []checkTest{{
 		caveat: checkers.TimeBeforeCaveat(now.Add(1)).Condition,
@@ -109,8 +109,8 @@ var checkerTests = []struct {
 	}},
 }, {
 	about: "declared, some entries",
-	addContext: func(ctxt context.Context) context.Context {
-		return checkers.ContextWithDeclared(ctxt, checkers.Declared{
+	addContext: func(ctx context.Context) context.Context {
+		return checkers.ContextWithDeclared(ctx, checkers.Declared{
 			Condition: "t:declared-foo",
 			Value:     "aval",
 		})
@@ -157,13 +157,13 @@ func (s *CheckersSuite) TestCheckers(c *gc.C) {
 	checkers.RegisterDeclaredCaveat(checker, "declared-foo", "testns")
 	for i, test := range checkerTests {
 		c.Logf("test %d: %s", i, test.about)
-		ctxt := context.Background()
+		ctx := context.Background()
 		if test.addContext != nil {
-			ctxt = test.addContext(ctxt)
+			ctx = test.addContext(ctx)
 		}
 		for j, check := range test.checks {
 			c.Logf("\tcheck %d", j)
-			err := checker.CheckFirstPartyCaveat(ctxt, check.caveat)
+			err := checker.CheckFirstPartyCaveat(ctx, check.caveat)
 			if check.expectError != "" {
 				c.Assert(err, gc.ErrorMatches, check.expectError)
 				if check.expectCause == nil {
@@ -323,8 +323,8 @@ func (*CheckersSuite) TestOperationsChecker(c *gc.C) {
 	checker := checkers.New(nil)
 	for i, test := range operationsCheckerTests {
 		c.Logf("%d: %s", i, test.about)
-		ctxt := checkers.ContextWithOperations(context.Background(), test.ops...)
-		err := checker.CheckFirstPartyCaveat(ctxt, test.caveat.Condition)
+		ctx := checkers.ContextWithOperations(context.Background(), test.ops...)
+		err := checker.CheckFirstPartyCaveat(ctx, test.caveat.Condition)
 		if test.expectError == "" {
 			c.Assert(err, gc.IsNil)
 			continue
@@ -408,7 +408,7 @@ func (*CheckersSuite) TestCheckerInfo(c *gc.C) {
 
 	var calledVal string
 	register := func(name, ns string) {
-		checker.Register(name, ns, func(ctxt context.Context, cond, arg string) error {
+		checker.Register(name, ns, func(ctx context.Context, cond, arg string) error {
 			calledVal = name + " " + ns
 			return nil
 		})
@@ -464,6 +464,6 @@ func (*CheckersSuite) TestCheckerInfo(c *gc.C) {
 	c.Assert(infos, jc.DeepEquals, expect)
 }
 
-func succeed(ctxt context.Context, cond, arg string) error {
+func succeed(ctx context.Context, cond, arg string) error {
 	return nil
 }

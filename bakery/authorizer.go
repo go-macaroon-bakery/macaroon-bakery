@@ -21,7 +21,7 @@ type Authorizer interface {
 	// third party caveats that apply.
 	// If allowed is shorter then ops, the additional elements are assumed to
 	// be false.
-	Authorize(ctxt context.Context, id Identity, ops []Op) (allowed []bool, caveats []checkers.Caveat, err error)
+	Authorize(ctx context.Context, id Identity, ops []Op) (allowed []bool, caveats []checkers.Caveat, err error)
 }
 
 var (
@@ -43,7 +43,7 @@ var (
 type openAuthorizer struct{}
 
 // Authorize implements Authorizer.Authorize.
-func (openAuthorizer) Authorize(ctxt context.Context, id Identity, ops []Op) (allowed []bool, caveats []checkers.Caveat, err error) {
+func (openAuthorizer) Authorize(ctx context.Context, id Identity, ops []Op) (allowed []bool, caveats []checkers.Caveat, err error) {
 	allowed = make([]bool, len(ops))
 	for i := range allowed {
 		allowed[i] = true
@@ -54,20 +54,20 @@ func (openAuthorizer) Authorize(ctxt context.Context, id Identity, ops []Op) (al
 type closedAuthorizer struct{}
 
 // Authorize implements Authorizer.Authorize.
-func (closedAuthorizer) Authorize(ctxt context.Context, id Identity, ops []Op) (allowed []bool, caveats []checkers.Caveat, err error) {
+func (closedAuthorizer) Authorize(ctx context.Context, id Identity, ops []Op) (allowed []bool, caveats []checkers.Caveat, err error) {
 	return make([]bool, len(ops)), nil, nil
 }
 
 // AuthorizerFunc implements a simplified version of Authorizer
 // that operates on a single operation at a time.
-type AuthorizerFunc func(ctxt context.Context, id Identity, op Op) (bool, []checkers.Caveat, error)
+type AuthorizerFunc func(ctx context.Context, id Identity, op Op) (bool, []checkers.Caveat, error)
 
 // Authorize implements Authorizer.Authorize by calling f
 // with the given identity for each operation.
-func (f AuthorizerFunc) Authorize(ctxt context.Context, id Identity, ops []Op) (allowed []bool, caveats []checkers.Caveat, err error) {
+func (f AuthorizerFunc) Authorize(ctx context.Context, id Identity, ops []Op) (allowed []bool, caveats []checkers.Caveat, err error) {
 	allowed = make([]bool, len(ops))
 	for i, op := range ops {
-		ok, fcaveats, err := f(ctxt, id, op)
+		ok, fcaveats, err := f(ctx, id, op)
 		if err != nil {
 			return nil, nil, errgo.Mask(err)
 		}
@@ -90,7 +90,7 @@ type ACLIdentity interface {
 
 	// Allow reports whether the user should be allowed to access
 	// any of the users or groups in the given ACL slice.
-	Allow(ctxt context.Context, acl []string) (bool, error)
+	Allow(ctx context.Context, acl []string) (bool, error)
 }
 
 // ACLAuthorizer is an Authorizer implementation that will check access
@@ -109,13 +109,13 @@ type ACLAuthorizer struct {
 	// GetACL returns the ACL that applies to the given operation.
 	// If an entity cannot be found or the action is not recognised,
 	// GetACLs should return an empty ACL but no error.
-	GetACL func(ctxt context.Context, op Op) ([]string, error)
+	GetACL func(ctx context.Context, op Op) ([]string, error)
 }
 
 // Authorize implements Authorizer.Authorize by calling ident.Allow to determine
 // whether the identity is a member of the ACLs associated with the given
 // operations.
-func (a ACLAuthorizer) Authorize(ctxt context.Context, ident Identity, ops []Op) (allowed []bool, caveats []checkers.Caveat, err error) {
+func (a ACLAuthorizer) Authorize(ctx context.Context, ident Identity, ops []Op) (allowed []bool, caveats []checkers.Caveat, err error) {
 	if len(ops) == 0 {
 		// Anyone is allowed to do nothing.
 		return nil, nil, nil
@@ -123,12 +123,12 @@ func (a ACLAuthorizer) Authorize(ctxt context.Context, ident Identity, ops []Op)
 	ident1, _ := ident.(ACLIdentity)
 	allowed = make([]bool, len(ops))
 	for i, op := range ops {
-		acl, err := a.GetACL(ctxt, op)
+		acl, err := a.GetACL(ctx, op)
 		if err != nil {
 			return nil, nil, errgo.Mask(err)
 		}
 		if ident1 != nil {
-			allowed[i], err = ident1.Allow(ctxt, acl)
+			allowed[i], err = ident1.Allow(ctx, acl)
 			if err != nil {
 				return nil, nil, errgo.Notef(err, "cannot check permissions")
 			}

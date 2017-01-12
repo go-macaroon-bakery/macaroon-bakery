@@ -99,7 +99,7 @@ func NewOven(p OvenParams) *Oven {
 //
 // For macaroons minted with previous bakery versions, it always
 // returns a single LoginOp operation.
-func (o *Oven) MacaroonOps(ctxt context.Context, ms macaroon.Slice) (ops []Op, conditions []string, err error) {
+func (o *Oven) MacaroonOps(ctx context.Context, ms macaroon.Slice) (ops []Op, conditions []string, err error) {
 	if len(ms) == 0 {
 		return nil, nil, errgo.Newf("no macaroons in slice")
 	}
@@ -107,7 +107,7 @@ func (o *Oven) MacaroonOps(ctxt context.Context, ms macaroon.Slice) (ops []Op, c
 	if err != nil {
 		return nil, nil, errgo.Mask(err)
 	}
-	rootKey, err := o.p.RootKeyStoreForOps(ops).Get(ctxt, storageId)
+	rootKey, err := o.p.RootKeyStoreForOps(ops).Get(ctx, storageId)
 	if err != nil {
 		if errgo.Cause(err) != ErrNotFound {
 			return nil, nil, errgo.Notef(err, "cannot get macaroon")
@@ -127,7 +127,7 @@ func (o *Oven) MacaroonOps(ctxt context.Context, ms macaroon.Slice) (ops []Op, c
 	}
 	if o.p.OpsStore != nil && len(ops) == 1 && strings.HasPrefix(ops[0].Entity, "multi-") {
 		// It's a multi-op entity, so retrieve the actual operations it's associated with.
-		ops, err = o.p.OpsStore.GetOps(ctxt, ops[0].Entity)
+		ops, err = o.p.OpsStore.GetOps(ctx, ops[0].Entity)
 		if err != nil {
 			return nil, nil, errgo.Notef(err, "cannot get operations for %q", ops[0].Entity)
 		}
@@ -197,16 +197,16 @@ func decodeMacaroonId(id []byte) (storageId []byte, ops []Op, err error) {
 //
 // The macaroon will expire at the given time - a TimeBefore first party caveat will be added with
 // that time.
-func (o *Oven) NewMacaroon(ctxt context.Context, version Version, expiry time.Time, caveats []checkers.Caveat, ops ...Op) (*Macaroon, error) {
+func (o *Oven) NewMacaroon(ctx context.Context, version Version, expiry time.Time, caveats []checkers.Caveat, ops ...Op) (*Macaroon, error) {
 	if len(ops) == 0 {
 		return nil, errgo.Newf("cannot mint a macaroon associated with no operations")
 	}
 	ops = CanonicalOps(ops)
-	rootKey, storageId, err := o.p.RootKeyStoreForOps(ops).RootKey(ctxt)
+	rootKey, storageId, err := o.p.RootKeyStoreForOps(ops).RootKey(ctx)
 	if err != nil {
 		return nil, errgo.Mask(err)
 	}
-	id, err := o.newMacaroonId(ctxt, ops, storageId, expiry)
+	id, err := o.newMacaroonId(ctx, ops, storageId, expiry)
 	if err != nil {
 		return nil, errgo.Mask(err)
 	}
@@ -230,10 +230,10 @@ func (o *Oven) NewMacaroon(ctxt context.Context, version Version, expiry time.Ti
 	if err != nil {
 		return nil, errgo.Notef(err, "cannot create macaroon")
 	}
-	if err := o.AddCaveat(ctxt, m, checkers.TimeBeforeCaveat(expiry)); err != nil {
+	if err := o.AddCaveat(ctx, m, checkers.TimeBeforeCaveat(expiry)); err != nil {
 		return nil, errgo.Mask(err)
 	}
-	if err := o.AddCaveats(ctxt, m, caveats); err != nil {
+	if err := o.AddCaveats(ctx, m, caveats); err != nil {
 		return nil, errgo.Mask(err)
 	}
 	return m, nil
@@ -245,8 +245,8 @@ func (o *Oven) AddCaveat(ctx context.Context, m *Macaroon, cav checkers.Caveat) 
 }
 
 // AddCaveats adds all the caveats to the given macaroon.
-func (o *Oven) AddCaveats(ctxt context.Context, m *Macaroon, caveats []checkers.Caveat) error {
-	return m.AddCaveats(ctxt, caveats, o.p.Key, o.p.Locator)
+func (o *Oven) AddCaveats(ctx context.Context, m *Macaroon, caveats []checkers.Caveat) error {
+	return m.AddCaveats(ctx, caveats, o.p.Key, o.p.Locator)
 }
 
 // Key returns the oven's private/public key par.
@@ -290,7 +290,7 @@ func CanonicalOps(ops []Op) []Op {
 	return canonOps[0 : j+1]
 }
 
-func (o *Oven) newMacaroonId(ctxt context.Context, ops []Op, storageId []byte, expiry time.Time) (*macaroonpb.MacaroonId, error) {
+func (o *Oven) newMacaroonId(ctx context.Context, ops []Op, storageId []byte, expiry time.Time) (*macaroonpb.MacaroonId, error) {
 	uuid := uuidGen.Next()
 	nonce := uuid[0:16]
 	if len(ops) == 1 || o.p.OpsStore == nil {
@@ -303,7 +303,7 @@ func (o *Oven) newMacaroonId(ctxt context.Context, ops []Op, storageId []byte, e
 	// We've got several operations and a multi-op store, so use the store.
 	// TODO use the store only if the encoded macaroon id exceeds some size?
 	entity := newOpsEntity(ops)
-	if err := o.p.OpsStore.PutOps(ctxt, entity, ops, expiry); err != nil {
+	if err := o.p.OpsStore.PutOps(ctx, entity, ops, expiry); err != nil {
 		return nil, errgo.Notef(err, "cannot store ops")
 	}
 	return &macaroonpb.MacaroonId{

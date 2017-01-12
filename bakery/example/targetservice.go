@@ -54,8 +54,8 @@ func targetService(endpoint, authEndpoint string, authPK *bakery.PublicKey) (htt
 }
 
 func (srv *targetServiceHandler) serveGold(w http.ResponseWriter, req *http.Request) {
-	ctxt := checkers.ContextWithOperations(context.TODO(), "gold")
-	if _, _, err := httpbakery.CheckRequest(ctxt, srv.svc, req, nil); err != nil {
+	ctx := checkers.ContextWithOperations(context.TODO(), "gold")
+	if _, _, err := httpbakery.CheckRequest(ctx, srv.svc, req, nil); err != nil {
 		srv.writeError(w, req, "gold", err)
 		return
 	}
@@ -63,8 +63,8 @@ func (srv *targetServiceHandler) serveGold(w http.ResponseWriter, req *http.Requ
 }
 
 func (srv *targetServiceHandler) serveSilver(w http.ResponseWriter, req *http.Request) {
-	ctxt := checkers.ContextWithOperations(context.TODO(), "silver")
-	if _, _, err := httpbakery.CheckRequest(ctxt, srv.svc, req, nil); err != nil {
+	ctx := checkers.ContextWithOperations(context.TODO(), "silver")
+	if _, _, err := httpbakery.CheckRequest(ctx, srv.svc, req, nil); err != nil {
 		srv.writeError(w, req, "silver", err)
 		return
 	}

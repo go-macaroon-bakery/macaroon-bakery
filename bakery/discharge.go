@@ -37,7 +37,7 @@ func DischargeAll(
 // When localKey is nil, DischargeAllWithKey is exactly the same as
 // DischargeAll.
 func DischargeAllWithKey(
-	ctxt context.Context,
+	ctx context.Context,
 	m *Macaroon,
 	getDischarge func(ctx context.Context, cav macaroon.Caveat, encodedCaveat []byte) (*Macaroon, error),
 	localKey *KeyPair,
@@ -73,7 +73,7 @@ func DischargeAllWithKey(
 		var err error
 		if localKey != nil && cav.cav.Location == "local" {
 			// TODO use a small caveat id.
-			dm, err = Discharge(ctxt, DischargeParams{
+			dm, err = Discharge(ctx, DischargeParams{
 				Key:     localKey,
 				Checker: localDischargeChecker,
 				Caveat:  cav.encryptedCaveat,
@@ -81,7 +81,7 @@ func DischargeAllWithKey(
 				Locator: emptyLocator{},
 			})
 		} else {
-			dm, err = getDischarge(ctxt, cav.cav, cav.encryptedCaveat)
+			dm, err = getDischarge(ctx, cav.cav, cav.encryptedCaveat)
 		}
 		if err != nil {
 			return nil, errgo.NoteMask(err, fmt.Sprintf("cannot get discharge from %q", cav.cav.Location), errgo.Any)

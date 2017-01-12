@@ -258,7 +258,7 @@ type recordingChecker struct {
 	caveats []string
 }
 
-func (c *recordingChecker) CheckFirstPartyCaveat(ctxt context.Context, caveat string) error {
+func (c *recordingChecker) CheckFirstPartyCaveat(ctx context.Context, caveat string) error {
 	c.caveats = append(c.caveats, caveat)
 	return nil
 }

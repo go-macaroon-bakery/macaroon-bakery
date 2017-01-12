@@ -70,7 +70,7 @@ func noDischarge(c *gc.C) func(context.Context, macaroon.Caveat, []byte) (*baker
 // own checking of declaration caveats.
 type oneIdentity struct{}
 
-func (oneIdentity) IdentityFromContext(ctxt context.Context) (bakery.Identity, []checkers.Caveat, error) {
+func (oneIdentity) IdentityFromContext(ctx context.Context) (bakery.Identity, []checkers.Caveat, error) {
 	return nil, nil, nil
 }
 
@@ -113,14 +113,14 @@ func trueCaveat(s string) checkers.Caveat {
 }
 
 // trueCheck always succeeds.
-func trueCheck(ctxt context.Context, cond, args string) error {
+func trueCheck(ctx context.Context, cond, args string) error {
 	return nil
 }
 
 // strCheck checks that the string value in the context
 // matches the argument to the condition.
-func strCheck(ctxt context.Context, cond, args string) error {
-	expect, _ := ctxt.Value(strKey{}).(string)
+func strCheck(ctx context.Context, cond, args string) error {
+	expect, _ := ctx.Value(strKey{}).(string)
 	if args != expect {
 		return fmt.Errorf("%s doesn't match %s", cond, expect)
 	}
@@ -164,12 +164,12 @@ type basicAuth struct {
 	user, password string
 }
 
-func contextWithBasicAuth(ctxt context.Context, user, password string) context.Context {
-	return context.WithValue(ctxt, basicAuthKey{}, basicAuth{user, password})
+func contextWithBasicAuth(ctx context.Context, user, password string) context.Context {
+	return context.WithValue(ctx, basicAuthKey{}, basicAuth{user, password})
 }
 
-func basicAuthFromContext(ctxt context.Context) (user, password string) {
-	auth, _ := ctxt.Value(basicAuthKey{}).(basicAuth)
+func basicAuthFromContext(ctx context.Context) (user, password string) {
+	auth, _ := ctx.Value(basicAuthKey{}).(basicAuth)
 	return auth.user, auth.password
 }
 

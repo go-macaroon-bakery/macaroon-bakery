@@ -95,7 +95,7 @@ type ThirdPartyInfo struct {
 type ThirdPartyLocator interface {
 	// ThirdPartyInfo returns information on the third
 	// party at the given location. It returns ErrNotFound if no match is found.
-	ThirdPartyInfo(ctxt context.Context, loc string) (ThirdPartyInfo, error)
+	ThirdPartyInfo(ctx context.Context, loc string) (ThirdPartyInfo, error)
 }
 
 // ThirdPartyLocatorMap implements a simple ThirdPartyLocator.
@@ -123,7 +123,7 @@ func canonicalLocation(loc string) string {
 }
 
 // ThirdPartyInfo implements the ThirdPartyLocator interface.
-func (s *ThirdPartyStore) ThirdPartyInfo(ctxt context.Context, loc string) (ThirdPartyInfo, error) {
+func (s *ThirdPartyStore) ThirdPartyInfo(ctx context.Context, loc string) (ThirdPartyInfo, error) {
 	if info, ok := s.m[canonicalLocation(loc)]; ok {
 		return info, nil
 	}
