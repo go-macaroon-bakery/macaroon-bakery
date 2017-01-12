@@ -125,11 +125,11 @@ func Discharge(ctx context.Context, p DischargeParams) (*Macaroon, error) {
 	// Note that we don't check the error - we allow the
 	// third party checker to see even caveats that we can't
 	// understand.
-	cond, arg, _ := checkers.ParseCaveat(cavInfo.Condition)
+	cond, arg, _ := checkers.ParseCaveat(string(cavInfo.Condition))
 
 	var caveats []checkers.Caveat
 	if cond == checkers.CondNeedDeclared {
-		cavInfo.Condition = arg
+		cavInfo.Condition = []byte(arg)
 		caveats, err = checkNeedDeclared(ctx, cavInfo, p.Checker)
 	} else {
 		caveats, err = p.Checker.CheckThirdPartyCaveat(ctx, cavInfo)
@@ -155,7 +155,7 @@ func Discharge(ctx context.Context, p DischargeParams) (*Macaroon, error) {
 }
 
 func checkNeedDeclared(ctx context.Context, cavInfo *ThirdPartyCaveatInfo, checker ThirdPartyCaveatChecker) ([]checkers.Caveat, error) {
-	arg := cavInfo.Condition
+	arg := string(cavInfo.Condition)
 	i := strings.Index(arg, " ")
 	if i <= 0 {
 		return nil, errgo.Newf("need-declared caveat requires an argument, got %q", arg)
@@ -169,7 +169,7 @@ func checkNeedDeclared(ctx context.Context, cavInfo *ThirdPartyCaveatInfo, check
 	if len(needDeclared) == 0 {
 		return nil, fmt.Errorf("need-declared caveat with no required attributes")
 	}
-	cavInfo.Condition = arg[i+1:]
+	cavInfo.Condition = []byte(arg[i+1:])
 	caveats, err := checker.CheckThirdPartyCaveat(ctx, cavInfo)
 	if err != nil {
 		return nil, errgo.Mask(err, errgo.Any)
@@ -216,7 +216,7 @@ type ThirdPartyCaveatInfo struct {
 	// Condition holds the third party condition to be discharged.
 	// This is the only field that most third party dischargers will
 	// need to consider.
-	Condition string
+	Condition []byte
 
 	// FirstPartyPublicKey holds the public key of the party
 	// that created the third party caveat.

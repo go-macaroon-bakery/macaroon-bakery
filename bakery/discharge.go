@@ -97,7 +97,7 @@ func DischargeAllWithKey(
 }
 
 var localDischargeChecker = ThirdPartyCaveatCheckerFunc(func(_ context.Context, info *ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
-	if info.Condition != "true" {
+	if string(info.Condition) != "true" {
 		return nil, checkers.ErrCaveatNotRecognized
 	}
 	return nil, nil

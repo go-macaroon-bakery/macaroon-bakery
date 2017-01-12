@@ -236,7 +236,7 @@ func (s *checkerSuite) TestAuthWithThirdPartyCaveats(c *gc.C) {
 	locator["other third party"] = &discharger{
 		key: mustGenerateKey(),
 		checker: bakery.ThirdPartyCaveatCheckerFunc(func(ctxt context.Context, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
-			if info.Condition != "question" {
+			if string(info.Condition) != "question" {
 				return nil, errgo.Newf("third party condition not recognized")
 			}
 			s.discharges = append(s.discharges, dischargeRecord{
@@ -630,7 +630,7 @@ func (s *checkerSuite) newIdService(location string, locator dischargerLocator) 
 }
 
 func (ids *idService) CheckThirdPartyCaveat(ctxt context.Context, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
-	if info.Condition != "is-authenticated-user" {
+	if string(info.Condition) != "is-authenticated-user" {
 		return nil, errgo.Newf("third party condition not recognized")
 	}
 	username := dischargeUserFromContext(ctxt)
