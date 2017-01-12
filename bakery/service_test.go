@@ -188,20 +188,19 @@ func discharge(ctx context.Context, oven *bakery.Oven, checker bakery.ThirdParty
 	})
 }
 
-func (s *ServiceSuite) TestNeedDeclared(c *gc.C) {
+func (s *ServiceSuite) TestNeedDeclaredPreV3(c *gc.C) {
 	locator := bakery.NewThirdPartyStore()
 	firstParty := newBakery("first", locator)
 	thirdParty := newBakery("third", locator)
 
-	// firstParty mints a macaroon with a third-party caveat addressed
+	// firstParty mints a V2 macaroon with a third-party caveat addressed
 	// to thirdParty with a need-declared caveat.
-	m, err := firstParty.Oven.NewMacaroon(testContext, bakery.LatestVersion, ages, []checkers.Caveat{
+	m, err := firstParty.Oven.NewMacaroon(testContext, bakery.Version2, ages, []checkers.Caveat{
 		checkers.NeedDeclaredCaveat(checkers.Caveat{
 			Location:  "third",
 			Condition: "something",
-		}, "foo", "bar"),
+		}, "foo"),
 	}, bakery.LoginOp)
-
 	c.Assert(err, gc.IsNil)
 
 	// The client asks for a discharge macaroon for each third party caveat.
@@ -210,12 +209,12 @@ func (s *ServiceSuite) TestNeedDeclared(c *gc.C) {
 	})
 	c.Assert(err, gc.IsNil)
 
-	// The required declared attributes should have been added
+	// The required declared attribute should have been added
 	// to the discharge macaroons.
-	declared := checkers.InferDeclared(firstParty.Checker.Namespace(), d)
-	c.Assert(declared, gc.DeepEquals, map[string]string{
-		"foo": "",
-		"bar": "",
+	declared := checkers.InferDeclared("declared", firstPartyCaveatConditions(d))
+	c.Assert(declared, jc.DeepEquals, checkers.Declared{
+		Condition: "declared",
+		Value:     "foo",
 	})
 
 	// Make sure the macaroons actually check out correctly
@@ -229,124 +228,49 @@ func (s *ServiceSuite) TestNeedDeclared(c *gc.C) {
 	// The client asks for a discharge macaroon for each third party caveat.
 	d, err = bakery.DischargeAll(testContext, m, func(ctx context.Context, cav macaroon.Caveat, payload []byte) (*bakery.Macaroon, error) {
 		checker := thirdPartyCheckerWithCaveats{
-			checkers.DeclaredCaveat("foo", "a"),
-			checkers.DeclaredCaveat("arble", "b"),
+			preV3DeclaredCaveat("foo", "a"),
 		}
 		return discharge(ctx, thirdParty.Oven, checker, cav, payload)
 	})
 	c.Assert(err, gc.IsNil)
 
 	// One attribute should have been added, the other was already there.
-	declared = checkers.InferDeclared(firstParty.Checker.Namespace(), d)
-	c.Assert(declared, gc.DeepEquals, map[string]string{
-		"foo":   "a",
-		"bar":   "",
-		"arble": "b",
+	declared = checkers.InferDeclared("declared", firstPartyCaveatConditions(d))
+	c.Assert(declared, jc.DeepEquals, checkers.Declared{
+		Condition: "declared",
+		Value:     "foo a",
 	})
 
 	ctxt = checkers.ContextWithDeclared(testContext, declared)
-	_, err = firstParty.Checker.Auth(d).Allow(testContext, bakery.LoginOp)
+	_, err = firstParty.Checker.Auth(d).Allow(ctxt, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
 
 	// Try again, but this time pretend a client is sneakily trying
 	// to add another "declared" attribute to alter the declarations.
 	d, err = bakery.DischargeAll(testContext, m, func(ctx context.Context, cav macaroon.Caveat, payload []byte) (*bakery.Macaroon, error) {
 		checker := thirdPartyCheckerWithCaveats{
-			checkers.DeclaredCaveat("foo", "a"),
-			checkers.DeclaredCaveat("arble", "b"),
+			preV3DeclaredCaveat("foo", "a"),
 		}
 
 		// Sneaky client adds a first party caveat.
 		m, err := discharge(ctx, thirdParty.Oven, checker, cav, payload)
 		c.Assert(err, gc.IsNil)
 
-		err = m.AddCaveat(ctx, checkers.DeclaredCaveat("foo", "c"), nil, nil)
+		err = m.AddCaveat(ctx, preV3DeclaredCaveat("foo", "c"), nil, nil)
 		c.Assert(err, gc.IsNil)
 		return m, nil
 	})
 
 	c.Assert(err, gc.IsNil)
 
-	declared = checkers.InferDeclared(firstParty.Checker.Namespace(), d)
-	c.Assert(declared, gc.DeepEquals, map[string]string{
-		"bar":   "",
-		"arble": "b",
+	declared = checkers.InferDeclared("declared", firstPartyCaveatConditions(d))
+	c.Assert(declared, gc.DeepEquals, checkers.Declared{
+		Condition: "declared",
 	})
 
 	ctxt = checkers.ContextWithDeclared(testContext, declared)
 	_, err = firstParty.Checker.Auth(d).Allow(testContext, bakery.LoginOp)
-	c.Assert(err, gc.ErrorMatches, `cannot authorize login macaroon: caveat "declared foo a" not satisfied: got foo=null, expected "a"`)
-}
-
-func (s *ServiceSuite) TestDischargeTwoNeedDeclared(c *gc.C) {
-	locator := bakery.NewThirdPartyStore()
-	firstParty := newBakery("first", locator)
-	thirdParty := newBakery("third", locator)
-
-	// firstParty mints a macaroon with two third party caveats
-	// with overlapping attributes.
-	m, err := firstParty.Oven.NewMacaroon(testContext, bakery.LatestVersion, ages, []checkers.Caveat{
-		checkers.NeedDeclaredCaveat(checkers.Caveat{
-			Location:  "third",
-			Condition: "x",
-		}, "foo", "bar"),
-		checkers.NeedDeclaredCaveat(checkers.Caveat{
-			Location:  "third",
-			Condition: "y",
-		}, "bar", "baz"),
-	}, bakery.LoginOp)
-
-	c.Assert(err, gc.IsNil)
-
-	// The client asks for a discharge macaroon for each third party caveat.
-	// Since no declarations are added by the discharger,
-	d, err := bakery.DischargeAll(testContext, m, func(ctx context.Context, cav macaroon.Caveat, payload []byte) (*bakery.Macaroon, error) {
-		return discharge(ctx, thirdParty.Oven, bakery.ThirdPartyCaveatCheckerFunc(func(context.Context, *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
-			return nil, nil
-		}), cav, payload)
-
-	})
-	c.Assert(err, gc.IsNil)
-	declared := checkers.InferDeclared(firstParty.Checker.Namespace(), d)
-	c.Assert(declared, gc.DeepEquals, map[string]string{
-		"foo": "",
-		"bar": "",
-		"baz": "",
-	})
-	ctxt := checkers.ContextWithDeclared(testContext, declared)
-	_, err = firstParty.Checker.Auth(d).Allow(ctxt, bakery.LoginOp)
-	c.Assert(err, gc.IsNil)
-
-	// If they return conflicting values, the discharge fails.
-	// The client asks for a discharge macaroon for each third party caveat.
-	// Since no declarations are added by the discharger,
-	d, err = bakery.DischargeAll(testContext, m, func(ctx context.Context, cav macaroon.Caveat, payload []byte) (*bakery.Macaroon, error) {
-		return discharge(ctx, thirdParty.Oven, bakery.ThirdPartyCaveatCheckerFunc(func(_ context.Context, cavInfo *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
-			switch string(cavInfo.Condition) {
-			case "x":
-				return []checkers.Caveat{
-					checkers.DeclaredCaveat("foo", "fooval1"),
-				}, nil
-			case "y":
-				return []checkers.Caveat{
-					checkers.DeclaredCaveat("foo", "fooval2"),
-					checkers.DeclaredCaveat("baz", "bazval"),
-				}, nil
-			}
-			return nil, fmt.Errorf("not matched")
-		}), cav, payload)
-
-	})
-
-	c.Assert(err, gc.IsNil)
-	declared = checkers.InferDeclared(firstParty.Checker.Namespace(), d)
-	c.Assert(declared, gc.DeepEquals, map[string]string{
-		"bar": "",
-		"baz": "bazval",
-	})
-	ctxt = checkers.ContextWithDeclared(testContext, declared)
-	_, err = firstParty.Checker.Auth(d).Allow(testContext, bakery.LoginOp)
-	c.Assert(err, gc.ErrorMatches, `cannot authorize login macaroon: caveat "declared foo fooval1" not satisfied: got foo=null, expected "fooval1"`)
+	c.Assert(err, gc.ErrorMatches, `cannot authorize login macaroon: caveat "declared foo a" not satisfied: got "foo a", expected ""`)
 }
 
 func (s *ServiceSuite) TestDischargeMacaroonCannotBeUsedAsNormalMacaroon(c *gc.C) {
@@ -423,4 +347,16 @@ func (s *ServiceSuite) TestThirdPartyDischargeMacaroonIdsAreSmall(c *gc.C) {
 			}
 		}
 	}
+}
+
+func firstPartyCaveatConditions(ms macaroon.Slice) []string {
+	var conds []string
+	for _, m := range ms {
+		for _, cav := range m.Caveats() {
+			if cav.VerificationId == nil {
+				conds = append(conds, string(cav.Id))
+			}
+		}
+	}
+	return conds
 }

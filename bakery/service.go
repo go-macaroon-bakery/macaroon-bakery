@@ -122,18 +122,8 @@ func Discharge(ctx context.Context, p DischargeParams) (*Macaroon, error) {
 	}
 	cavInfo.Id = p.Id
 	logger.Infof("decoded discharge caveat %x as version %v", p.Caveat, cavInfo.Version)
-	// Note that we don't check the error - we allow the
-	// third party checker to see even caveats that we can't
-	// understand.
-	cond, arg, _ := checkers.ParseCaveat(string(cavInfo.Condition))
 
-	var caveats []checkers.Caveat
-	if cond == checkers.CondNeedDeclared {
-		cavInfo.Condition = []byte(arg)
-		caveats, err = checkNeedDeclared(ctx, cavInfo, p.Checker)
-	} else {
-		caveats, err = p.Checker.CheckThirdPartyCaveat(ctx, cavInfo)
-	}
+	caveats, err := checkThirdPartyCaveat(ctx, cavInfo, p.Checker)
 	if err != nil {
 		return nil, errgo.Mask(err, errgo.Any)
 	}
@@ -154,8 +144,24 @@ func Discharge(ctx context.Context, p DischargeParams) (*Macaroon, error) {
 	return m, nil
 }
 
-func checkNeedDeclared(ctx context.Context, cavInfo *ThirdPartyCaveatInfo, checker ThirdPartyCaveatChecker) ([]checkers.Caveat, error) {
-	arg := string(cavInfo.Condition)
+func checkThirdPartyCaveat(ctx context.Context, cavInfo *ThirdPartyCaveatInfo, checker ThirdPartyCaveatChecker) ([]checkers.Caveat, error) {
+	if cavInfo.Version < Version3 {
+		return checkThirdPartyCaveatPreVersion3(ctx, cavInfo, checker)
+	}
+	// TODO(rog) new-style need-declared checking
+	return checker.CheckThirdPartyCaveat(ctx, cavInfo)
+}
+
+func checkThirdPartyCaveatPreVersion3(ctx context.Context, cavInfo *ThirdPartyCaveatInfo, checker ThirdPartyCaveatChecker) ([]checkers.Caveat, error) {
+	// Note that we don't check the error - we allow the
+	// third party checker to see caveats that we can't
+	// understand.
+	cond, arg, _ := checkers.ParseCaveat(string(cavInfo.Condition))
+	if cond != "need-declared" {
+		return checker.CheckThirdPartyCaveat(ctx, cavInfo)
+	}
+	// It's a need-declared caveat; work out the needed caveats,
+	// call the check, then add any needed declarations.
 	i := strings.Index(arg, " ")
 	if i <= 0 {
 		return nil, errgo.Newf("need-declared caveat requires an argument, got %q", arg)
@@ -168,6 +174,9 @@ func checkNeedDeclared(ctx context.Context, cavInfo *ThirdPartyCaveatInfo, check
 	}
 	if len(needDeclared) == 0 {
 		return nil, fmt.Errorf("need-declared caveat with no required attributes")
+	}
+	if len(needDeclared) > 1 {
+		return nil, fmt.Errorf("need-declared caveat with more than one attribute not supported")
 	}
 	cavInfo.Condition = []byte(arg[i+1:])
 	caveats, err := checker.CheckThirdPartyCaveat(ctx, cavInfo)
@@ -182,7 +191,7 @@ func checkNeedDeclared(ctx context.Context, cavInfo *ThirdPartyCaveatInfo, check
 		// Note that we ignore the error. We allow the service to
 		// generate caveats that we don't understand here.
 		cond, arg, _ := checkers.ParseCaveat(cav.Condition)
-		if cond != checkers.CondDeclared {
+		if cond != "declared" {
 			continue
 		}
 		parts := strings.SplitN(arg, " ", 2)
@@ -195,7 +204,10 @@ func checkNeedDeclared(ctx context.Context, cavInfo *ThirdPartyCaveatInfo, check
 	// that was not actually declared.
 	for _, d := range needDeclared {
 		if !declared[d] {
-			caveats = append(caveats, checkers.DeclaredCaveat(d, ""))
+			caveats = append(caveats, checkers.Caveat{
+				Condition: "declared " + d,
+				Namespace: checkers.StdNamespace,
+			})
 		}
 	}
 	return caveats, nil
@@ -229,8 +241,8 @@ type ThirdPartyCaveatInfo struct {
 	// RootKey holds the secret root key encoded by the caveat.
 	RootKey []byte
 
-	// CaveatId holds the full encoded caveat id from which all
-	// the other fields are derived.
+	// Caveat holds the full encoded caveat from which all
+	// the other fields (other than Id) are derived.
 	Caveat []byte
 
 	// Version holds the version that was used to encode

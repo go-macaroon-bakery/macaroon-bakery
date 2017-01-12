@@ -29,6 +29,8 @@ type agentSuite struct {
 	handle      func(ctx context.Context, w http.ResponseWriter, req *http.Request)
 }
 
+const agentTestNamespace = "testagent"
+
 var _ = gc.Suite(&agentSuite{})
 
 func (s *agentSuite) SetUpTest(c *gc.C) {
@@ -37,6 +39,7 @@ func (s *agentSuite) SetUpTest(c *gc.C) {
 	key, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
 	s.agentBakery = bakery.New(bakery.BakeryParams{
+		Checker:        newChecker(),
 		IdentityClient: idmClient{s.discharger.Location()},
 		Key:            key,
 	})
@@ -44,6 +47,7 @@ func (s *agentSuite) SetUpTest(c *gc.C) {
 	key, err = bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
 	s.bakery = bakery.New(bakery.BakeryParams{
+		Checker:        newChecker(),
 		Locator:        s.discharger,
 		IdentityClient: idmClient{s.discharger.Location()},
 		Key:            key,
@@ -463,8 +467,15 @@ func identityCaveats(dischargerURL string) []checkers.Caveat {
 	}}
 }
 
-func (c idmClient) DeclaredIdentity(declared map[string]string) (bakery.Identity, error) {
-	return bakery.SimpleIdentity(declared["username"]), nil
+func (c idmClient) DeclarationCaveat() checkers.Caveat {
+	return checkers.Caveat{
+		Condition: "declared-username",
+		Namespace: agentTestNamespace,
+	}
+}
+
+func (c idmClient) DeclaredIdentity(user string) (bakery.Identity, error) {
+	return bakery.SimpleIdentity(user), nil
 }
 
 func mustParseURL(s string) *url.URL {
@@ -509,7 +520,7 @@ func (s *agentSuite) defaultHandle(ctx context.Context, w http.ResponseWriter, r
 	_, authErr := s.agentBakery.Checker.Auth(httpbakery.RequestMacaroons(req)...).Allow(ctx, bakery.LoginOp)
 	if authErr == nil {
 		cavs := []checkers.Caveat{
-			checkers.DeclaredCaveat("username", username),
+			declaredUsernameCaveat(username),
 		}
 		s.discharger.FinishInteraction(ctx, w, req, cavs, nil)
 		httprequest.WriteJSON(w, http.StatusOK, agent.AgentResponse{
@@ -520,7 +531,7 @@ func (s *agentSuite) defaultHandle(ctx context.Context, w http.ResponseWriter, r
 	version := httpbakery.RequestVersion(req)
 	m, err := s.agentBakery.Oven.NewMacaroon(ctx, version, ages, []checkers.Caveat{
 		bakery.LocalThirdPartyCaveat(userPublicKey, version),
-		checkers.DeclaredCaveat("username", username),
+		declaredUsernameCaveat(username),
 	}, bakery.LoginOp)
 
 	if err != nil {
@@ -530,4 +541,18 @@ func (s *agentSuite) defaultHandle(ctx context.Context, w http.ResponseWriter, r
 		return
 	}
 	httpbakery.WriteDischargeRequiredError(w, m, "", authErr)
+}
+
+func declaredUsernameCaveat(user string) checkers.Caveat {
+	return checkers.Caveat{
+		Condition: checkers.Condition("declared-username", user),
+		Namespace: agentTestNamespace,
+	}
+}
+
+func newChecker() *checkers.Checker {
+	c := checkers.New(nil)
+	c.Namespace().Register(agentTestNamespace, "")
+	checkers.RegisterDeclaredCaveat(c, "declared-username", agentTestNamespace)
+	return c
 }
