@@ -2,6 +2,7 @@ package bakery_test
 
 import (
 	"fmt"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/juju/testing"
@@ -58,7 +59,10 @@ func (s *ServiceSuite) TestMacaroonPaperFig6(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 
 	// ts somehow sends the macaroon to fs which adds a third party caveat to be discharged by as.
-	err = fs.Oven.AddCaveat(testContext, tsMacaroon, checkers.Caveat{Location: "as-loc", Condition: "user==bob"})
+	err = fs.Oven.AddCaveat(testContext, tsMacaroon, checkers.Caveat{
+		Location:            "as-loc",
+		ThirdPartyCondition: []byte("user==bob"),
+	})
 	c.Assert(err, gc.IsNil)
 
 	// client asks for a discharge macaroon for each third party caveat
@@ -81,7 +85,10 @@ func (s *ServiceSuite) TestDischargeWithVersion1Macaroon(c *gc.C) {
 	// ts creates a old-version macaroon.
 	tsMacaroon, err := ts.Oven.NewMacaroon(testContext, bakery.Version1, ages, nil, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
-	err = ts.Oven.AddCaveat(testContext, tsMacaroon, checkers.Caveat{Location: "as-loc", Condition: "something"})
+	err = ts.Oven.AddCaveat(testContext, tsMacaroon, checkers.Caveat{
+		Location:            "as-loc",
+		ThirdPartyCondition: []byte("something"),
+	})
 	c.Assert(err, gc.IsNil)
 
 	// client asks for a discharge macaroon for each third party caveat
@@ -135,7 +142,10 @@ func (s *ServiceSuite) TestMacaroonPaperFig6FailsWithoutDischarges(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 
 	// ts somehow sends the macaroon to fs which adds a third party caveat to be discharged by as.
-	err = fs.Oven.AddCaveat(testContext, tsMacaroon, checkers.Caveat{Location: "as-loc", Condition: "user==bob"})
+	err = fs.Oven.AddCaveat(testContext, tsMacaroon, checkers.Caveat{
+		Location:            "as-loc",
+		ThirdPartyCondition: []byte("user==bob"),
+	})
 	c.Assert(err, gc.IsNil)
 
 	// client makes request to ts
@@ -156,7 +166,10 @@ func (s *ServiceSuite) TestMacaroonPaperFig6FailsWithBindingOnTamperedSignature(
 	c.Assert(err, gc.IsNil)
 
 	// ts somehow sends the macaroon to fs which adds a third party caveat to be discharged by as.
-	err = fs.Oven.AddCaveat(testContext, tsMacaroon, checkers.Caveat{Location: "as-loc", Condition: "user==bob"})
+	err = fs.Oven.AddCaveat(testContext, tsMacaroon, checkers.Caveat{
+		Location:            "as-loc",
+		ThirdPartyCondition: []byte("user==bob"),
+	})
 	c.Assert(err, gc.IsNil)
 
 	// client asks for a discharge macaroon for each third party caveat
@@ -196,9 +209,9 @@ func (s *ServiceSuite) TestNeedDeclaredPreV3(c *gc.C) {
 	// firstParty mints a V2 macaroon with a third-party caveat addressed
 	// to thirdParty with a need-declared caveat.
 	m, err := firstParty.Oven.NewMacaroon(testContext, bakery.Version2, ages, []checkers.Caveat{
-		checkers.NeedDeclaredCaveat(checkers.Caveat{
-			Location:  "third",
-			Condition: "something",
+		needDeclaredCaveat(checkers.Caveat{
+			Location:            "third",
+			ThirdPartyCondition: []byte("something"),
 		}, "foo"),
 	}, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
@@ -273,6 +286,99 @@ func (s *ServiceSuite) TestNeedDeclaredPreV3(c *gc.C) {
 	c.Assert(err, gc.ErrorMatches, `cannot authorize login macaroon: caveat "declared foo a" not satisfied: got "foo a", expected ""`)
 }
 
+func (s *ServiceSuite) TestNeedDeclared(c *gc.C) {
+	locator := bakery.NewThirdPartyStore()
+	firstParty := newBakery("first", locator)
+	thirdParty := newBakery("third", locator)
+
+	// Note that testChecker has registered a declared-caveat
+	// checker "somedecl".
+
+	// firstParty mints a macaroon with a third-party caveat addressed
+	// to thirdParty with a need-declared caveat.
+	m, err := firstParty.Oven.NewMacaroon(testContext, bakery.LatestVersion, ages, []checkers.Caveat{{
+		Location:            "third",
+		ThirdPartyCondition: []byte("something"),
+		NeedDeclared:        []string{"somedecl"},
+	}}, bakery.LoginOp)
+	c.Assert(err, gc.IsNil)
+
+	// The client asks for a discharge macaroon for each third party caveat.
+	d, err := bakery.DischargeAll(testContext, m, func(ctx context.Context, cav macaroon.Caveat, payload []byte) (*bakery.Macaroon, error) {
+		return discharge(ctx, thirdParty.Oven, thirdPartyStrcmpChecker("something"), cav, payload)
+	})
+	c.Assert(err, gc.IsNil)
+
+	// The required declared caveat should have been added
+	// to the discharge macaroons.
+	declared := checkers.InferDeclared("somedecl", firstPartyCaveatConditions(d))
+	c.Assert(declared, jc.DeepEquals, checkers.Declared{
+		Condition: "somedecl",
+		Value:     "",
+	})
+
+	// Make sure the macaroons actually check out correctly
+	// when provided with the declared checker.
+	ctx := checkers.ContextWithDeclared(testContext, declared)
+	_, err = firstParty.Checker.Auth(d).Allow(ctx, bakery.LoginOp)
+	c.Assert(err, gc.IsNil)
+
+	// Try again when the third party does add a required declaration.
+
+	// The client asks for a discharge macaroon for each third party caveat.
+	d, err = bakery.DischargeAll(testContext, m, func(ctx context.Context, cav macaroon.Caveat, payload []byte) (*bakery.Macaroon, error) {
+		checker := thirdPartyCheckerWithCaveats{{
+			Namespace: "testns",
+			Condition: checkers.Condition("somedecl", "a"),
+		}}
+		return discharge(ctx, thirdParty.Oven, checker, cav, payload)
+	})
+	c.Assert(err, gc.IsNil)
+
+	// One attribute should have been added, the other was already there.
+	declared = checkers.InferDeclared("somedecl", firstPartyCaveatConditions(d))
+	c.Assert(declared, jc.DeepEquals, checkers.Declared{
+		Condition: "somedecl",
+		Value:     "a",
+	})
+
+	ctx = checkers.ContextWithDeclared(testContext, declared)
+	_, err = firstParty.Checker.Auth(d).Allow(ctx, bakery.LoginOp)
+	c.Assert(err, gc.IsNil)
+
+	// Try again, but this time pretend a client is sneakily trying
+	// to add another declaration caveat to alter the declarations.
+	d, err = bakery.DischargeAll(testContext, m, func(ctx context.Context, cav macaroon.Caveat, payload []byte) (*bakery.Macaroon, error) {
+		checker := thirdPartyCheckerWithCaveats{{
+			Namespace: "testns",
+			Condition: checkers.Condition("somedecl", "a"),
+		}}
+
+		// Sneaky client adds a first party caveat.
+		m, err := discharge(ctx, thirdParty.Oven, checker, cav, payload)
+		c.Assert(err, gc.IsNil)
+
+		err = m.AddCaveat(ctx, checkers.Caveat{
+			Namespace: "testns",
+			Condition: checkers.Condition("somedecl", "b"),
+		}, nil, nil)
+		c.Assert(err, gc.IsNil)
+		return m, nil
+	})
+
+	c.Assert(err, gc.IsNil)
+
+	c.Logf("conds: %q", firstPartyCaveatConditions(d))
+	declared = checkers.InferDeclared("somedecl", firstPartyCaveatConditions(d))
+	c.Assert(declared, gc.DeepEquals, checkers.Declared{
+		Condition: "somedecl",
+	})
+
+	ctx = checkers.ContextWithDeclared(testContext, declared)
+	_, err = firstParty.Checker.Auth(d).Allow(testContext, bakery.LoginOp)
+	c.Assert(err, gc.ErrorMatches, `cannot authorize login macaroon: caveat "somedecl a" not satisfied: got "a", expected ""`)
+}
+
 func (s *ServiceSuite) TestDischargeMacaroonCannotBeUsedAsNormalMacaroon(c *gc.C) {
 	locator := bakery.NewThirdPartyStore()
 	firstParty := newBakery("first", locator)
@@ -280,8 +386,8 @@ func (s *ServiceSuite) TestDischargeMacaroonCannotBeUsedAsNormalMacaroon(c *gc.C
 
 	// First party mints a macaroon with a 3rd party caveat.
 	m, err := firstParty.Oven.NewMacaroon(testContext, bakery.LatestVersion, ages, []checkers.Caveat{{
-		Location:  "third",
-		Condition: "true",
+		Location:            "third",
+		ThirdPartyCondition: []byte("true"),
 	}}, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
 
@@ -313,7 +419,10 @@ func (s *ServiceSuite) TestThirdPartyDischargeMacaroonIdsAreSmall(c *gc.C) {
 
 	tsMacaroon, err := ts.Oven.NewMacaroon(testContext, bakery.LatestVersion, ages, nil, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
-	err = ts.Oven.AddCaveat(testContext, tsMacaroon, checkers.Caveat{Location: "as1-loc", Condition: "something"})
+	err = ts.Oven.AddCaveat(testContext, tsMacaroon, checkers.Caveat{
+		Location:            "as1-loc",
+		ThirdPartyCondition: []byte("something"),
+	})
 	c.Assert(err, gc.IsNil)
 
 	checker := func(loc string) bakery.ThirdPartyCaveatCheckerFunc {
@@ -321,8 +430,8 @@ func (s *ServiceSuite) TestThirdPartyDischargeMacaroonIdsAreSmall(c *gc.C) {
 			switch loc {
 			case "as1-loc":
 				return []checkers.Caveat{{
-					Condition: "something",
-					Location:  "as2-loc",
+					Location:            "as2-loc",
+					ThirdPartyCondition: []byte("something"),
 				}}, nil
 			case "as2-loc":
 				return nil, nil
@@ -359,4 +468,18 @@ func firstPartyCaveatConditions(ms macaroon.Slice) []string {
 		}
 	}
 	return conds
+}
+
+// needDeclaredCaveat returns a third party caveat that
+// wraps the provided third party caveat and requires
+// that the third party must add "declared" caveats for
+// all the named keys.
+func needDeclaredCaveat(cav checkers.Caveat, keys ...string) checkers.Caveat {
+	if cav.Location == "" {
+		return checkers.ErrorCaveatf("need-declared caveat is not third-party")
+	}
+	return checkers.Caveat{
+		Location:            cav.Location,
+		ThirdPartyCondition: []byte("need-declared " + strings.Join(keys, ",") + " " + string(cav.ThirdPartyCondition)),
+	}
 }

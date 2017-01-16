@@ -85,7 +85,7 @@ type ThirdPartyInfo struct {
 	// PublicKey holds the public key of the third party.
 	PublicKey PublicKey
 
-	// Version holds latest the bakery protocol version supported
+	// Version holds the latest bakery protocol version supported
 	// by the discharger.
 	Version Version
 }

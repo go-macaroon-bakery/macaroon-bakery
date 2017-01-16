@@ -1,8 +1,6 @@
 package checkers
 
 import (
-	"strings"
-
 	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 )
@@ -14,22 +12,6 @@ type Declared struct {
 	Condition string
 	// Value holds the declared argument to the condition.
 	Value string
-}
-
-// NeedDeclaredCaveat returns a third party caveat that
-// wraps the provided third party caveat and requires
-// that the third party must add "declared" caveats for
-// all the named keys.
-// TODO(rog) namespaces in third party caveats?
-// TODO(rog) deprecate this in favour of in-built field in third party caveat format.
-func NeedDeclaredCaveat(cav Caveat, keys ...string) Caveat {
-	if cav.Location == "" {
-		return ErrorCaveatf("need-declared caveat is not third-party")
-	}
-	return Caveat{
-		Location:  cav.Location,
-		Condition: CondNeedDeclared + " " + strings.Join(keys, ",") + " " + cav.Condition,
-	}
 }
 
 type declaredKey string
@@ -71,7 +53,7 @@ func checkDeclared(ctx context.Context, cond, arg string) error {
 func InferDeclared(declCond string, conds []string) Declared {
 	val, found := "", false
 	for _, cond := range conds {
-		name, arg, _ := ParseCaveat(cond)
+		name, arg, _ := ParseCondition(cond)
 		switch {
 		case name != declCond:
 		case !found:

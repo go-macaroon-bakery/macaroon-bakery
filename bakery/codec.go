@@ -11,6 +11,7 @@ import (
 	"gopkg.in/errgo.v1"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/internal/bakerypb"
 )
 
 type caveatRecord struct {
@@ -34,7 +35,8 @@ type caveatJSON struct {
 // The caveat will be encoded according to the version information
 // found in thirdPartyInfo.
 func encodeCaveat(
-	condition string,
+	condition []byte,
+	needDeclared []string,
 	rootKey []byte,
 	thirdPartyInfo ThirdPartyInfo,
 	key *KeyPair,
@@ -42,12 +44,12 @@ func encodeCaveat(
 ) ([]byte, error) {
 	switch thirdPartyInfo.Version {
 	case Version0, Version1:
-		return encodeCaveatV1(condition, rootKey, &thirdPartyInfo.PublicKey, key)
+		return encodeCaveatV1(condition, needDeclared, rootKey, &thirdPartyInfo.PublicKey, key)
 	case Version2:
-		return encodeCaveatV2(condition, rootKey, &thirdPartyInfo.PublicKey, key)
+		return encodeCaveatV2(condition, needDeclared, rootKey, &thirdPartyInfo.PublicKey, key)
 	default:
 		// Version 3 or later - use V3.
-		return encodeCaveatV3(condition, rootKey, &thirdPartyInfo.PublicKey, key, ns)
+		return encodeCaveatV3(condition, needDeclared, rootKey, &thirdPartyInfo.PublicKey, key, ns)
 	}
 }
 
@@ -57,18 +59,22 @@ func encodeCaveat(
 // the caveat for; the key is the public/private key pair of the party
 // that's adding the caveat.
 func encodeCaveatV1(
-	condition string,
+	condition []byte,
+	needDeclared []string,
 	rootKey []byte,
 	thirdPartyPubKey *PublicKey,
 	key *KeyPair,
 ) ([]byte, error) {
+	if len(needDeclared) > 0 {
+		return nil, errgo.Newf("cannot specify need-declared with version 1 client")
+	}
 	var nonce [NonceLen]byte
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return nil, errgo.Notef(err, "cannot generate random number for nonce")
 	}
 	plain := caveatRecord{
 		RootKey:   rootKey,
-		Condition: condition,
+		Condition: string(condition),
 	}
 	plainData, err := json.Marshal(&plain)
 	if err != nil {
@@ -92,23 +98,37 @@ func encodeCaveatV1(
 
 // encodeCaveatV2 creates a version 2 third-party caveat.
 func encodeCaveatV2(
-	condition string,
+	condition []byte,
+	needDeclared []string,
 	rootKey []byte,
 	thirdPartyPubKey *PublicKey,
 	key *KeyPair,
 ) ([]byte, error) {
+	if len(needDeclared) > 0 {
+		return nil, errgo.Newf("cannot specify need-declared with version 2 client")
+	}
 	return encodeCaveatV2V3(Version2, condition, rootKey, thirdPartyPubKey, key, nil)
 }
 
 // encodeCaveatV3 creates a version 3 third-party caveat.
 func encodeCaveatV3(
-	condition string,
+	condition []byte,
+	needDeclared []string,
 	rootKey []byte,
 	thirdPartyPubKey *PublicKey,
 	key *KeyPair,
 	ns *checkers.Namespace,
 ) ([]byte, error) {
-	return encodeCaveatV2V3(Version3, condition, rootKey, thirdPartyPubKey, key, ns)
+	// Wrap the condition in the protobuf-encoded wrapper
+	// that holds the need-declared info.
+	data, err := (&bakerypb.ThirdPartyCondition{
+		Body:         condition,
+		NeedDeclared: needDeclared,
+	}).MarshalBinary()
+	if err != nil {
+		return nil, errgo.Notef(err, "cannot encode third party condition")
+	}
+	return encodeCaveatV2V3(Version3, data, rootKey, thirdPartyPubKey, key, ns)
 }
 
 const publicKeyPrefixLen = 4
@@ -117,7 +137,7 @@ const publicKeyPrefixLen = 4
 // minimum length of a version 3 caveat.
 const version3CaveatMinLen = 1 + 4 + 32 + 24 + box.Overhead + 1
 
-// encodeCaveatV3 creates a version 2 or version 3 third-party caveat.
+// encodeCaveatV2V3 creates a version 2 or version 3 third-party caveat.
 //
 // The format has the following packed binary fields (note
 // that all fields up to and including the nonce are the same
@@ -140,7 +160,7 @@ const version3CaveatMinLen = 1 + 4 + 32 + 24 + box.Overhead + 1
 // 	condition [rest of encrypted part]
 func encodeCaveatV2V3(
 	version Version,
-	condition string,
+	condition []byte,
 	rootKey []byte,
 	thirdPartyPubKey *PublicKey,
 	key *KeyPair,
@@ -192,7 +212,7 @@ func encodeCaveatV2V3(
 // namespace length [n: uvarint] (v3 only)
 // namespace [n bytes] (v3 only)
 // predicate [rest of message]
-func encodeSecretPartV2V3(version Version, condition string, rootKey, nsData []byte) []byte {
+func encodeSecretPartV2V3(version Version, condition []byte, rootKey, nsData []byte) []byte {
 	data := make([]byte, 0, 1+binary.MaxVarintLen64+len(rootKey)+len(condition))
 	data = append(data, byte(version)) // version
 	data = appendUvarint(data, uint64(len(rootKey)))
@@ -213,14 +233,9 @@ func decodeCaveat(key *KeyPair, caveat []byte) (*ThirdPartyCaveatInfo, error) {
 	}
 	switch caveat[0] {
 	case byte(Version2):
-		return decodeCaveatV2V3(Version2, key, caveat)
+		return decodeCaveatV2(key, caveat)
 	case byte(Version3):
-		if len(caveat) < version3CaveatMinLen {
-			// If it has the version 3 caveat tag and it's too short, it's
-			// almost certainly an id, not an encrypted payload.
-			return nil, errgo.Newf("caveat id payload not provided for caveat id %q", caveat)
-		}
-		return decodeCaveatV2V3(Version3, key, caveat)
+		return decodeCaveatV3(key, caveat)
 	case 'e':
 		// 'e' will be the first byte if the caveatid is a base64 encoded JSON object.
 		return decodeCaveatV1(key, caveat)
@@ -276,6 +291,32 @@ func decodeCaveatV1(key *KeyPair, caveat []byte) (*ThirdPartyCaveatInfo, error) 
 	}, nil
 }
 
+// decodeCaveatV3 decodes a version 3 caveat.
+func decodeCaveatV3(key *KeyPair, caveat []byte) (*ThirdPartyCaveatInfo, error) {
+	if len(caveat) < version3CaveatMinLen {
+		// If it has the version 3 caveat tag and it's too short, it's
+		// almost certainly an id, not an encrypted payload.
+		return nil, errgo.Newf("caveat id payload not provided for caveat id %q", caveat)
+	}
+	info, err := decodeCaveatV2V3(Version3, key, caveat)
+	if err != nil {
+		return nil, errgo.Mask(err)
+	}
+	// Version 3 conditions are wrapped in the bakerypb.ThirdPartyCondition struct.
+	var c bakerypb.ThirdPartyCondition
+	if err := c.UnmarshalBinary(info.Condition); err != nil {
+		return nil, errgo.Notef(err, "cannot unmarshal condition")
+	}
+	info.NeedDeclared = c.NeedDeclared
+	info.Condition = c.Body
+	return info, nil
+}
+
+// decodeCaveatV2 decodes a version 2 caveat.
+func decodeCaveatV2(key *KeyPair, caveat []byte) (*ThirdPartyCaveatInfo, error) {
+	return decodeCaveatV2V3(Version2, key, caveat)
+}
+
 // decodeCaveatV2V3 decodes a version 2 or version 3 caveat.
 func decodeCaveatV2V3(version Version, key *KeyPair, caveat []byte) (*ThirdPartyCaveatInfo, error) {
 	origCaveat := caveat
@@ -317,6 +358,7 @@ func decodeCaveatV2V3(version Version, key *KeyPair, caveat []byte) (*ThirdParty
 }
 
 func decodeSecretPartV2V3(version Version, data []byte) (rootKey []byte, ns *checkers.Namespace, condition []byte, err error) {
+	logger.Infof("decoding secret part, version %v, data %q", version, data)
 	fail := func(err error) ([]byte, *checkers.Namespace, []byte, error) {
 		return nil, nil, nil, err
 	}

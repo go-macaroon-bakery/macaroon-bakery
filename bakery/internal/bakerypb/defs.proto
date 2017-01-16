@@ -1,6 +1,6 @@
 syntax="proto3";
 
-option go_package = "macaroonpb";
+option go_package = "bakerypb";
 
 message MacaroonId {
 	bytes nonce = 1;
@@ -11,4 +11,9 @@ message MacaroonId {
 message Op {
 	string entity = 1;
 	repeated string actions = 2;
+}
+
+message ThirdPartyCondition {
+	bytes body = 1;
+	repeated string needDeclared = 2;
 }

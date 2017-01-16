@@ -14,7 +14,7 @@ import (
 	"gopkg.in/macaroon.v2-unstable"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
-	"gopkg.in/macaroon-bakery.v2-unstable/bakery/internal/macaroonpb"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/internal/bakerypb"
 )
 
 var uuidGen = fastuuid.MustNewGenerator()
@@ -164,7 +164,7 @@ func decodeMacaroonId(id []byte) (storageId []byte, ops []Op, err error) {
 		// Skip the UUID at the start of the id.
 		storageId = id[1+16:]
 	case byte(Version3):
-		var id1 macaroonpb.MacaroonId
+		var id1 bakerypb.MacaroonId
 		if err := id1.UnmarshalBinary(id[1:]); err != nil {
 			return nil, nil, errgo.Notef(err, "cannot unmarshal macaroon id")
 		}
@@ -290,11 +290,11 @@ func CanonicalOps(ops []Op) []Op {
 	return canonOps[0 : j+1]
 }
 
-func (o *Oven) newMacaroonId(ctx context.Context, ops []Op, storageId []byte, expiry time.Time) (*macaroonpb.MacaroonId, error) {
+func (o *Oven) newMacaroonId(ctx context.Context, ops []Op, storageId []byte, expiry time.Time) (*bakerypb.MacaroonId, error) {
 	uuid := uuidGen.Next()
 	nonce := uuid[0:16]
 	if len(ops) == 1 || o.p.OpsStore == nil {
-		return &macaroonpb.MacaroonId{
+		return &bakerypb.MacaroonId{
 			Nonce:     nonce,
 			StorageId: storageId,
 			Ops:       macaroonIdOps(ops),
@@ -306,10 +306,10 @@ func (o *Oven) newMacaroonId(ctx context.Context, ops []Op, storageId []byte, ex
 	if err := o.p.OpsStore.PutOps(ctx, entity, ops, expiry); err != nil {
 		return nil, errgo.Notef(err, "cannot store ops")
 	}
-	return &macaroonpb.MacaroonId{
+	return &bakerypb.MacaroonId{
 		Nonce:     nonce,
 		StorageId: storageId,
-		Ops: []*macaroonpb.Op{{
+		Ops: []*bakerypb.Op{{
 			Entity:  entity,
 			Actions: []string{"*"},
 		}},
@@ -339,12 +339,12 @@ func newOpsEntity(ops []Op) string {
 }
 
 // macaroonIdOps returns operations suitable for serializing
-// as part of an *macaroonpb.MacaroonId. It assumes that
+// as part of an *bakerypb.MacaroonId. It assumes that
 // ops has been canonicalized and that there's at least
 // one operation.
-func macaroonIdOps(ops []Op) []*macaroonpb.Op {
-	idOps := make([]macaroonpb.Op, 0, len(ops))
-	idOps = append(idOps, macaroonpb.Op{
+func macaroonIdOps(ops []Op) []*bakerypb.Op {
+	idOps := make([]bakerypb.Op, 0, len(ops))
+	idOps = append(idOps, bakerypb.Op{
 		Entity:  ops[0].Entity,
 		Actions: []string{ops[0].Action},
 	})
@@ -352,7 +352,7 @@ func macaroonIdOps(ops []Op) []*macaroonpb.Op {
 	idOp := &idOps[0]
 	for _, op := range ops[1:] {
 		if op.Entity != idOp.Entity {
-			idOps = append(idOps, macaroonpb.Op{
+			idOps = append(idOps, bakerypb.Op{
 				Entity:  op.Entity,
 				Actions: []string{op.Action},
 			})
@@ -364,7 +364,7 @@ func macaroonIdOps(ops []Op) []*macaroonpb.Op {
 			idOp.Actions = append(idOp.Actions, op.Action)
 		}
 	}
-	idOpPtrs := make([]*macaroonpb.Op, len(idOps))
+	idOpPtrs := make([]*bakerypb.Op, len(idOps))
 	for i := range idOps {
 		idOpPtrs[i] = &idOps[i]
 	}

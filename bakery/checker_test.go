@@ -226,8 +226,8 @@ func (s *checkerSuite) TestAuthWithThirdPartyCaveats(c *gc.C) {
 	auth := bakery.AuthorizerFunc(func(_ context.Context, id bakery.Identity, op bakery.Op) (bool, []checkers.Caveat, error) {
 		if id == bakery.SimpleIdentity("bob") && op == readOp("something") {
 			return true, []checkers.Caveat{{
-				Condition: "question",
-				Location:  "other third party",
+				Location:            "other third party",
+				ThirdPartyCondition: []byte("question"),
 			}}, nil
 		}
 		return false, nil, nil
@@ -656,8 +656,8 @@ func (ids *idService) CheckThirdPartyCaveat(ctx context.Context, info *bakery.Th
 
 func (ids *idService) IdentityFromContext(ctx context.Context) (bakery.Identity, []checkers.Caveat, error) {
 	return nil, []checkers.Caveat{{
-		Location:  ids.location,
-		Condition: "is-authenticated-user",
+		Location:            ids.location,
+		ThirdPartyCondition: []byte("is-authenticated-user"),
 	}}, nil
 }
 

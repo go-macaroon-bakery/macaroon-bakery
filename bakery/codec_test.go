@@ -27,7 +27,7 @@ func (s *codecSuite) SetUpTest(c *gc.C) {
 
 func (s *codecSuite) TestV1RoundTrip(c *gc.C) {
 	cid, err := encodeCaveatV1(
-		"is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
+		[]byte("is-authenticated-user"), nil, []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
 
 	c.Assert(err, gc.IsNil)
 
@@ -45,7 +45,7 @@ func (s *codecSuite) TestV1RoundTrip(c *gc.C) {
 }
 
 func (s *codecSuite) TestV2RoundTrip(c *gc.C) {
-	cid, err := encodeCaveatV2("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
+	cid, err := encodeCaveatV2([]byte("is-authenticated-user"), nil, []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
 
 	c.Assert(err, gc.IsNil)
 
@@ -65,7 +65,7 @@ func (s *codecSuite) TestV2RoundTrip(c *gc.C) {
 func (s *codecSuite) TestV3RoundTrip(c *gc.C) {
 	ns := checkers.NewNamespace(nil)
 	ns.Register("testns", "x")
-	cid, err := encodeCaveatV3("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey, ns)
+	cid, err := encodeCaveatV3([]byte("is-authenticated-user"), nil, []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey, ns)
 
 	c.Assert(err, gc.IsNil)
 	c.Logf("cid %x", cid)
@@ -99,7 +99,7 @@ func (s *codecSuite) TestV2TooShort(c *gc.C) {
 }
 
 func (s *codecSuite) TestV2BadKey(c *gc.C) {
-	cid, err := encodeCaveatV2("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
+	cid, err := encodeCaveatV2([]byte("is-authenticated-user"), nil, []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
 
 	c.Assert(err, gc.IsNil)
 	cid[1] ^= 1
@@ -109,7 +109,7 @@ func (s *codecSuite) TestV2BadKey(c *gc.C) {
 }
 
 func (s *codecSuite) TestV2DecryptionError(c *gc.C) {
-	cid, err := encodeCaveatV2("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
+	cid, err := encodeCaveatV2([]byte("is-authenticated-user"), nil, []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
 
 	c.Assert(err, gc.IsNil)
 	cid[5] ^= 1
@@ -119,7 +119,7 @@ func (s *codecSuite) TestV2DecryptionError(c *gc.C) {
 }
 
 func (s *codecSuite) TestV2EmptySecretPart(c *gc.C) {
-	cid, err := encodeCaveatV2("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
+	cid, err := encodeCaveatV2([]byte("is-authenticated-user"), nil, []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
 
 	c.Assert(err, gc.IsNil)
 	cid = s.replaceV2SecretPart(cid, []byte{})
@@ -129,7 +129,7 @@ func (s *codecSuite) TestV2EmptySecretPart(c *gc.C) {
 }
 
 func (s *codecSuite) TestV2BadSecretPartVersion(c *gc.C) {
-	cid, err := encodeCaveatV2("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
+	cid, err := encodeCaveatV2([]byte("is-authenticated-user"), nil, []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
 	c.Assert(err, gc.IsNil)
 	cid = s.replaceV2SecretPart(cid, []byte{1})
 
@@ -138,7 +138,7 @@ func (s *codecSuite) TestV2BadSecretPartVersion(c *gc.C) {
 }
 
 func (s *codecSuite) TestV2EmptyRootKey(c *gc.C) {
-	cid, err := encodeCaveatV2("is-authenticated-user", []byte{}, &s.thirdPartyKey.Public, s.firstPartyKey)
+	cid, err := encodeCaveatV2([]byte("is-authenticated-user"), nil, []byte{}, &s.thirdPartyKey.Public, s.firstPartyKey)
 	c.Assert(err, gc.IsNil)
 
 	res, err := decodeCaveat(s.thirdPartyKey, cid)
@@ -155,7 +155,7 @@ func (s *codecSuite) TestV2EmptyRootKey(c *gc.C) {
 }
 
 func (s *codecSuite) TestV2LongRootKey(c *gc.C) {
-	cid, err := encodeCaveatV2("is-authenticated-user", bytes.Repeat([]byte{0}, 65536), &s.thirdPartyKey.Public, s.firstPartyKey)
+	cid, err := encodeCaveatV2([]byte("is-authenticated-user"), nil, bytes.Repeat([]byte{0}, 65536), &s.thirdPartyKey.Public, s.firstPartyKey)
 	c.Assert(err, gc.IsNil)
 
 	res, err := decodeCaveat(s.thirdPartyKey, cid)

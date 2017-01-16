@@ -63,7 +63,7 @@ func ExpiryTime(ns *Namespace, cavs []macaroon.Caveat) (time.Time, bool) {
 	var expires bool
 	for _, cav := range cavs {
 		cav := string(cav.Id)
-		name, rest, _ := ParseCaveat(cav)
+		name, rest, _ := ParseCondition(cav)
 		if name != timeBeforeCond {
 			continue
 		}

@@ -248,7 +248,7 @@ func (m *Macaroon) Namespace() *checkers.Namespace {
 func (m *Macaroon) AddCaveats(ctx context.Context, cavs []checkers.Caveat, key *KeyPair, loc ThirdPartyLocator) error {
 	for _, cav := range cavs {
 		if err := m.AddCaveat(ctx, cav, key, loc); err != nil {
-			return errgo.Notef(err, "cannot add caveat", cav)
+			return errgo.Notef(err, "cannot add caveat %v", cav)
 		}
 	}
 	return nil
@@ -268,10 +268,22 @@ func (m *Macaroon) AddCaveats(ctx context.Context, cavs []checkers.Caveat, key *
 // key. See LocalThirdPartyCaveat for a way of creating such caveats.
 func (m *Macaroon) AddCaveat(ctx context.Context, cav checkers.Caveat, key *KeyPair, loc ThirdPartyLocator) error {
 	if cav.Location == "" {
+		if cav.ThirdPartyCondition != nil {
+			return errgo.Newf("third-party condition inappropriately specified on first-party caveat")
+		}
+		if cav.NeedDeclared != nil {
+			return errgo.Newf("need-declared inappropriately specified on first-party caveat")
+		}
 		if err := m.m.AddFirstPartyCaveat(m.namespace.ResolveCaveat(cav).Condition); err != nil {
 			return errgo.Mask(err)
 		}
 		return nil
+	}
+	if cav.Condition != "" {
+		return errgo.Newf("first-party condition inappropriately specified on third-party caveat")
+	}
+	if cav.Namespace != "" {
+		return errgo.Newf("first-party namespace inappropriately specified on third-party caveat")
 	}
 	if key == nil {
 		return errgo.Newf("no private key to encrypt third party caveat")
@@ -280,10 +292,10 @@ func (m *Macaroon) AddCaveat(ctx context.Context, cav checkers.Caveat, key *KeyP
 	if localInfo, ok := parseLocalLocation(cav.Location); ok {
 		info = localInfo
 		cav.Location = "local"
-		if cav.Condition != "" {
+		if cav.ThirdPartyCondition != nil {
 			return errgo.New("cannot specify caveat condition in local third-party caveat")
 		}
-		cav.Condition = "true"
+		cav.ThirdPartyCondition = []byte("true")
 	} else {
 		if loc == nil {
 			return errgo.Newf("no locator when adding third party caveat")
@@ -302,7 +314,7 @@ func (m *Macaroon) AddCaveat(ctx context.Context, cav checkers.Caveat, key *KeyP
 	if m.version < info.Version {
 		info.Version = m.version
 	}
-	caveatInfo, err := encodeCaveat(cav.Condition, rootKey, info, key, m.namespace)
+	caveatInfo, err := encodeCaveat(cav.ThirdPartyCondition, cav.NeedDeclared, rootKey, info, key, m.namespace)
 	if err != nil {
 		return errgo.Notef(err, "cannot create third party caveat at %q", cav.Location)
 	}

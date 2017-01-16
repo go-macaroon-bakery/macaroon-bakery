@@ -458,7 +458,7 @@ func (c *caveatSquasher) add(cond string) {
 // add0 adds the caveat to the squasher. It reports whether
 // the caveat should actually be added.
 func (c *caveatSquasher) add0(cond string) bool {
-	cond, args, err := checkers.ParseCaveat(cond)
+	cond, args, err := checkers.ParseCondition(cond)
 	if err != nil {
 		// Be safe - if we can't parse the caveat, just leave it there.
 		return true

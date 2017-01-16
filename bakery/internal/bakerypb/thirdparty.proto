@@ -1,0 +1,8 @@
+syntax="proto3";
+
+option go_package = "macaroonpb";
+
+message ThirdPartyCondition {
+	bytes body = 1;
+	repeated string needDeclared = 2;
+}
