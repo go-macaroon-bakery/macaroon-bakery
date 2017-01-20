@@ -5,15 +5,35 @@ import (
 
 	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
+	"gopkg.in/macaroon.v2-unstable"
 )
 
-// Declared represents a value declared by virtue of being
-// present as a first-party caveat.
-type Declared struct {
-	// Condition holds the resolved caveat condition.
-	Condition string
-	// Value holds the declared argument to the condition.
-	Value string
+type declaredKey struct{}
+
+// ContextWithDeclared returns a context with attached declared information,
+// as returned from InferDeclared.
+func ContextWithDeclared(ctx context.Context, declared map[string]string) context.Context {
+	return context.WithValue(ctx, declaredKey{}, declared)
+}
+
+func declaredFromContext(ctx context.Context) map[string]string {
+	m, _ := ctx.Value(declaredKey{}).(map[string]string)
+	return m
+}
+
+// DeclaredCaveat returns a "declared" caveat asserting that the given key is
+// set to the given value. If a macaroon has exactly one first party
+// caveat asserting the value of a particular key, then InferDeclared
+// will be able to infer the value, and then DeclaredChecker will allow
+// the declared value if it has the value specified here.
+//
+// If the key is empty or contains a space, DeclaredCaveat
+// will return an error caveat.
+func DeclaredCaveat(key string, value string) Caveat {
+	if strings.Contains(key, " ") || key == "" {
+		return ErrorCaveatf("invalid caveat 'declared' key %q", key)
+	}
+	return firstParty(CondDeclared, key+" "+value)
 }
 
 // NeedDeclaredCaveat returns a third party caveat that
@@ -21,7 +41,6 @@ type Declared struct {
 // that the third party must add "declared" caveats for
 // all the named keys.
 // TODO(rog) namespaces in third party caveats?
-// TODO(rog) deprecate this in favour of in-built field in third party caveat format.
 func NeedDeclaredCaveat(cav Caveat, keys ...string) Caveat {
 	if cav.Location == "" {
 		return ErrorCaveatf("need-declared caveat is not third-party")
@@ -32,56 +51,73 @@ func NeedDeclaredCaveat(cav Caveat, keys ...string) Caveat {
 	}
 }
 
-type declaredKey string
-
-// ContextWithDeclared returns a context with attached declared information,
-// as returned from InferDeclared.
-func ContextWithDeclared(ctx context.Context, declared Declared) context.Context {
-	return context.WithValue(ctx, declaredKey(declared.Condition), declared.Value)
-}
-
-func declaredFromContext(ctx context.Context, cond string) string {
-	val, _ := ctx.Value(declaredKey(cond)).(string)
-	return val
-}
-
-// RegisterDeclaredCaveat registers a checker for the given declaration
-// caveat in the given namespace URI. Caveats with the
-// given condition will succeed if the context is associated with a
-// Declared value that has the same condition as its argument.
-// (see ContextWithDeclared).
-func RegisterDeclaredCaveat(c *Checker, cond, uri string) {
-	c.Register(cond, uri, checkDeclared)
-}
-
-func checkDeclared(ctx context.Context, cond, arg string) error {
-	if val := declaredFromContext(ctx, cond); arg != val {
-		return errgo.Newf("got %q, expected %q", arg, val)
+func checkDeclared(ctx context.Context, _, arg string) error {
+	parts := strings.SplitN(arg, " ", 2)
+	if len(parts) != 2 {
+		return errgo.Newf("declared caveat has no value")
+	}
+	attrs := declaredFromContext(ctx)
+	val, ok := attrs[parts[0]]
+	if !ok {
+		return errgo.Newf("got %s=null, expected %q", parts[0], parts[1])
+	}
+	if val != parts[1] {
+		return errgo.Newf("got %s=%q, expected %q", parts[0], val, parts[1])
 	}
 	return nil
 }
 
-// InferDeclared infers a declared value for the given caveat condition, which
-// should be a resolved caveat condition including its prefix, but without
-// any argument.
+// InferDeclared retrieves any declared information from
+// the given macaroons and returns it as a key-value map.
 //
-// The conditions are assumed to be first party caveat conditions.
-// If the condition is not present, or is declared more than once with different values,
-// the resulting Declared value will have an empty Value field.
-func InferDeclared(declCond string, conds []string) Declared {
-	val, found := "", false
-	for _, cond := range conds {
-		name, arg, _ := ParseCaveat(cond)
-		switch {
-		case name != declCond:
-		case !found:
-			val, found = arg, true
-		case arg != val:
-			val = ""
+// Information is declared with a first party caveat as created
+// by DeclaredCaveat.
+//
+// If there are two caveats that declare the same key with
+// different values, the information is omitted from the map.
+// When the caveats are later checked, this will cause the
+// check to fail.
+func InferDeclared(ns *Namespace, ms macaroon.Slice) map[string]string {
+	var conditions []string
+	for _, m := range ms {
+		for _, cav := range m.Caveats() {
+			if cav.Location == "" {
+				conditions = append(conditions, string(cav.Id))
+			}
 		}
 	}
-	return Declared{
-		Condition: declCond,
-		Value:     val,
+	return InferDeclaredFromConditions(ns, conditions)
+}
+
+// InferDeclaredFromConditions is like InferDeclared except that
+// it is passed a set of first party caveat conditions rather than a set of macaroons.
+func InferDeclaredFromConditions(ns *Namespace, conds []string) map[string]string {
+	var conflicts []string
+	// If we can't resolve that standard namespace, then we'll look for
+	// just bare "declared" caveats which will work OK for legacy
+	// macaroons with no namespace.
+	prefix, _ := ns.Resolve(StdNamespace)
+	declaredCond := prefix + CondDeclared
+
+	info := make(map[string]string)
+	for _, cond := range conds {
+		name, rest, _ := ParseCaveat(cond)
+		if name != declaredCond {
+			continue
+		}
+		parts := strings.SplitN(rest, " ", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key, val := parts[0], parts[1]
+		if oldVal, ok := info[key]; ok && oldVal != val {
+			conflicts = append(conflicts, key)
+			continue
+		}
+		info[key] = val
 	}
+	for _, key := range conflicts {
+		delete(info, key)
+	}
+	return info
 }

@@ -128,27 +128,18 @@ func (c *Checker) Auth(mss ...macaroon.Slice) *AuthChecker {
 type AuthChecker struct {
 	// Checker is used to check first party caveats.
 	*Checker
-
-	// macaroons holds the macaroons providing authorization.
 	macaroons []macaroon.Slice
-
-	// initOnce guards all the fields below it.
-	initOnce   sync.Once
-	initError  error
-	initErrors []error
 	// conditions holds the first party caveat conditions
 	// that apply to each of the above macaroons.
-	conditions [][]string
-	// identity holds the authenticated idenity.
-	identity Identity
-	// When identity is nil, identityCaveats may hold the third party caveats that
-	// can be used to make a macaroon that will prove the identity.
+	conditions      [][]string
+	initOnce        sync.Once
+	initError       error
+	initErrors      []error
+	identity        Identity
 	identityCaveats []checkers.Caveat
 	// authIndexes holds for each potentially authorized operation
 	// the indexes of the macaroons that authorize it.
 	authIndexes map[Op][]int
-	// declarationCondition holds the resolved identity declaration condition
-	declarationCondition string
 }
 
 func (a *AuthChecker) init(ctx context.Context) error {
@@ -159,15 +150,6 @@ func (a *AuthChecker) init(ctx context.Context) error {
 }
 
 func (a *AuthChecker) initOnceFunc(ctx context.Context) error {
-	if cav := a.p.IdentityClient.DeclarationCaveat(); cav.Condition != "" {
-		// Don't use ResolveCaveat because we want to return an error immediately
-		// if we can't resolve the namespace.
-		prefix, ok := a.Namespace().Resolve(cav.Namespace)
-		if !ok {
-			return errgo.Newf("cannot resolve declaration caveat namespace %q", cav.Namespace)
-		}
-		a.declarationCondition = checkers.ConditionWithPrefix(prefix, cav.Condition)
-	}
 	a.authIndexes = make(map[Op][]int)
 	a.conditions = make([][]string, len(a.macaroons))
 	for i, ms := range a.macaroons {
@@ -422,9 +404,7 @@ func (a *AuthChecker) AllowCapability(ctx context.Context, ops ...Op) ([]string,
 	if err != nil {
 		return nil, errgo.Mask(err, isDischargeRequiredError)
 	}
-	squasher := &caveatSquasher{
-		declarationCondition: a.declarationCondition,
-	}
+	var squasher caveatSquasher
 	for i, isUsed := range used {
 		if !isUsed {
 			continue
@@ -444,9 +424,8 @@ func (a *AuthChecker) AllowCapability(ctx context.Context, ops ...Op) ([]string,
 //	- removing declared caveats.
 //	- removing duplicates.
 type caveatSquasher struct {
-	declarationCondition string
-	expiry               time.Time
-	conds                []string
+	expiry time.Time
+	conds  []string
 }
 
 func (c *caveatSquasher) add(cond string) {
@@ -455,8 +434,6 @@ func (c *caveatSquasher) add(cond string) {
 	}
 }
 
-// add0 adds the caveat to the squasher. It reports whether
-// the caveat should actually be added.
 func (c *caveatSquasher) add0(cond string) bool {
 	cond, args, err := checkers.ParseCaveat(cond)
 	if err != nil {
@@ -476,7 +453,7 @@ func (c *caveatSquasher) add0(cond string) bool {
 		return false
 	case checkers.CondAllow,
 		checkers.CondDeny,
-		c.declarationCondition:
+		checkers.CondDeclared:
 		return false
 	}
 	return true
@@ -504,17 +481,14 @@ func (c *caveatSquasher) final() []string {
 	return c.conds
 }
 
-func (a *AuthChecker) checkConditions(ctx context.Context, op Op, conds []string) (string, error) {
-	var declared checkers.Declared
-	if a.declarationCondition != "" {
-		declared = checkers.InferDeclared(a.declarationCondition, conds)
-		ctx = checkers.ContextWithDeclared(ctx, declared)
-	}
+func (a *AuthChecker) checkConditions(ctx context.Context, op Op, conds []string) (map[string]string, error) {
+	declared := checkers.InferDeclaredFromConditions(a.Namespace(), conds)
 	ctx = checkers.ContextWithOperations(ctx, op.Action)
+	ctx = checkers.ContextWithDeclared(ctx, declared)
 	for _, cond := range conds {
 		if err := a.CheckFirstPartyCaveat(ctx, cond); err != nil {
-			return "", errgo.Mask(err)
+			return nil, errgo.Mask(err)
 		}
 	}
-	return declared.Value, nil
+	return declared, nil
 }

@@ -30,7 +30,6 @@ var testChecker = func() *checkers.Checker {
 	c.Namespace().Register("testns", "")
 	c.Register("str", "testns", strCheck)
 	c.Register("true", "testns", trueCheck)
-	checkers.RegisterDeclaredCaveat(c, "declared", checkers.StdNamespace)
 	return c
 }()
 
@@ -74,11 +73,7 @@ func (oneIdentity) IdentityFromContext(ctx context.Context) (bakery.Identity, []
 	return nil, nil, nil
 }
 
-func (oneIdentity) DeclarationCaveat() checkers.Caveat {
-	return checkers.Caveat{}
-}
-
-func (oneIdentity) DeclaredIdentity(string) (bakery.Identity, error) {
+func (oneIdentity) DeclaredIdentity(declared map[string]string) (bakery.Identity, error) {
 	return noone{}, nil
 }
 
