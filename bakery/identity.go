@@ -23,17 +23,10 @@ type IdentityClient interface {
 	// no identity found and no third party to address caveats to.
 	IdentityFromContext(ctx context.Context) (Identity, []checkers.Caveat, error)
 
-	// DeclarationCaveat returns the caveat that is used to declare
-	// the identity. By convention, the condition should have no argument.
-	// Implementations that do not support declaration caveats
-	// may return the zero caveat.
-	DeclarationCaveat() checkers.Caveat
-
 	// DeclaredIdentity parses the identity declaration from the given
-	// declared value, which is taken from the caveats matching the
-	// value returned from DeclarationCaveat. If any of them hold
-	// different values, this method will not be invoked.
-	DeclaredIdentity(declaredValue string) (Identity, error)
+	// declared attributes.
+	// TODO take the set of first party caveat conditions instead?
+	DeclaredIdentity(declared map[string]string) (Identity, error)
 }
 
 // Identity holds identity information declared in a first party caveat
@@ -60,15 +53,9 @@ func (noIdentities) IdentityFromContext(ctx context.Context) (Identity, []checke
 	return nil, nil, nil
 }
 
-// DeclarationCaveat implements IdentityClient.DeclarationCaveat
-// by returning the empty caveat.
-func (noIdentities) DeclarationCaveat() checkers.Caveat {
-	return checkers.Caveat{}
-}
-
 // DeclaredIdentity implements IdentityClient.DeclaredIdentity by
 // always returning an error.
-func (noIdentities) DeclaredIdentity(string) (Identity, error) {
+func (noIdentities) DeclaredIdentity(declared map[string]string) (Identity, error) {
 	return nil, errgo.Newf("no identity declared or possible")
 }
 

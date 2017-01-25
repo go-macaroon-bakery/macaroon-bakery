@@ -2,7 +2,6 @@ package bakery_test
 
 import (
 	"sort"
-	"strings"
 	"time"
 
 	jujutesting "github.com/juju/testing"
@@ -331,20 +330,13 @@ var firstPartyCaveatSquashingTests = []struct {
 	caveats: []checkers.Caveat{
 		checkers.DenyCaveat("foo"),
 		checkers.AllowCaveat("read", "write"),
-		preV3DeclaredCaveat("username", "bob"),
+		checkers.DeclaredCaveat("username", "bob"),
 		trueCaveat("1"),
 	},
 	expect: []checkers.Caveat{
 		trueCaveat("1"),
 	},
 }}
-
-func preV3DeclaredCaveat(attr, val string) checkers.Caveat {
-	return checkers.Caveat{
-		Condition: checkers.Condition("declared", attr+" "+val),
-		Namespace: checkers.StdNamespace,
-	}
-}
 
 func (s *checkerSuite) TestFirstPartyCaveatSquashing(c *gc.C) {
 	locator := make(dischargerLocator)
@@ -650,7 +642,7 @@ func (ids *idService) CheckThirdPartyCaveat(ctx context.Context, info *bakery.Th
 		user:     username,
 	})
 	return []checkers.Caveat{
-		preV3DeclaredCaveat("username", username),
+		checkers.DeclaredCaveat("username", username),
 	}, nil
 }
 
@@ -661,16 +653,9 @@ func (ids *idService) IdentityFromContext(ctx context.Context) (bakery.Identity,
 	}}, nil
 }
 
-func (ids *idService) DeclarationCaveat() checkers.Caveat {
-	return checkers.Caveat{
-		Condition: "declared",
-		Namespace: checkers.StdNamespace,
-	}
-}
-
-func (ids *idService) DeclaredIdentity(val string) (bakery.Identity, error) {
-	user := strings.TrimPrefix(val, "username ")
-	if len(user) == len(val) || user == "" {
+func (ids *idService) DeclaredIdentity(declared map[string]string) (bakery.Identity, error) {
+	user, ok := declared["username"]
+	if !ok {
 		return nil, errgo.Newf("no username declared")
 	}
 	return bakery.SimpleIdentity(user), nil
@@ -697,11 +682,7 @@ func (basicAuthIdService) IdentityFromContext(ctx context.Context) (bakery.Ident
 	return bakery.SimpleIdentity(user), nil, nil
 }
 
-func (basicAuthIdService) DeclarationCaveat() checkers.Caveat {
-	return checkers.Caveat{}
-}
-
-func (basicAuthIdService) DeclaredIdentity(string) (bakery.Identity, error) {
+func (basicAuthIdService) DeclaredIdentity(declared map[string]string) (bakery.Identity, error) {
 	return nil, errgo.Newf("no identity declarations in basic auth id service")
 }
 
@@ -875,21 +856,19 @@ func (c *client) dischargedCapability(ctx context.Context, svc *service, ops ...
 }
 
 func (c *client) doFunc(ctx context.Context, svc *service, f func(ms []macaroon.Slice) error) error {
-	var prevErr error
 	for i := 0; i < maxRetries; i++ {
 		err := f(c.requestMacaroons(svc))
 		derr, ok := errgo.Cause(err).(*dischargeRequiredError)
 		if !ok {
 			return err
 		}
-		prevErr = err
 		ms, err := c.dischargeAll(ctx, derr.m)
 		if err != nil {
 			return errgo.Mask(err)
 		}
 		c.addMacaroon(svc, derr.name, ms)
 	}
-	return errgo.Newf("discharge failed too many times (error %v)", prevErr)
+	return errgo.New("discharge failed too many times")
 }
 
 func (c *client) clearMacaroons(svc *service) {
