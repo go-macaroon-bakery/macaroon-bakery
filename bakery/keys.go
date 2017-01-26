@@ -3,6 +3,7 @@ package bakery
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"strings"
 
 	"golang.org/x/crypto/nacl/box"
@@ -41,6 +42,11 @@ func (k Key) MarshalBinary() ([]byte, error) {
 	return k[:], nil
 }
 
+// isZero reports whether the key consists entirely of zeros.
+func (k Key) isZero() bool {
+	return k == Key{}
+}
+
 // UnmarshalBinary implements encoding.BinaryUnmarshaler.UnmarshalBinary.
 func (k *Key) UnmarshalBinary(data []byte) error {
 	if len(data) != len(k) {
@@ -73,7 +79,7 @@ func (k *Key) UnmarshalText(text []byte) error {
 		return errgo.Notef(err, "cannot decode base64 key")
 	}
 	if n != len(k) {
-		return errgo.Newf("wrong length for base64 key, got %d want %d", n, len(k))
+		return errgo.Newf("wrong length for key, got %d want %d", n, len(k))
 	}
 	copy(k[:], data[0:n])
 	return nil
@@ -134,6 +140,34 @@ func (s *ThirdPartyStore) ThirdPartyInfo(ctx context.Context, loc string) (Third
 type KeyPair struct {
 	Public  PublicKey  `json:"public"`
 	Private PrivateKey `json:"private"`
+}
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (k *KeyPair) UnmarshalJSON(data []byte) error {
+	type keyPair KeyPair
+	if err := json.Unmarshal(data, (*keyPair)(k)); err != nil {
+		return err
+	}
+	return k.validate()
+}
+
+// UnmarshalYAML implements yaml.Unmarshaler.
+func (k *KeyPair) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	type keyPair KeyPair
+	if err := unmarshal((*keyPair)(k)); err != nil {
+		return err
+	}
+	return k.validate()
+}
+
+func (k *KeyPair) validate() error {
+	if k.Public.isZero() {
+		return errgo.Newf("missing public key")
+	}
+	if k.Private.isZero() {
+		return errgo.Newf("missing private key")
+	}
+	return nil
 }
 
 // GenerateKey generates a new key pair.
