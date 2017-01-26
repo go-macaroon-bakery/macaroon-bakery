@@ -119,7 +119,7 @@ func (v *Visitor) Agents() []Agent {
 			agents = append(agents, a.Agent)
 		}
 	}
-	sort.Sort(agentsByURL(agents))
+	sort.Stable(agentsByURL(agents))
 	return agents
 }
 
@@ -146,8 +146,12 @@ func (v *Visitor) DefaultKey() *bakery.KeyPair {
 // http://example.com/foo, its information will be sent to
 // http://example.com/foo/bar but not http://kremvax.com/other.
 //
-// If an agent is added with the same URL as an existing agent (ignoring
+// If an agent is added with the same URL and user name as an existing agent (ignoring
 // any trailing slash), the existing agent will be replaced.
+//
+// if there are two agents for the same URL with different usernames,
+// the last one added will be used, but all the agent information will still
+// be retained.
 //
 // AddAgent returns an error if the agent's URL cannot be parsed
 // or if the agent does not have a key and no default key has
@@ -233,13 +237,15 @@ func (v *Visitor) VisitWebPage(ctx context.Context, client *httpbakery.Client, m
 
 func insertAgent(agents []agent, a agent) []agent {
 	for i, a1 := range agents {
-		if a1.url.Path == a.url.Path {
+		if a1.url.Path == a.url.Path && a.Username == a1.Username {
 			agents[i] = a
 			return agents
 		}
 	}
-	agents = append(agents, a)
-	sort.Sort(byReverseURLLength(agents))
+	agents = append(agents, agent{})
+	copy(agents[1:], agents)
+	agents[0] = a
+	sort.Stable(byReverseURLLength(agents))
 	return agents
 }
 
