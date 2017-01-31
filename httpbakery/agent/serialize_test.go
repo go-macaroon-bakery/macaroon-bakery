@@ -106,6 +106,32 @@ var unmarshalJSONTests = []struct {
 	// TODO it would be nice if encoding/json could provide more contextual
 	// information for errors like this.
 	expectError: `missing private key`,
+}, {
+	about: "multiple users for a single URL",
+	data: `
+{
+	"key": {
+		"public": "en/IpDvPYUOSOA71WnIVNVQ5N+1vLOVQtvgIa9UUyhQ=",
+		"private": "gyeCwDRCGVpFaqJVnu2VPalW4IRJQ9hqxo0LPTYHyUU="
+	},
+	"agents": [{
+		"url": "http://example.com/",
+		"username": "bob"
+	}, {
+		"url": "http://example.com/",
+		"username": "otherbob"
+	}]
+}`,
+	expectDefaultKey: parseKeyPair("en/IpDvPYUOSOA71WnIVNVQ5N+1vLOVQtvgIa9UUyhQ= gyeCwDRCGVpFaqJVnu2VPalW4IRJQ9hqxo0LPTYHyUU="),
+	expectAgents: []agent.Agent{{
+		URL:      "http://example.com/",
+		Username: "bob",
+		Key:      parseKeyPair("en/IpDvPYUOSOA71WnIVNVQ5N+1vLOVQtvgIa9UUyhQ= gyeCwDRCGVpFaqJVnu2VPalW4IRJQ9hqxo0LPTYHyUU="),
+	}, {
+		URL:      "http://example.com/",
+		Username: "otherbob",
+		Key:      parseKeyPair("en/IpDvPYUOSOA71WnIVNVQ5N+1vLOVQtvgIa9UUyhQ= gyeCwDRCGVpFaqJVnu2VPalW4IRJQ9hqxo0LPTYHyUU="),
+	}},
 }}
 
 func (s *serializeSuite) TestUnmarshalJSON(c *gc.C) {
