@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/juju/mgosession"
 	"github.com/juju/testing"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/macaroon.v1"
@@ -16,17 +17,24 @@ import (
 type StorageSuite struct {
 	testing.MgoSuite
 	store bakery.Storage
+	pool  *mgosession.Pool
 }
 
 var _ = gc.Suite(&StorageSuite{})
 
 func (s *StorageSuite) SetUpTest(c *gc.C) {
 	s.MgoSuite.SetUpTest(c)
+	s.pool = mgosession.NewPool(nil, s.Session, 10)
 
-	store, err := mgostorage.New(s.Session.DB("test").C("items"))
+	store, err := mgostorage.New(s.pool, "test", "items")
 	c.Assert(err, gc.IsNil)
 
 	s.store = store
+}
+
+func (s *StorageSuite) TearDownTest(c *gc.C) {
+	s.pool.Close()
+	s.MgoSuite.TearDownTest(c)
 }
 
 func (s *StorageSuite) TestMgoStorage(c *gc.C) {
@@ -120,5 +128,28 @@ func (s *StorageSuite) TestCreateMacaroon(c *gc.C) {
 	c.Assert(item, gc.DeepEquals, `{"RootKey":"YWJj"}`)
 
 	err = service.Check(macaroon.Slice{m}, &testChecker{})
+	c.Assert(err, gc.IsNil)
+}
+
+func (s *StorageSuite) TestSessionRestart(c *gc.C) {
+	proxiedSession := testing.NewProxiedSession(c)
+	defer proxiedSession.Close()
+
+	err := proxiedSession.Ping()
+	c.Assert(err, gc.IsNil)
+
+	pool := mgosession.NewPool(nil, proxiedSession.Session, 10)
+	defer pool.Close()
+
+	store, err := mgostorage.New(pool, "test", "items")
+	c.Assert(err, gc.IsNil)
+
+	err = store.Put("foo", "bar")
+	c.Assert(err, gc.IsNil)
+
+	proxiedSession.CloseConns()
+	proxiedSession.Ping()
+
+	err = store.Put("foo1", "bar")
 	c.Assert(err, gc.IsNil)
 }
