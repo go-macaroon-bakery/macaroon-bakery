@@ -50,7 +50,6 @@ var allCheckers = map[string]checkers.Func{
 // The client-ip-addr caveat checks that the HTTP request has
 // the given remote IP address.
 //
-//
 //    origin <name>
 //
 // The origin caveat checks that the HTTP Origin header has
@@ -101,6 +100,9 @@ func clientOriginCheck(ctx context.Context, cond, args string) error {
 	if req == nil {
 		return errgo.Newf("no origin found in context")
 	}
+	// Note that web browsers may not provide the origin header when it's
+	// not a cross-site request with a GET method. There's nothing we
+	// can do about that, so just allow all requests with an empty origin.
 	if reqOrigin := req.Header.Get("Origin"); reqOrigin != "" && reqOrigin != args {
 		return errgo.Newf("request has invalid Origin header; got %q", reqOrigin)
 	}
