@@ -104,7 +104,7 @@ var checkerTests = []struct {
 		caveat: httpbakery.SameClientIPAddrCaveat(&http.Request{
 			RemoteAddr: "bad",
 		}).Condition,
-		expectError: `caveat "error cannot parse host port in remote address: missing port in address bad" not satisfied: bad caveat`,
+		expectError: `caveat "error cannot parse host port in remote address: .*" not satisfied: bad caveat`,
 	}, {
 		caveat: httpbakery.SameClientIPAddrCaveat(&http.Request{
 			RemoteAddr: "bad:56",
@@ -132,8 +132,7 @@ var checkerTests = []struct {
 	checks: []checkTest{{
 		caveat: checkers.ClientOriginCaveat("").Condition,
 	}, {
-		caveat:      checkers.ClientOriginCaveat("somewhere").Condition,
-		expectError: `caveat "origin somewhere" not satisfied: request has invalid Origin header; got ""`,
+		caveat: checkers.ClientOriginCaveat("somewhere").Condition,
 	}},
 }, {
 	about: "request with origin",
