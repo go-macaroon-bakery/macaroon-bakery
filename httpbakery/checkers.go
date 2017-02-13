@@ -101,7 +101,7 @@ func clientOriginCheck(ctx context.Context, cond, args string) error {
 	if req == nil {
 		return errgo.Newf("no origin found in context")
 	}
-	if reqOrigin := req.Header.Get("Origin"); reqOrigin != args {
+	if reqOrigin := req.Header.Get("Origin"); reqOrigin != "" && reqOrigin != args {
 		return errgo.Newf("request has invalid Origin header; got %q", reqOrigin)
 	}
 	return nil

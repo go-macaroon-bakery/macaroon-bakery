@@ -136,8 +136,7 @@ var checkerTests = []struct {
 	checks: []checkTest{{
 		caveat: httpbakery.ClientOriginCaveat(""),
 	}, {
-		caveat:      httpbakery.ClientOriginCaveat("somewhere"),
-		expectError: `caveat "http:origin somewhere" not satisfied: request has invalid Origin header; got ""`,
+		caveat: httpbakery.ClientOriginCaveat("somewhere"),
 	}},
 }, {
 	about: "request with origin",
