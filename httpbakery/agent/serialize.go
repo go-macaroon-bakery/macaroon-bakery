@@ -75,7 +75,7 @@ func (v *Visitor) setAgentsData(adata *Agents) error {
 	v.defaultKey = adata.Key
 	v.agents = make(map[string][]agent)
 	// Add the agents in reverse order so that the precedence remains the same.
-	for i := len(adata.Agents)-1; i >= 0; i-- {
+	for i := len(adata.Agents) - 1; i >= 0; i-- {
 		a := adata.Agents[i]
 		if err := v.AddAgent(a); err != nil {
 			return errgo.Notef(err, "cannot add agent at URL %q", a.URL)

@@ -653,7 +653,7 @@ func (ids *idService) IdentityFromContext(ctx context.Context) (bakery.Identity,
 	}}, nil
 }
 
-func (ids *idService) DeclaredIdentity(declared map[string]string) (bakery.Identity, error) {
+func (ids *idService) DeclaredIdentity(ctx context.Context, declared map[string]string) (bakery.Identity, error) {
 	user, ok := declared["username"]
 	if !ok {
 		return nil, errgo.Newf("no username declared")
@@ -682,7 +682,7 @@ func (basicAuthIdService) IdentityFromContext(ctx context.Context) (bakery.Ident
 	return bakery.SimpleIdentity(user), nil, nil
 }
 
-func (basicAuthIdService) DeclaredIdentity(declared map[string]string) (bakery.Identity, error) {
+func (basicAuthIdService) DeclaredIdentity(ctx context.Context, declared map[string]string) (bakery.Identity, error) {
 	return nil, errgo.Newf("no identity declarations in basic auth id service")
 }
 

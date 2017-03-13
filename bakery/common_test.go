@@ -73,7 +73,7 @@ func (oneIdentity) IdentityFromContext(ctx context.Context) (bakery.Identity, []
 	return nil, nil, nil
 }
 
-func (oneIdentity) DeclaredIdentity(declared map[string]string) (bakery.Identity, error) {
+func (oneIdentity) DeclaredIdentity(ctx context.Context, declared map[string]string) (bakery.Identity, error) {
 	return noone{}, nil
 }
 

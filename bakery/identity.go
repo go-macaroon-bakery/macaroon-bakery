@@ -26,7 +26,7 @@ type IdentityClient interface {
 	// DeclaredIdentity parses the identity declaration from the given
 	// declared attributes.
 	// TODO take the set of first party caveat conditions instead?
-	DeclaredIdentity(declared map[string]string) (Identity, error)
+	DeclaredIdentity(ctx context.Context, declared map[string]string) (Identity, error)
 }
 
 // Identity holds identity information declared in a first party caveat
@@ -55,7 +55,7 @@ func (noIdentities) IdentityFromContext(ctx context.Context) (Identity, []checke
 
 // DeclaredIdentity implements IdentityClient.DeclaredIdentity by
 // always returning an error.
-func (noIdentities) DeclaredIdentity(declared map[string]string) (Identity, error) {
+func (noIdentities) DeclaredIdentity(ctx context.Context, declared map[string]string) (Identity, error) {
 	return nil, errgo.Newf("no identity declared or possible")
 }
 

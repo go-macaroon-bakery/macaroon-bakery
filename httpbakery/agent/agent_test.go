@@ -463,7 +463,7 @@ func identityCaveats(dischargerURL string) []checkers.Caveat {
 	}}
 }
 
-func (c idmClient) DeclaredIdentity(declared map[string]string) (bakery.Identity, error) {
+func (c idmClient) DeclaredIdentity(ctx context.Context, declared map[string]string) (bakery.Identity, error) {
 	return bakery.SimpleIdentity(declared["username"]), nil
 }
 
