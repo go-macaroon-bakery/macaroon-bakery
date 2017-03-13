@@ -4,12 +4,10 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/juju/httprequest"
 	"github.com/juju/loggo"
@@ -66,13 +64,6 @@ func IsInteractionError(err error) bool {
 	return ok
 }
 
-// WaitResponse holds the type that should be returned
-// by an HTTP response made to a WaitURL
-// (See the ErrorInfo type).
-type WaitResponse struct {
-	Macaroon *bakery.Macaroon
-}
-
 // NewHTTPClient returns an http.Client that ensures
 // that headers are sent to the server even when the
 // server redirects a GET request. The returned client
@@ -117,41 +108,62 @@ type Client struct {
 	// headers (see NewHTTPClient).
 	*http.Client
 
-	// WebPageVisitor holds a Visitor that is called when the
-	// discharge process requires further interaction. If this
-	// is nil, VisitWebPage will be called; if that is also nil, no
-	// interaction will be allowed.
-	//
-	// The VisitWebPage method will always be called with a map
-	// containing a single entry with the key UserInteractionMethod,
-	// holding the URL found in the InteractionRequired error's
-	// VisitURL field.
-	WebPageVisitor Visitor
-
-	// VisitWebPage is called when WebPageVisitor is nil and
-	// the discharge process requires further interaction.
-	//
-	// Note that this field is now deprecated in favour of
-	// WebPageVisitor, which will take priority if set.
-	VisitWebPage func(*url.URL) error
+	// InteractionMethods holds a slice of supported interaction
+	// methods, with preferred methods earlier in the slice.
+	// On receiving an interaction-required error when discharging,
+	// the Kind method of each Interactor in turn will be called
+	// and, if the error indicates that the interaction kind is supported,
+	// the Interact method will be called to complete the discharge.
+	InteractionMethods []Interactor
 
 	// Key holds the client's key. If set, the client will try to
 	// discharge third party caveats with the special location
 	// "local" by using this key. See bakery.DischargeAllWithKey and
 	// bakery.LocalThirdPartyCaveat for more information
 	Key *bakery.KeyPair
-
-	// DischargeAcquirer holds the object that will be used to obtain
-	// third-party discharges. If nil, the Client itself will be used.
-	DischargeAcquirer DischargeAcquirer
 }
 
-// DischargeAcquirer can be implemented by clients that want to customize the
-// discharge-acquisition process used by a Client.
-type DischargeAcquirer interface {
-	// AcquireDischarge should return a discharge macaroon for the given third
-	// party caveat.
-	AcquireDischarge(ctx context.Context, cav macaroon.Caveat, payload []byte) (*bakery.Macaroon, error)
+// An Interactor represents a way of persuading a discharger
+// that it should grant a discharge macaroon.
+type Interactor interface {
+	// Kind returns the interaction method name. This corresponds to the
+	// key in the Error.InteractionMethods type.
+	Kind() string
+
+	// Interact performs the interaction, and returns a token that can be
+	// used to acquire the discharge macaroon. The location provides
+	// the third party caveat location to make it possible to use
+	// relative URLs.
+	//
+	// If the given interaction isn't supported by the client for
+	// the given location, it may return an error with an
+	// ErrInteractionMethodNotFound cause which will cause the
+	// interactor to be ignored that time.
+	Interact(ctx context.Context, client *Client, location string, interactionRequiredErr *Error) (*DischargeToken, error)
+}
+
+// DischargeToken holds a token that is intended
+// to persuade a discharger to discharge a third
+// party caveat.
+type DischargeToken struct {
+	// Kind holds the kind of the token. By convention this
+	// matches the name of the interaction method used to
+	// obtain the token, but that's not required.
+	Kind string `json:"kind"`
+
+	// Value holds the value of the token.
+	Value []byte `json:"value"`
+}
+
+// LegacyInteractor may optionally be implemented by Interactor
+// implementations that implement the legacy interaction-required
+// error protocols.
+type LegacyInteractor interface {
+	// LegacyInteract implements the "visit" half of a legacy discharge
+	// interaction. The "wait" half will be implemented by httpbakery.
+	// The location is the location specified by the third party
+	// caveat.
+	LegacyInteract(ctx context.Context, client *Client, location string, visitURL *url.URL) error
 }
 
 // NewClient returns a new Client containing an HTTP client
@@ -160,6 +172,16 @@ func NewClient() *Client {
 	return &Client{
 		Client: NewHTTPClient(),
 	}
+}
+
+// AddInteractor is a convenience method that appends the given
+// interactor to c.InteractionMethods.
+// For example, to enable web-browser interaction on
+// a client c, do:
+//
+//	c.AddInteractor(httpbakery.WebBrowserWindowInteractor)
+func (c *Client) AddInteractor(i Interactor) {
+	c.InteractionMethods = append(c.InteractionMethods, i)
 }
 
 // DischargeAll attempts to acquire discharge macaroons for all the
@@ -174,14 +196,7 @@ func NewClient() *Client {
 // The returned macaroon slice will not be stored in the client
 // cookie jar (see SetCookie if you need to do that).
 func (c *Client) DischargeAll(ctx context.Context, m *bakery.Macaroon) (macaroon.Slice, error) {
-	return bakery.DischargeAllWithKey(ctx, m, c.dischargeAcquirer().AcquireDischarge, c.Key)
-}
-
-func (c *Client) dischargeAcquirer() DischargeAcquirer {
-	if c.DischargeAcquirer != nil {
-		return c.DischargeAcquirer
-	}
-	return c
+	return bakery.DischargeAllWithKey(ctx, m, c.AcquireDischarge, c.Key)
 }
 
 // Do is like DoWithContext, except the context is automatically derived.
@@ -199,11 +214,11 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 // If the required discharges were refused by a third party, an error
 // with a *DischargeError cause will be returned.
 //
-// If interaction is required by the user, the client's WebPageVisitor,
-// or VisitWebPage function will be used to perform interaction. An error
+// If interaction is required by the user, the client's InteractionMethods
+// will be used to perform interaction. An error
 // with a *InteractionError cause will be returned if this interaction
-// fails. See WebBrowserVisitor for a possible implementation of
-// WebPageVisitor.
+// fails. See WebBrowserWindowInteractor for a possible implementation of
+// an Interactor for an interaction method.
 //
 // DoWithContext may add headers to req.Header.
 func (c *Client) DoWithContext(ctx context.Context, req *http.Request) (*http.Response, error) {
@@ -267,7 +282,7 @@ func (c *Client) do1(ctx context.Context, req *http.Request, getError func(resp 
 		if err1 := c.HandleError(ctx, req.URL, err); err1 != nil {
 			return nil, errgo.Mask(err1, errgo.Any)
 		}
-		logger.Infof("discharge succeeded; retry %d", retry)
+		logger.Debugf("discharge succeeded; retry %d", retry)
 	}
 }
 
@@ -309,7 +324,7 @@ func (c *Client) HandleError(ctx context.Context, reqURL *url.URL, err error) er
 		return errgo.New("no macaroon found in discharge-required response")
 	}
 	mac := respErr.Info.Macaroon
-	macaroons, err := bakery.DischargeAllWithKey(ctx, mac, c.dischargeAcquirer().AcquireDischarge, c.Key)
+	macaroons, err := bakery.DischargeAllWithKey(ctx, mac, c.AcquireDischarge, c.Key)
 	if err != nil {
 		return errgo.Mask(err, errgo.Any)
 	}
@@ -426,23 +441,9 @@ func appendURLElem(u, elem string) string {
 // AcquireDischarge implements DischargeAcquirer by requesting a discharge
 // macaroon from the caveat location as an HTTP URL.
 func (c *Client) AcquireDischarge(ctx context.Context, cav macaroon.Caveat, payload []byte) (*bakery.Macaroon, error) {
-	dclient := newDischargeClient(cav.Location, c)
-	var id, id64 string
-	if utf8.Valid(cav.Id) {
-		id = string(cav.Id)
-	} else {
-		id64 = base64.RawURLEncoding.EncodeToString(cav.Id)
-	}
-	req := &dischargeRequest{
-		Id:   id,
-		Id64: id64,
-	}
-	if len(payload) > 0 {
-		req.Caveat = base64.RawURLEncoding.EncodeToString(payload)
-	}
-	resp, err := dclient.Discharge(ctx, req)
+	m, err := c.acquireDischarge(ctx, cav, payload, nil)
 	if err == nil {
-		return resp.Macaroon, nil
+		return m, nil
 	}
 	cause, ok := errgo.Cause(err).(*Error)
 	if !ok {
@@ -460,60 +461,155 @@ func (c *Client) AcquireDischarge(ctx context.Context, cav macaroon.Caveat, payl
 	// the relative URL calculations work correctly even when
 	// cav.Location doesn't have a trailing slash.
 	loc := appendURLElem(cav.Location, "")
-	m, err := c.interact(ctx, loc, cause.Info.VisitURL, cause.Info.WaitURL)
+	token, m, err := c.interact(ctx, loc, cause, payload)
+	if err != nil {
+		return nil, errgo.Mask(err, IsDischargeError, IsInteractionError)
+	}
+	if m != nil {
+		// We've acquired the macaroon directly via legacy interaction.
+		return m, nil
+	}
+
+	// Try to acquire the discharge again, but this time with
+	// the token acquired by the interaction method.
+	m, err = c.acquireDischarge(ctx, cav, payload, token)
 	if err != nil {
 		return nil, errgo.Mask(err, IsDischargeError, IsInteractionError)
 	}
 	return m, nil
 }
 
+// acquireDischarge is like AcquireDischarge except that it also
+// takes a token acquired from an interaction method.
+func (c *Client) acquireDischarge(
+	ctx context.Context,
+	cav macaroon.Caveat,
+	payload []byte,
+	token *DischargeToken,
+) (*bakery.Macaroon, error) {
+	dclient := newDischargeClient(cav.Location, c)
+	var req dischargeRequest
+	req.Id, req.Id64 = maybeBase64Encode(cav.Id)
+	if token != nil {
+		req.Token, req.Token64 = maybeBase64Encode(token.Value)
+		req.TokenKind = token.Kind
+	}
+	req.Caveat = base64.RawURLEncoding.EncodeToString(payload)
+	resp, err := dclient.Discharge(ctx, &req)
+	if err == nil {
+		return resp.Macaroon, nil
+	}
+	return nil, errgo.Mask(err, errgo.Any)
+}
+
 // interact gathers a macaroon by directing the user to interact with a
-// web page.
-func (c *Client) interact(ctx context.Context, location, visitURLStr, waitURLStr string) (*bakery.Macaroon, error) {
-	visitURL, err := relativeURL(location, visitURLStr)
-	if err != nil {
-		return nil, errgo.Notef(err, "cannot make relative visit URL")
-	}
-	waitURL, err := relativeURL(location, waitURLStr)
-	if err != nil {
-		return nil, errgo.Notef(err, "cannot make relative wait URL")
-	}
-	switch {
-	case c.WebPageVisitor != nil:
-		err = c.WebPageVisitor.VisitWebPage(ctx, c, map[string]*url.URL{
-			UserInteractionMethod: visitURL,
-		})
-	case c.VisitWebPage != nil:
-		err = c.VisitWebPage(visitURL)
-	default:
-		err = errgo.New("interaction required but not possible")
-	}
-	if err != nil {
-		return nil, &InteractionError{
-			Reason: err,
+// web page. The irErr argument holds the interaction-required
+// error response.
+func (c *Client) interact(ctx context.Context, location string, irErr *Error, payload []byte) (*DischargeToken, *bakery.Macaroon, error) {
+	if len(c.InteractionMethods) == 0 {
+		return nil, nil, &InteractionError{
+			Reason: errgo.New("interaction required but not possible"),
 		}
 	}
-	waitResp, err := ctxhttp.Get(ctx, c.Client, waitURL.String())
+	if irErr.Info.InteractionMethods == nil && irErr.Info.LegacyVisitURL != "" {
+		// It's an old-style error; deal with it differently.
+		m, err := c.legacyInteract(ctx, location, irErr)
+		if err != nil {
+			return nil, nil, errgo.Mask(err, IsDischargeError, IsInteractionError)
+		}
+		return nil, m, nil
+	}
+	for _, interactor := range c.InteractionMethods {
+		logger.Infof("checking interaction method %q", interactor.Kind())
+		if _, ok := irErr.Info.InteractionMethods[interactor.Kind()]; ok {
+			logger.Infof("found possible interaction method %q", interactor.Kind())
+			token, err := interactor.Interact(ctx, c, location, irErr)
+			if err != nil {
+				if errgo.Cause(err) == ErrInteractionMethodNotFound {
+					continue
+				}
+				return nil, nil, errgo.Mask(err, IsDischargeError, IsInteractionError)
+			}
+			if token == nil {
+				return nil, nil, errgo.New("interaction method returned an empty token")
+			}
+			return token, nil, nil
+		} else {
+			logger.Infof("interaction method %q not found in %#v", interactor.Kind(), irErr.Info.InteractionMethods)
+		}
+	}
+	return nil, nil, &InteractionError{
+		Reason: errgo.Newf("no supported interaction method"),
+	}
+}
+
+func (c *Client) legacyInteract(ctx context.Context, location string, irErr *Error) (*bakery.Macaroon, error) {
+	visitURL, err := relativeURL(location, irErr.Info.LegacyVisitURL)
+	if err != nil {
+		return nil, errgo.Mask(err)
+	}
+	waitURL, err := relativeURL(location, irErr.Info.LegacyWaitURL)
+	if err != nil {
+		return nil, errgo.Mask(err)
+	}
+	methodURLs := map[string]*url.URL{
+		"interactive": visitURL,
+	}
+	if len(c.InteractionMethods) > 1 || c.InteractionMethods[0].Kind() != WebBrowserInteractionKind {
+		// We have several possible methods or we only support a non-window
+		// method, so we need to fetch the possible methods supported by the discharger.
+		methodURLs = legacyGetInteractionMethods(ctx, c, visitURL)
+	}
+	for _, interactor := range c.InteractionMethods {
+		kind := interactor.Kind()
+		if kind == WebBrowserInteractionKind {
+			// This is the old name for browser-window interaction.
+			kind = "interactive"
+		}
+		interactor, ok := interactor.(LegacyInteractor)
+		if !ok {
+			// Legacy interaction mode isn't supported.
+			continue
+		}
+		visitURL, ok := methodURLs[kind]
+		if !ok {
+			continue
+		}
+		visitURL, err := relativeURL(location, visitURL.String())
+		if err != nil {
+			return nil, errgo.Mask(err)
+		}
+		if err := interactor.LegacyInteract(ctx, c, location, visitURL); err != nil {
+			return nil, &InteractionError{
+				Reason: errgo.Mask(err, errgo.Any),
+			}
+		}
+		return waitForMacaroon(ctx, c, waitURL)
+	}
+	return nil, &InteractionError{
+		Reason: errgo.Newf("no methods supported"),
+	}
+}
+
+// waitForMacaroon returns a macaroon from a legacy wait endpoint.
+func waitForMacaroon(ctx context.Context, client *Client, waitURL *url.URL) (*bakery.Macaroon, error) {
+	httpResp, err := ctxhttp.Get(ctx, client.Client, waitURL.String())
 	if err != nil {
 		return nil, errgo.Notef(err, "cannot get %q", waitURL)
 	}
-	defer waitResp.Body.Close()
-	if waitResp.StatusCode != http.StatusOK {
-		var resp Error
-		if err := json.NewDecoder(waitResp.Body).Decode(&resp); err != nil {
-			return nil, errgo.Notef(err, "cannot unmarshal wait error response")
+	defer httpResp.Body.Close()
+	if httpResp.StatusCode != http.StatusOK {
+		err := unmarshalError(httpResp)
+		if err1, ok := err.(*Error); ok {
+			err = &DischargeError{
+				Reason: err1,
+			}
 		}
-		dischargeErr := &DischargeError{
-			Reason: &resp,
-		}
-		return nil, errgo.NoteMask(dischargeErr, "failed to acquire macaroon after waiting", errgo.Any)
+		return nil, errgo.NoteMask(err, "failed to acquire macaroon after waiting", errgo.Any)
 	}
 	var resp WaitResponse
-	if err := json.NewDecoder(waitResp.Body).Decode(&resp); err != nil {
+	if err := httprequest.UnmarshalJSONResponse(httpResp, &resp); err != nil {
 		return nil, errgo.Notef(err, "cannot unmarshal wait response")
-	}
-	if resp.Macaroon == nil {
-		return nil, errgo.New("no macaroon found in wait response")
 	}
 	return resp.Macaroon, nil
 }
@@ -578,7 +674,7 @@ func cookiesToMacaroons(cookies []*http.Cookie) []macaroon.Slice {
 // decodeMacaroonSlice decodes a base64-JSON-encoded slice of macaroons from
 // the given string.
 func decodeMacaroonSlice(value string) (macaroon.Slice, error) {
-	data, err := base64.StdEncoding.DecodeString(value)
+	data, err := macaroon.Base64Decode([]byte(value))
 	if err != nil {
 		return nil, errgo.NoteMask(err, "cannot base64-decode macaroons")
 	}
@@ -588,11 +684,6 @@ func decodeMacaroonSlice(value string) (macaroon.Slice, error) {
 		return nil, errgo.NoteMask(err, "cannot unmarshal macaroons")
 	}
 	return ms, nil
-}
-
-func isVerificationError(err error) bool {
-	_, ok := err.(*bakery.VerificationError)
-	return ok
 }
 
 type cookieLogger struct {
@@ -605,12 +696,4 @@ func (j *cookieLogger) SetCookies(u *url.URL, cookies []*http.Cookie) {
 		logger.Debugf("\t%d. path %s; name %s", i, c.Path, c.Name)
 	}
 	j.CookieJar.SetCookies(u, cookies)
-}
-
-type nopSeekCloser struct {
-	io.ReadSeeker
-}
-
-func (nopSeekCloser) Close() error {
-	return nil
 }

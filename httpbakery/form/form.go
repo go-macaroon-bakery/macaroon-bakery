@@ -22,34 +22,42 @@ PROTOCOL
 
 A form login works as follows:
 
-	   Client                            Login Service
-	      |                                    |
-	      | GET visitURL with                  |
-	      | "Accept: application/json"         |
-	      |----------------------------------->|
-	      |                                    |
-	      |   Login Methods (including "form") |
-	      |<-----------------------------------|
-	      |                                    |
-	      | GET "form" URL                     |
-	      |----------------------------------->|
-	      |                                    |
-	      |                  Schema definition |
-	      |<-----------------------------------|
-	      |                                    |
-	+-------------+                            |
-	|   Client    |                            |
-	| Interaction |                            |
-	+-------------+                            |
-	      |                                    |
-	      | POST data to "form" URL            |
-	      |----------------------------------->|
-	      |                                    |
-	      |                Form login response |
-	      |<-----------------------------------|
-	      |                                    |
+       Client                            Login Service
+          |                                    |
+          | Discharge request                  |
+          |----------------------------------->|
+          |                                    |
+          |    Interaction-required error with |
+          |         "form" entry with formURL. |
+          |<-----------------------------------|
+          |                                    |
+          | GET "form" URL                     |
+          |----------------------------------->|
+          |                                    |
+          | Schema definition                  |
+          |<-----------------------------------|
+          |                                    |
+    +-------------+                            |
+    |   Client    |                            |
+    | Interaction |                            |
+    +-------------+                            |
+          |                                    |
+          | POST data to "form" URL            |
+          |----------------------------------->|
+          |                                    |
+          |                Form login response |
+          |               with discharge token |
+          |<-----------------------------------|
+          |                                    |
+          | Discharge request with             |
+          | discharge token.                   |
+          |----------------------------------->|
+          |                                    |
+          | Discharge macaroon                 |
+          |<-----------------------------------|
 
-The schema is provided as a environschema.Fileds object. It is the
+
+The schema is provided as a environschema.Fields object. It is the
 client's responsibility to interpret the schema and present it to the
 user.
 */
@@ -61,15 +69,17 @@ const (
 	InteractionMethod = "form"
 )
 
-// SchemaRequest is a request for a form schema.
-type SchemaRequest struct {
-	httprequest.Route `httprequest:"GET"`
-}
-
 // SchemaResponse contains the message expected in response to the schema
 // request.
 type SchemaResponse struct {
 	Schema environschema.Fields `json:"schema"`
+}
+
+// InteractionInfo holds the information expected in
+// the form interaction entry in an interaction-required
+// error.
+type InteractionInfo struct {
+	URL string `json:"url"`
 }
 
 // LoginRequest is a request to perform a login using the provided form.
@@ -83,61 +93,84 @@ type LoginBody struct {
 	Form map[string]interface{} `json:"form"`
 }
 
-// Visitor implements httpbakery.Visitor
+type LoginResponse struct {
+	Token *httpbakery.DischargeToken `json:"token"`
+}
+
+// Interactor implements httpbakery.Interactor
 // by providing form-based interaction.
-type Visitor struct {
+type Interactor struct {
 	// Filler holds the form filler that will be used when
 	// form-based interaction is required.
 	Filler form.Filler
 }
 
-// visitWebPage performs the actual visit request. It attempts to
-// determine that form login is supported and then download the form
-// schema. It calls v.handler.Handle using the downloaded schema and then
-// submits the returned form. Any error produced by v.handler.Handle will
-// not have it's cause masked.
-func (v Visitor) VisitWebPage(ctx context.Context, client *httpbakery.Client, methodURLs map[string]*url.URL) error {
-	return v.visitWebPage(ctx, client, methodURLs)
+// Kind implements httpbakery.Interactor.Kind.
+func (i Interactor) Kind() string {
+	return InteractionMethod
 }
 
-// visitWebPage is the internal version of VisitWebPage that operates
-// on a Doer rather than an httpbakery.Client, so that we
-// can remain compatible with the historic
-// signature of the VisitWebPage function.
-func (v Visitor) visitWebPage(ctx context.Context, doer httprequest.Doer, methodURLs map[string]*url.URL) error {
-	schemaURL := methodURLs[InteractionMethod]
-	if schemaURL == nil {
-		return httpbakery.ErrMethodNotSupported
+// Interact implements httpbakery.Interactor.Interact.
+func (i Interactor) Interact(ctx context.Context, client *httpbakery.Client, location string, interactionRequiredErr *httpbakery.Error) (*httpbakery.DischargeToken, error) {
+	var p InteractionInfo
+	if err := interactionRequiredErr.InteractionMethod(InteractionMethod, &p); err != nil {
+		return nil, errgo.Mask(err)
 	}
-	logger.Infof("got schemaURL %v", schemaURL)
+	if p.URL == "" {
+		return nil, errgo.Newf("no URL found in form information")
+	}
+	schemaURL, err := relativeURL(location, p.URL)
+	if err != nil {
+		return nil, errgo.Notef(err, "invalid url %q", p.URL)
+	}
 	httpReqClient := &httprequest.Client{
-		Doer: doer,
+		Doer: client,
 	}
 	var s SchemaResponse
-	if err := httpReqClient.CallURL(ctx, schemaURL.String(), &SchemaRequest{}, &s); err != nil {
-		return errgo.Notef(err, "cannot get schema")
+	if err := httpReqClient.Get(ctx, schemaURL.String(), &s); err != nil {
+		return nil, errgo.Notef(err, "cannot get schema")
 	}
 	if len(s.Schema) == 0 {
-		return errgo.Newf("invalid schema: no fields found")
+		return nil, errgo.Newf("invalid schema: no fields found")
 	}
 	host, err := publicsuffix.EffectiveTLDPlusOne(schemaURL.Host)
 	if err != nil {
 		host = schemaURL.Host
 	}
-	form, err := v.Filler.Fill(form.Form{
+	formValues, err := i.Filler.Fill(form.Form{
 		Title:  "Log in to " + host,
 		Fields: s.Schema,
 	})
 	if err != nil {
-		return errgo.NoteMask(err, "cannot handle form", errgo.Any)
+		return nil, errgo.NoteMask(err, "cannot handle form", errgo.Any)
 	}
 	lr := LoginRequest{
 		Body: LoginBody{
-			Form: form,
+			Form: formValues,
 		},
 	}
-	if err := httpReqClient.CallURL(ctx, schemaURL.String(), &lr, nil); err != nil {
-		return errgo.Notef(err, "cannot submit form")
+	var lresp LoginResponse
+	if err := httpReqClient.CallURL(ctx, schemaURL.String(), &lr, &lresp); err != nil {
+		return nil, errgo.Notef(err, "cannot submit form")
 	}
-	return nil
+	if lresp.Token == nil {
+		return nil, errgo.Newf("no token found in form response")
+	}
+	return lresp.Token, nil
+}
+
+// relativeURL returns newPath relative to an original URL.
+func relativeURL(base, new string) (*url.URL, error) {
+	if new == "" {
+		return nil, errgo.Newf("empty URL")
+	}
+	baseURL, err := url.Parse(base)
+	if err != nil {
+		return nil, errgo.Notef(err, "cannot parse URL")
+	}
+	newURL, err := url.Parse(new)
+	if err != nil {
+		return nil, errgo.Notef(err, "cannot parse URL")
+	}
+	return baseURL.ResolveReference(newURL), nil
 }

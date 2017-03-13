@@ -135,11 +135,11 @@ func (m *Macaroon) UnmarshalJSON(data []byte) error {
 	}
 	caveatData := make(map[string][]byte)
 	for id64, data64 := range m1.CaveatData {
-		id, err := base64Decode([]byte(id64))
+		id, err := macaroon.Base64Decode([]byte(id64))
 		if err != nil {
 			return errgo.Notef(err, "cannot decode caveat id")
 		}
-		data, err := base64Decode([]byte(data64))
+		data, err := macaroon.Base64Decode([]byte(data64))
 		if err != nil {
 			return errgo.Notef(err, "cannot decode caveat")
 		}
@@ -167,23 +167,6 @@ func (m *Macaroon) unmarshalJSONOldFormat(data []byte) error {
 	}
 	*m = *m2
 	return nil
-}
-
-// base64Decode base64-decodes the given data.
-// It accepts standard padded encoding and unpadded
-// URL encoding.
-func base64Decode(data []byte) ([]byte, error) {
-	// Make a buffer that's big enough for both padded and
-	// unpadded cases.
-	buf := make([]byte, base64.RawStdEncoding.DecodedLen(len(data)))
-	if n, err := base64.StdEncoding.Decode(buf, data); err == nil {
-		return buf[0:n], nil
-	}
-	n, err := base64.RawURLEncoding.Decode(buf, data)
-	if err == nil {
-		return buf[0:n], nil
-	}
-	return nil, errgo.Mask(err)
 }
 
 // bakeryVersion returns a bakery version that corresponds to
@@ -248,7 +231,7 @@ func (m *Macaroon) Namespace() *checkers.Namespace {
 func (m *Macaroon) AddCaveats(ctx context.Context, cavs []checkers.Caveat, key *KeyPair, loc ThirdPartyLocator) error {
 	for _, cav := range cavs {
 		if err := m.AddCaveat(ctx, cav, key, loc); err != nil {
-			return errgo.Notef(err, "cannot add caveat", cav)
+			return errgo.Notef(err, "cannot add caveat %#v", cav)
 		}
 	}
 	return nil

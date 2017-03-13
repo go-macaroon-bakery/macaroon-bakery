@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"gopkg.in/errgo.v1"
+	"gopkg.in/macaroon.v2-unstable"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 )
@@ -18,9 +19,9 @@ type agentLogin struct {
 	PublicKey *bakery.PublicKey `json:"public_key"`
 }
 
-// setCookie sets an agent-login cookie with the specified parameters on
+// addCookie adds an agent-login cookie with the specified parameters to
 // the given request.
-func setCookie(req *http.Request, username string, key *bakery.PublicKey) {
+func addCookie(req *http.Request, username string, key *bakery.PublicKey) {
 	al := agentLogin{
 		Username:  username,
 		PublicKey: key,
@@ -50,7 +51,7 @@ func LoginCookie(req *http.Request) (username string, key *bakery.PublicKey, err
 	if err != nil {
 		return "", nil, ErrNoAgentLoginCookie
 	}
-	b, err := base64.StdEncoding.DecodeString(c.Value)
+	b, err := macaroon.Base64Decode([]byte(c.Value))
 	if err != nil {
 		return "", nil, errgo.Notef(err, "cannot decode cookie value")
 	}

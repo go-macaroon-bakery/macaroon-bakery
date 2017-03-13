@@ -1,9 +1,7 @@
 package form_test
 
 import (
-	"fmt"
 	"net/http"
-	"net/url"
 	"time"
 
 	"github.com/juju/httprequest"
@@ -11,6 +9,7 @@ import (
 	"github.com/juju/testing/httptesting"
 	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
+	"gopkg.in/errgo.v1"
 	"gopkg.in/juju/environschema.v1"
 	esform "gopkg.in/juju/environschema.v1/form"
 
@@ -27,148 +26,136 @@ type formSuite struct {
 
 var ages = time.Now().Add(time.Hour)
 
+var reqServer = httprequest.Server{
+	ErrorMapper: httpbakery.ErrorToResponse,
+}
+
 var _ = gc.Suite(&formSuite{})
 
 var formLoginTests = []struct {
-	about       string
-	opts        dischargeOptions
-	filler      fillerFunc
-	fallback    httpbakery.Visitor
-	expectError string
+	about        string
+	filler       fillerFunc
+	expectError  string
+	noFormMethod bool
+	getForm      func() (environschema.Fields, error)
+	postForm     func(values map[string]interface{}) (*httpbakery.DischargeToken, error)
 }{{
 	about: "complete visit",
-}, {
-	about: "visit error",
-	opts: dischargeOptions{
-		visitError: true,
+	getForm: func() (environschema.Fields, error) {
+		return userPassForm, nil
 	},
-	expectError: `cannot get discharge from ".*": cannot start interactive session: no methods supported`,
-}, {
-	about: "interaction methods not supported",
-	opts: dischargeOptions{
-		ignoreAccept: true,
+	postForm: func(values map[string]interface{}) (*httpbakery.DischargeToken, error) {
+		return &httpbakery.DischargeToken{
+			Kind:  "form",
+			Value: []byte("ok"),
+		}, nil
 	},
-	expectError: `cannot get discharge from ".*": cannot start interactive session: no methods supported`,
-}, {
-	about: "form visit method not supported",
-	opts: dischargeOptions{
-		formUnsupported: true,
-	},
-	expectError: `cannot get discharge from ".*": cannot start interactive session: no methods supported`,
 }, {
 	about: "error getting schema",
-	opts: dischargeOptions{
-		getError: true,
+	getForm: func() (environschema.Fields, error) {
+		return nil, errgo.Newf("some error")
 	},
-	expectError: `cannot get discharge from ".*": cannot start interactive session: cannot get schema.*: test error`,
+	expectError: `cannot get discharge from ".*": cannot get schema: Get https://.*/form: some error`,
+}, {
+	about:        "form visit method not supported",
+	noFormMethod: true,
+	expectError:  `cannot get discharge from ".*": cannot start interactive session: no supported interaction method`,
 }, {
 	about: "error submitting form",
-	opts: dischargeOptions{
-		postError: true,
+	getForm: func() (environschema.Fields, error) {
+		return userPassForm, nil
 	},
-	expectError: `cannot get discharge from ".*": cannot start interactive session: cannot submit form.*: test error`,
+	postForm: func(values map[string]interface{}) (*httpbakery.DischargeToken, error) {
+		return nil, errgo.Newf("some error")
+	},
+	expectError: `cannot get discharge from ".*": cannot submit form.*: some error`,
 }, {
 	about: "no schema",
-	opts: dischargeOptions{
-		emptySchema: true,
+	getForm: func() (environschema.Fields, error) {
+		return nil, nil
 	},
-	expectError: `cannot get discharge from ".*": cannot start interactive session: invalid schema: no fields found`,
+	expectError: `cannot get discharge from ".*": invalid schema: no fields found`,
 }, {
 	about: "filler error",
+	getForm: func() (environschema.Fields, error) {
+		return userPassForm, nil
+	},
 	filler: func(esform.Form) (map[string]interface{}, error) {
-		return nil, testError
+		return nil, errgo.Newf("test error")
 	},
-	expectError: `cannot get discharge from ".*": cannot start interactive session: cannot handle form: test error`,
+	expectError: `cannot get discharge from ".*": cannot handle form: test error`,
 }, {
-	about: "interaction methods fallback success",
-	opts: dischargeOptions{
-		ignoreAccept: true,
+	about: "invalid token returned from form submission",
+	getForm: func() (environschema.Fields, error) {
+		return userPassForm, nil
 	},
-	fallback: visitorFunc(func(c *httpbakery.Client, m map[string]*url.URL) error {
-		req, _ := http.NewRequest("GET", m[httpbakery.UserInteractionMethod].String()+"&fallback=OK", nil)
-		resp, err := c.Do(req)
-		if err == nil {
-			resp.Body.Close()
-		}
-		return err
-	}),
-}, {
-	about: "interaction methods fallback failure",
-	opts: dischargeOptions{
-		ignoreAccept: true,
+	postForm: func(values map[string]interface{}) (*httpbakery.DischargeToken, error) {
+		return &httpbakery.DischargeToken{
+			Kind:  "other",
+			Value: []byte("something"),
+		}, nil
 	},
-	fallback: visitorFunc(func(c *httpbakery.Client, m map[string]*url.URL) error {
-		return testError
-	}),
-	expectError: `cannot get discharge from ".*": cannot start interactive session: test error`,
-}, {
-	about: "form not supported fallback success",
-	opts: dischargeOptions{
-		formUnsupported: true,
-	},
-	fallback: visitorFunc(func(c *httpbakery.Client, m map[string]*url.URL) error {
-		req, err := http.NewRequest("GET", m["othermethod"].String()+"&fallback=OK", nil)
-		if err != nil {
-			panic(err)
-		}
-		resp, err := c.Do(req)
-		if err == nil {
-			resp.Body.Close()
-		}
-		return err
-	}),
-}, {
-	about: "form not supported fallback failure",
-	opts: dischargeOptions{
-		formUnsupported: true,
-	},
-	fallback: visitorFunc(func(c *httpbakery.Client, m map[string]*url.URL) error {
-		return testError
-	}),
-	expectError: `cannot get discharge from ".*": cannot start interactive session: test error`,
+	expectError: `cannot get discharge from ".*": Post .*: cannot discharge: invalid token .*`,
 }}
 
-type visitorFunc func(*httpbakery.Client, map[string]*url.URL) error
-
-func (f visitorFunc) VisitWebPage(_ context.Context, c *httpbakery.Client, m map[string]*url.URL) error {
-	return f(c, m)
-}
-
 func (s *formSuite) TestFormLogin(c *gc.C) {
-	d := &formDischarger{}
-	d.discharger = bakerytest.NewInteractiveDischarger(nil, http.HandlerFunc(d.visit))
-	defer d.discharger.Close()
-	d.discharger.Mux.Handle("/form", http.HandlerFunc(d.form))
-	key, err := bakery.GenerateKey()
-	c.Assert(err, gc.IsNil)
+	var (
+		getForm      func() (environschema.Fields, error)
+		postForm     func(values map[string]interface{}) (*httpbakery.DischargeToken, error)
+		noFormMethod bool
+	)
+
+	discharger := bakerytest.NewDischarger(nil)
+	defer discharger.Close()
+	discharger.AddHTTPHandlers(FormHandlers(FormHandler{
+		getForm: func() (environschema.Fields, error) {
+			return getForm()
+		},
+		postForm: func(values map[string]interface{}) (*httpbakery.DischargeToken, error) {
+			return postForm(values)
+		},
+	}))
+	discharger.Checker = httpbakery.ThirdPartyCaveatCheckerFunc(func(ctx context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
+		if token != nil {
+			if token.Kind != "form" || string(token.Value) != "ok" {
+				return nil, errgo.Newf("invalid token %#v", token)
+			}
+			return nil, nil
+		}
+		err := httpbakery.NewInteractionRequiredError(nil, req)
+		if noFormMethod {
+			err.SetInteraction("notform", "value")
+		} else {
+			err.SetInteraction("form", form.InteractionInfo{
+				URL: "/form",
+			})
+		}
+		return nil, err
+	})
 	b := bakery.New(bakery.BakeryParams{
-		Key:     key,
-		Locator: d.discharger,
+		Key:     bakery.MustGenerateKey(),
+		Locator: discharger,
 	})
 	for i, test := range formLoginTests {
-		c.Logf("test %d: %s", i, test.about)
-		d.dischargeOptions = test.opts
+		c.Logf("\ntest %d: %s", i, test.about)
+		getForm = test.getForm
+		postForm = test.postForm
+		noFormMethod = test.noFormMethod
+
 		m, err := b.Oven.NewMacaroon(context.TODO(), bakery.LatestVersion, ages, []checkers.Caveat{{
-			Location:  d.discharger.Location(),
+			Location:  discharger.Location(),
 			Condition: "test condition",
 		}}, bakery.LoginOp)
-
 		c.Assert(err, gc.Equals, nil)
+
 		client := httpbakery.NewClient()
 		filler := defaultFiller
 		if test.filler != nil {
 			filler = test.filler
 		}
-		handlers := []httpbakery.Visitor{
-			form.Visitor{
-				Filler: filler,
-			},
-		}
-		if test.fallback != nil {
-			handlers = append(handlers, test.fallback)
-		}
-		client.WebPageVisitor = httpbakery.NewMultiVisitor(handlers...)
-
+		client.AddInteractor(form.Interactor{
+			Filler: filler,
+		})
 		ms, err := client.DischargeAll(context.Background(), m)
 		if test.expectError != "" {
 			c.Assert(err, gc.ErrorMatches, test.expectError)
@@ -194,17 +181,34 @@ var formTitleTests = []struct {
 }}
 
 func (s *formSuite) TestFormTitle(c *gc.C) {
-	d := &formDischarger{}
-	d.discharger = bakerytest.NewInteractiveDischarger(nil, http.HandlerFunc(d.visit))
-	defer d.discharger.Close()
-	d.discharger.Mux.Handle("/form", http.HandlerFunc(d.form))
-	key, err := bakery.GenerateKey()
-	c.Assert(err, gc.IsNil)
+	discharger := bakerytest.NewDischarger(nil)
+	defer discharger.Close()
+	discharger.AddHTTPHandlers(FormHandlers(FormHandler{
+		getForm: func() (environschema.Fields, error) {
+			return userPassForm, nil
+		},
+		postForm: func(values map[string]interface{}) (*httpbakery.DischargeToken, error) {
+			return &httpbakery.DischargeToken{
+				Kind:  "form",
+				Value: []byte("ok"),
+			}, nil
+		},
+	}))
+	discharger.Checker = httpbakery.ThirdPartyCaveatCheckerFunc(func(ctx context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
+		if token != nil {
+			return nil, nil
+		}
+		err := httpbakery.NewInteractionRequiredError(nil, req)
+		err.SetInteraction("form", form.InteractionInfo{
+			URL: "/form",
+		})
+		return nil, err
+	})
 	b := bakery.New(bakery.BakeryParams{
-		Key: key,
+		Key: bakery.MustGenerateKey(),
 		Locator: testLocator{
-			loc:     d.discharger.Location(),
-			locator: d.discharger,
+			loc:     discharger.Location(),
+			locator: discharger,
 		},
 	})
 	for i, test := range formTitleTests {
@@ -213,21 +217,18 @@ func (s *formSuite) TestFormTitle(c *gc.C) {
 			Location:  "https://" + test.host,
 			Condition: "test condition",
 		}}, bakery.LoginOp)
-
 		c.Assert(err, gc.Equals, nil)
 		client := httpbakery.NewClient()
-		c.Logf("match %v; replace with %v", test.host, d.discharger.Location())
+		c.Logf("match %v; replace with %v", test.host, discharger.Location())
 		client.Client.Transport = httptesting.URLRewritingTransport{
 			MatchPrefix:  "https://" + test.host,
-			Replace:      d.discharger.Location(),
+			Replace:      discharger.Location(),
 			RoundTripper: http.DefaultTransport,
 		}
 		var f titleTestFiller
-		client.WebPageVisitor = httpbakery.NewMultiVisitor(
-			form.Visitor{
-				Filler: &f,
-			},
-		)
+		client.AddInteractor(form.Interactor{
+			Filler: &f,
+		})
 
 		ms, err := client.DischargeAll(context.Background(), m)
 		c.Assert(err, gc.IsNil)
@@ -236,101 +237,46 @@ func (s *formSuite) TestFormTitle(c *gc.C) {
 	}
 }
 
-type dischargeOptions struct {
-	ignoreAccept    bool
-	visitError      bool
-	formUnsupported bool
-	getError        bool
-	postError       bool
-	emptySchema     bool
+func FormHandlers(h FormHandler) []httprequest.Handler {
+	return reqServer.Handlers(func(p httprequest.Params) (formHandlers, context.Context, error) {
+		return formHandlers{h}, p.Context, nil
+	})
 }
 
-type formDischarger struct {
-	discharger *bakerytest.InteractiveDischarger
-	dischargeOptions
+type FormHandler struct {
+	getForm  func() (environschema.Fields, error)
+	postForm func(values map[string]interface{}) (*httpbakery.DischargeToken, error)
 }
 
-func (d *formDischarger) visit(w http.ResponseWriter, r *http.Request) {
-	ctx := context.TODO()
-	r.ParseForm()
-	if r.Form.Get("fallback") != "" {
-		d.discharger.FinishInteraction(ctx, w, r, nil, nil)
-		return
-	}
-	if d.ignoreAccept {
-		w.Write([]byte("OK"))
-		return
-	}
-	if r.Header.Get("Accept") != "application/json" {
-		d.errorf(w, r, "bad accept header %q", r.Header.Get("Accept"))
-	}
-	if d.visitError {
-		httprequest.WriteJSON(w, http.StatusInternalServerError, testError)
-		d.discharger.FinishInteraction(ctx, w, r, nil, testError)
-		return
-	}
-	methods := map[string]string{
-		form.InteractionMethod: d.discharger.HostRelativeURL("/form", r),
-		"othermethod":          d.discharger.HostRelativeURL("/visit", r),
-	}
-	if d.formUnsupported {
-		delete(methods, form.InteractionMethod)
-	}
-	httprequest.WriteJSON(w, http.StatusOK, methods)
+type formHandlers struct {
+	h FormHandler
 }
 
-func (d *formDischarger) form(w http.ResponseWriter, r *http.Request) {
-	ctx := context.TODO()
-	if r.Method == "GET" {
-		if d.getError {
-			httprequest.WriteJSON(w, http.StatusInternalServerError, testError)
-			d.discharger.FinishInteraction(ctx, w, r, nil, testError)
-			return
-		}
-		var sr form.SchemaResponse
-		if !d.emptySchema {
-			sr.Schema = environschema.Fields{
-				"username": environschema.Attr{
-					Type: environschema.Tstring,
-				},
-				"password": environschema.Attr{
-					Type:   environschema.Tstring,
-					Secret: true,
-				},
-			}
-		}
-		httprequest.WriteJSON(w, http.StatusOK, sr)
-		return
-	}
-	if r.Method != "POST" {
-		d.errorf(w, r, "bad method %q", r.Method)
-		return
-	}
-	if d.postError {
-		httprequest.WriteJSON(w, http.StatusInternalServerError, testError)
-		d.discharger.FinishInteraction(ctx, w, r, nil, testError)
-		return
-	}
-	var lr form.LoginRequest
-	err := httprequest.Unmarshal(httprequest.Params{Request: r}, &lr)
+type schemaRequest struct {
+	httprequest.Route `httprequest:"GET /form"`
+}
+
+func (d formHandlers) GetForm(*schemaRequest) (*form.SchemaResponse, error) {
+	schema, err := d.h.getForm()
 	if err != nil {
-		d.errorf(w, r, "bad visit request: %s", err)
-		return
+		return nil, errgo.Mask(err)
 	}
-	d.discharger.FinishInteraction(ctx, w, r, nil, nil)
+	return &form.SchemaResponse{schema}, nil
 }
 
-func (d *formDischarger) errorf(w http.ResponseWriter, r *http.Request, s string, p ...interface{}) {
-	ctx := context.TODO()
-	err := &httpbakery.Error{
-		Code:    httpbakery.ErrBadRequest,
-		Message: fmt.Sprintf(s, p...),
-	}
-	d.discharger.FinishInteraction(ctx, w, r, nil, err)
+type loginRequest struct {
+	httprequest.Route `httprequest:"POST /form"`
+	form.LoginRequest
 }
 
-var testError = &httpbakery.Error{
-	Message: "test error",
+func (d formHandlers) PostForm(req *loginRequest) (*form.LoginResponse, error) {
+	token, err := d.h.postForm(req.Body.Form)
+	if err != nil {
+		return nil, errgo.Mask(err)
+	}
+	return &form.LoginResponse{
+		Token: token,
+	}, nil
 }
 
 type fillerFunc func(esform.Form) (map[string]interface{}, error)
@@ -359,4 +305,14 @@ type titleTestFiller struct {
 func (f *titleTestFiller) Fill(form esform.Form) (map[string]interface{}, error) {
 	f.title = form.Title
 	return map[string]interface{}{"test": 1}, nil
+}
+
+var userPassForm = environschema.Fields{
+	"username": environschema.Attr{
+		Type: environschema.Tstring,
+	},
+	"password": environschema.Attr{
+		Type:   environschema.Tstring,
+		Secret: true,
+	},
 }
