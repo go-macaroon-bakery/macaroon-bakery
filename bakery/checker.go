@@ -195,7 +195,7 @@ func (a *AuthChecker) initOnceFunc(ctx context.Context) error {
 			// for the purposes of identity.
 			continue
 		}
-		identity, err := a.p.IdentityClient.DeclaredIdentity(declared)
+		identity, err := a.p.IdentityClient.DeclaredIdentity(ctx, declared)
 		if err != nil {
 			a.initErrors = append(a.initErrors, errgo.Notef(err, "cannot decode declared identity: %v", err))
 			continue
