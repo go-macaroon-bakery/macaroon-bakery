@@ -89,6 +89,10 @@ func NewHTTPClient() *http.Client {
 			return nil
 		}
 		for attr, val := range via[0].Header {
+			if attr == "Cookie" {
+				// Cookies are added automatically anyway.
+				continue
+			}
 			if _, ok := req.Header[attr]; !ok {
 				req.Header[attr] = val
 			}

@@ -439,7 +439,8 @@ func (s *ClientSuite) serverRequiringMultipleDischarges(n int, discharger *baker
 		if err != nil {
 			panic(fmt.Errorf("cannot make new macaroon: %v", err))
 		}
-		httpbakery.WriteDischargeRequiredErrorForRequest(w, m, "", errgo.New("foo"), req)
+		err = httpbakery.NewDischargeRequiredError(m, "", errgo.New("foo"), req)
+		httpbakery.WriteError(testContext, w, err)
 	}))
 }
 
@@ -447,7 +448,8 @@ func (s *ClientSuite) TestVersion0Generates407Status(c *gc.C) {
 	m, err := bakery.NewMacaroon([]byte("root key"), []byte("id"), "location", bakery.Version0, nil)
 	c.Assert(err, gc.IsNil)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		httpbakery.WriteDischargeRequiredErrorForRequest(w, m, "", errgo.New("foo"), req)
+		err := httpbakery.NewDischargeRequiredError(m, "", errgo.New("foo"), req)
+		httpbakery.WriteError(testContext, w, err)
 	}))
 	defer srv.Close()
 	resp, err := http.Get(srv.URL)
@@ -459,7 +461,8 @@ func (s *ClientSuite) TestVersion1Generates401Status(c *gc.C) {
 	m, err := bakery.NewMacaroon([]byte("root key"), []byte("id"), "location", bakery.Version1, nil)
 	c.Assert(err, gc.IsNil)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		httpbakery.WriteDischargeRequiredErrorForRequest(w, m, "", errgo.New("foo"), req)
+		err := httpbakery.NewDischargeRequiredError(m, "", errgo.New("foo"), req)
+		httpbakery.WriteError(testContext, w, err)
 	}))
 	defer srv.Close()
 

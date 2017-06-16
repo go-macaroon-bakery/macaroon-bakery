@@ -228,7 +228,7 @@ func (o *Oven) NewMacaroon(ctx context.Context, version Version, expiry time.Tim
 	}
 	m, err := NewMacaroon(rootKey, idBytes, o.p.Location, version, o.p.Namespace)
 	if err != nil {
-		return nil, errgo.Notef(err, "cannot create macaroon")
+		return nil, errgo.Notef(err, "cannot create macaroon with version %v", version)
 	}
 	if err := o.AddCaveat(ctx, m, checkers.TimeBeforeCaveat(expiry)); err != nil {
 		return nil, errgo.Mask(err)

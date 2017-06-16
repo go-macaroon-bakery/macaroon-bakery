@@ -68,8 +68,9 @@ func (s *ErrorSuite) TestWriteDischargeRequiredError(c *gc.C) {
 	for i, t := range tests {
 		c.Logf("Running test %d %s", i, t.about)
 		response := httptest.NewRecorder()
-		httpbakery.WriteDischargeRequiredError(response, m, t.path, t.err)
-		httptesting.AssertJSONResponse(c, response, http.StatusProxyAuthRequired, t.expectedResponse)
+		err := httpbakery.NewDischargeRequiredErrorWithVersion(m, t.path, t.err, bakery.Version3)
+		httpbakery.WriteError(testContext, response, err)
+		httptesting.AssertJSONResponse(c, response, http.StatusUnauthorized, t.expectedResponse)
 	}
 }
 

@@ -289,6 +289,7 @@ func (a *AuthChecker) allowAny(ctx context.Context, ops []Op) (authed, used []bo
 		for _, mindex := range a.authIndexes[op] {
 			_, err := a.checkConditions(ctx, op, a.conditions[mindex])
 			if err != nil {
+				logger.Infof("condition check %q failed: %v", a.conditions[mindex], err)
 				errors = append(errors, err)
 				continue
 			}
@@ -330,11 +331,13 @@ func (a *AuthChecker) allowAny(ctx context.Context, ops []Op) (authed, used []bo
 			need = append(need, ops[i])
 		}
 	}
-	logger.Debugf("operations needed after authz macaroons: %#v", need)
 
 	// Try to authorize the operations even if we haven't got an authenticated user.
 	oks, caveats, err := a.p.Authorizer.Authorize(ctx, a.identity, need)
 	if err != nil {
+		// TODO if there are macaroons supplied that have failed, perhaps we shouldn't
+		// do this but return those errors instead? Doing things the current
+		// way means that we lose the previous errors.
 		return authed, used, errgo.Notef(err, "cannot check permissions")
 	}
 

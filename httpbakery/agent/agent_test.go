@@ -529,5 +529,6 @@ func (s *agentSuite) defaultHandle(ctx context.Context, w http.ResponseWriter, r
 		})
 		return
 	}
-	httpbakery.WriteDischargeRequiredError(w, m, "", authErr)
+	err = httpbakery.NewDischargeRequiredError(m, "", authErr, req)
+	httpbakery.WriteError(ctx, w, err)
 }
