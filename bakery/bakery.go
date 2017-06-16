@@ -68,8 +68,9 @@ type BakeryParams struct {
 	Location string
 }
 
-// New returns a new Bakery instance which contains an Oven with a Bakery
-// for the convenience of callers that wish to use both together.
+// New returns a new Bakery instance which combines an Oven with a
+// Checker for the convenience of callers that wish to use both
+// together.
 func New(p BakeryParams) *Bakery {
 	if p.Checker == nil {
 		p.Checker = checkers.New(nil)

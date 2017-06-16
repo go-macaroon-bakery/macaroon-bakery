@@ -1,11 +1,10 @@
-// +build ignore
-
 package main
 
 import (
 	"net/http"
 	"testing"
 
+	jujutesting "github.com/juju/testing"
 	gc "gopkg.in/check.v1"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
@@ -16,6 +15,7 @@ func TestPackage(t *testing.T) {
 }
 
 type exampleSuite struct {
+	jujutesting.LoggingSuite
 	authEndpoint  string
 	authPublicKey *bakery.PublicKey
 }
@@ -23,6 +23,7 @@ type exampleSuite struct {
 var _ = gc.Suite(&exampleSuite{})
 
 func (s *exampleSuite) SetUpSuite(c *gc.C) {
+	s.LoggingSuite.SetUpSuite(c)
 	key, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
 	s.authPublicKey = &key.Public

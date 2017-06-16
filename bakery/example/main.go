@@ -1,5 +1,3 @@
-// +build ignore
-
 // This example demonstrates three components:
 //
 // - A target service, representing a web server that

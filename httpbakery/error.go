@@ -35,8 +35,12 @@ var (
 		ErrorMapper: ErrorToResponse,
 	}
 	handleJSON = httpReqServer.HandleJSON
-	writeError = httpReqServer.WriteError
 )
+
+// WriteError writes the given bakery error to w.
+func WriteError(ctx context.Context, w http.ResponseWriter, err error) {
+	httpReqServer.WriteError(ctx, w, err)
+}
 
 // Error holds the type of a response from an httpbakery HTTP request,
 // marshaled as JSON.
@@ -175,36 +179,6 @@ func badRequestErrorf(f string, a ...interface{}) error {
 	return errgo.WithCausef(nil, ErrBadRequest, f, a...)
 }
 
-// WriteDischargeRequiredError creates an error using
-// NewDischargeRequiredError and writes it to the given response writer,
-// indicating that the client should discharge the macaroon to allow the
-// original request to be accepted.
-func WriteDischargeRequiredError(w http.ResponseWriter, m *bakery.Macaroon, path string, originalErr error) {
-	writeError(context.Background(), w, NewDischargeRequiredError(m, path, originalErr))
-}
-
-// WriteDischargeRequiredErrorForRequest is like NewDischargeRequiredError
-// but uses the given request to determine the protocol version appropriate
-// for the client.
-//
-// This function should always be used in preference to
-// WriteDischargeRequiredError, because it enables
-// in-browser macaroon discharge.
-func WriteDischargeRequiredErrorForRequest(w http.ResponseWriter, m *bakery.Macaroon, path string, originalErr error, req *http.Request) {
-	writeError(context.Background(), w, NewDischargeRequiredErrorForRequest(m, path, originalErr, req))
-}
-
-// NewDischargeRequiredError returns an error of type *Error that
-// reports the given original error and includes the given macaroon.
-//
-// The returned macaroon will be declared as valid for the given URL
-// path and may be relative. When the client stores the discharged
-// macaroon as a cookie this will be the path associated with the
-// cookie. See ErrorInfo.MacaroonPath for more information.
-func NewDischargeRequiredError(m *bakery.Macaroon, path string, originalErr error) error {
-	return NewDischargeRequiredErrorWithVersion(m, path, originalErr, bakery.Version0)
-}
-
 // NewInteractionRequiredError returns an error of type *Error
 // that requests an interaction from the client in response
 // to the given request. The originalErr value describes the original
@@ -229,26 +203,26 @@ func NewInteractionRequiredError(visitURL, waitURL string, originalErr error, re
 	}
 }
 
-// NewDischargeRequiredErrorForRequest is like NewDischargeRequiredError
+// NewDischargeRequiredError is like NewDischargeRequiredErrorWithVersion
 // except that it determines the client's bakery protocol version from
 // the request and returns an error response appropriate for that.
+func NewDischargeRequiredError(m *bakery.Macaroon, path string, originalErr error, req *http.Request) error {
+	v := RequestVersion(req)
+	return NewDischargeRequiredErrorWithVersion(m, path, originalErr, v)
+}
+
+// NewDischargeRequiredErrorWithVersion returns an error of type *Error that
+// reports the given original error and includes the given macaroon.
 //
-// This function should always be used in preference to
-// NewDischargeRequiredError, because it enables in-browser macaroon
-// discharge.
+// The returned macaroon will be declared as valid for the given URL
+// path, which may be relative. When the client stores the discharged
+// macaroon as a cookie this will be the path associated with the
+// cookie. See ErrorInfo.MacaroonPath for more information.
 //
 // To request a particular cookie name:
 //
 //	err := NewDischargeRequiredErrorForRequest(...)
 //	err.(*httpbakery.Error).Info.CookieNameSuffix = cookieName
-func NewDischargeRequiredErrorForRequest(m *bakery.Macaroon, path string, originalErr error, req *http.Request) error {
-	v := RequestVersion(req)
-	return NewDischargeRequiredErrorWithVersion(m, path, originalErr, v)
-}
-
-// NewDischargeRequiredErrorWithVersion is like NewDischargeRequiredErrorForRequest
-// except that instead of inferring the client version from
-// the request, the version is explicit.
 func NewDischargeRequiredErrorWithVersion(m *bakery.Macaroon, path string, originalErr error, v bakery.Version) error {
 	if originalErr == nil {
 		originalErr = ErrDischargeRequired
