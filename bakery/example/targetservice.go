@@ -64,7 +64,7 @@ func (srv *targetServiceHandler) serveSilver(w http.ResponseWriter, req *http.Re
 // to decide what authorization is required.
 func (srv *targetServiceHandler) auth(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		ctx := httpbakery.ContextWithRequest(req.Context(), req)
+		ctx := httpbakery.ContextWithRequest(context.TODO(), req)
 		ops, err := opsForRequest(req)
 		if err != nil {
 			fail(w, http.StatusInternalServerError, "%v", err)
