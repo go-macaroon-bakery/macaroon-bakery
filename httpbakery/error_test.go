@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 
 	"github.com/juju/httprequest"
 	jc "github.com/juju/testing/checkers"
@@ -80,7 +81,7 @@ func (s *ErrorSuite) TestNewInteractionRequiredError(c *gc.C) {
 	req, err := http.NewRequest("GET", "/", nil)
 	c.Assert(err, gc.IsNil)
 
-	err = httpbakery.NewInteractionRequiredError("/visit", "/wait", nil, req)
+	err = httpbakery.NewInteractionRequiredError(nil, req)
 	code, resp := httpbakery.ErrorToResponse(testContext, err)
 	c.Assert(code, gc.Equals, http.StatusProxyAuthRequired)
 
@@ -90,17 +91,13 @@ func (s *ErrorSuite) TestNewInteractionRequiredError(c *gc.C) {
 	c.Assert(string(data), jc.JSONEquals, &httpbakery.Error{
 		Code:    httpbakery.ErrInteractionRequired,
 		Message: httpbakery.ErrInteractionRequired.Error(),
-		Info: &httpbakery.ErrorInfo{
-			VisitURL: "/visit",
-			WaitURL:  "/wait",
-		},
 	})
 
 	// With a request with a version 1 header, the response
 	// should be 401.
 	req.Header.Set("Bakery-Protocol-Version", "1")
 
-	err = httpbakery.NewInteractionRequiredError("/visit", "/wait", nil, req)
+	err = httpbakery.NewInteractionRequiredError(nil, req)
 	code, resp = httpbakery.ErrorToResponse(testContext, err)
 	c.Assert(code, gc.Equals, http.StatusUnauthorized)
 
@@ -114,17 +111,13 @@ func (s *ErrorSuite) TestNewInteractionRequiredError(c *gc.C) {
 	c.Assert(string(data), jc.JSONEquals, &httpbakery.Error{
 		Code:    httpbakery.ErrInteractionRequired,
 		Message: httpbakery.ErrInteractionRequired.Error(),
-		Info: &httpbakery.ErrorInfo{
-			VisitURL: "/visit",
-			WaitURL:  "/wait",
-		},
 	})
 
 	// With a request with a later version header, the response
 	// should be also be 401.
 	req.Header.Set("Bakery-Protocol-Version", "2")
 
-	err = httpbakery.NewInteractionRequiredError("/visit", "/wait", nil, req)
+	err = httpbakery.NewInteractionRequiredError(nil, req)
 	code, resp = httpbakery.ErrorToResponse(testContext, err)
 	c.Assert(code, gc.Equals, http.StatusUnauthorized)
 
@@ -138,9 +131,97 @@ func (s *ErrorSuite) TestNewInteractionRequiredError(c *gc.C) {
 	c.Assert(string(data), jc.JSONEquals, &httpbakery.Error{
 		Code:    httpbakery.ErrInteractionRequired,
 		Message: httpbakery.ErrInteractionRequired.Error(),
+	})
+}
+
+func (*ErrorSuite) TestSetInteraction(c *gc.C) {
+	var e httpbakery.Error
+	e.SetInteraction("foo", 5)
+	c.Assert(e, jc.DeepEquals, httpbakery.Error{
 		Info: &httpbakery.ErrorInfo{
-			VisitURL: "/visit",
-			WaitURL:  "/wait",
+			InteractionMethods: map[string]*json.RawMessage{
+				"foo": jsonRawMessage("5"),
+			},
 		},
 	})
+}
+
+func jsonRawMessage(s string) *json.RawMessage {
+	m := json.RawMessage(s)
+	return &m
+}
+
+var interactionMethodTests = []struct {
+	about       string
+	err         *httpbakery.Error
+	kind        string
+	expect      interface{}
+	expectError string
+}{{
+	about:       "no info",
+	err:         &httpbakery.Error{},
+	expect:      0,
+	expectError: `not an interaction-required error \(code \)`,
+}, {
+	about: "not interaction-required code",
+	err: &httpbakery.Error{
+		Code: "other",
+		Info: &httpbakery.ErrorInfo{},
+	},
+	expect:      0,
+	expectError: `not an interaction-required error \(code other\)`,
+}, {
+	about: "interaction method not found",
+	err: &httpbakery.Error{
+		Code: httpbakery.ErrInteractionRequired,
+		Info: &httpbakery.ErrorInfo{
+			InteractionMethods: map[string]*json.RawMessage{
+				"foo": jsonRawMessage("0"),
+			},
+		},
+	},
+	kind:        "x",
+	expect:      0,
+	expectError: `interaction method "x" not found`,
+}, {
+	about: "cannot unmarshal",
+	err: &httpbakery.Error{
+		Code: httpbakery.ErrInteractionRequired,
+		Info: &httpbakery.ErrorInfo{
+			InteractionMethods: map[string]*json.RawMessage{
+				"x": jsonRawMessage(`{"X": 45}`),
+			},
+		},
+	},
+	kind: "x",
+	expect: struct {
+		X string
+	}{},
+	expectError: `cannot unmarshal data for interaction method "x": json: cannot unmarshal number into Go struct field .X of type string`,
+}, {
+	about: "success",
+	err: &httpbakery.Error{
+		Code: httpbakery.ErrInteractionRequired,
+		Info: &httpbakery.ErrorInfo{
+			InteractionMethods: map[string]*json.RawMessage{
+				"x": jsonRawMessage(`45`),
+			},
+		},
+	},
+	kind:   "x",
+	expect: 45,
+}}
+
+func (*ErrorSuite) TestInteractionMethod(c *gc.C) {
+	for i, test := range interactionMethodTests {
+		c.Logf("test %d: %s", i, test.about)
+		v := reflect.New(reflect.TypeOf(test.expect))
+		err := test.err.InteractionMethod(test.kind, v.Interface())
+		if test.expectError != "" {
+			c.Assert(err, gc.ErrorMatches, test.expectError)
+		} else {
+			c.Assert(err, gc.Equals, nil)
+			c.Assert(v.Elem().Interface(), jc.DeepEquals, test.expect)
+		}
+	}
 }

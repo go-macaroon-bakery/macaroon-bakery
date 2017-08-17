@@ -1,6 +1,7 @@
 package httpbakery
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -25,17 +26,15 @@ func (e ErrorCode) ErrorCode() ErrorCode {
 }
 
 const (
-	ErrBadRequest          = ErrorCode("bad request")
-	ErrDischargeRequired   = ErrorCode("macaroon discharge required")
-	ErrInteractionRequired = ErrorCode("interaction required")
+	ErrBadRequest                = ErrorCode("bad request")
+	ErrDischargeRequired         = ErrorCode("macaroon discharge required")
+	ErrInteractionRequired       = ErrorCode("interaction required")
+	ErrInteractionMethodNotFound = ErrorCode("discharger does not provide an supported interaction method")
 )
 
-var (
-	httpReqServer = httprequest.Server{
-		ErrorMapper: ErrorToResponse,
-	}
-	handleJSON = httpReqServer.HandleJSON
-)
+var httpReqServer = httprequest.Server{
+	ErrorMapper: ErrorToResponse,
+}
 
 // WriteError writes the given bakery error to w.
 func WriteError(ctx context.Context, w http.ResponseWriter, err error) {
@@ -82,18 +81,66 @@ type ErrorInfo struct {
 	// macaroon.Signature() in hex).
 	CookieNameSuffix string `json:",omitempty"`
 
-	// VisitURL and WaitURL are associated with the
+	// The following fields are associated with the
 	// ErrInteractionRequired error code.
 
-	// VisitURL holds a URL that the client should visit
-	// in a web browser to authenticate themselves.
-	VisitURL string `json:",omitempty"`
+	// InteractionMethods holds the set of methods that the
+	// third party supports for completing the discharge.
+	// See InteractionMethod for a more convenient
+	// accessor method.
+	InteractionMethods map[string]*json.RawMessage `json:",omitempty"`
 
-	// WaitURL holds a URL that the client should visit
+	// LegacyVisitURL holds a URL that the client should visit
+	// in a web browser to authenticate themselves.
+	// This is deprecated - it is superceded by the InteractionMethods
+	// field.
+	LegacyVisitURL string `json:"VisitURL,omitempty"`
+
+	// LegacyWaitURL holds a URL that the client should visit
 	// to acquire the discharge macaroon. A GET on
 	// this URL will block until the client has authenticated,
 	// and then it will return the discharge macaroon.
-	WaitURL string `json:",omitempty"`
+	// This is deprecated - it is superceded by the InteractionMethods
+	// field.
+	LegacyWaitURL string `json:"WaitURL,omitempty"`
+}
+
+// SetInteraction sets the information for a particular
+// interaction kind to v. The error should be an interaction-required
+// error. This method will panic if v cannot be JSON-marshaled.
+// It is expected that interaction implementations will
+// implement type-safe wrappers for this method,
+// so you should not need to call it directly.
+func (e *Error) SetInteraction(kind string, v interface{}) {
+	if e.Info == nil {
+		e.Info = new(ErrorInfo)
+	}
+	if e.Info.InteractionMethods == nil {
+		e.Info.InteractionMethods = make(map[string]*json.RawMessage)
+	}
+	data, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	m := json.RawMessage(data)
+	e.Info.InteractionMethods[kind] = &m
+}
+
+// InteractionMethod checks whether the error is an InteractionRequired error
+// that implements the method with the given name, and JSON-unmarshals the
+// method-specific data into x.
+func (e *Error) InteractionMethod(kind string, x interface{}) error {
+	if e.Info == nil || e.Code != ErrInteractionRequired {
+		return errgo.Newf("not an interaction-required error (code %v)", e.Code)
+	}
+	entry := e.Info.InteractionMethods[kind]
+	if entry == nil {
+		return errgo.WithCausef(nil, ErrInteractionMethodNotFound, "interaction method %q not found", kind)
+	}
+	if err := json.Unmarshal(*entry, x); err != nil {
+		return errgo.Notef(err, "cannot unmarshal data for interaction method %q", kind)
+	}
+	return nil
 }
 
 func (e *Error) Error() string {
@@ -175,20 +222,22 @@ func errorResponseBody(err error) *Error {
 	return &errResp
 }
 
-func badRequestErrorf(f string, a ...interface{}) error {
-	return errgo.WithCausef(nil, ErrBadRequest, f, a...)
-}
-
 // NewInteractionRequiredError returns an error of type *Error
 // that requests an interaction from the client in response
 // to the given request. The originalErr value describes the original
 // error - if it is nil, a default message will be provided.
 //
-// See Error.ErrorInfo for more details of visitURL and waitURL.
-//
 // This function should be used in preference to creating the Error value
 // directly, as it sets the bakery protocol version correctly in the error.
-func NewInteractionRequiredError(visitURL, waitURL string, originalErr error, req *http.Request) error {
+//
+// The returned error does not support any interaction kinds.
+// Use kind-specific SetInteraction methods (for example
+// WebBrowserInteractor.SetInteraction) to add supported
+// interaction kinds.
+//
+// Note that WebBrowserInteractor.SetInteraction should always be called
+// for legacy clients to maintain backwards compatibility.
+func NewInteractionRequiredError(originalErr error, req *http.Request) *Error {
 	if originalErr == nil {
 		originalErr = ErrInteractionRequired
 	}
@@ -196,10 +245,6 @@ func NewInteractionRequiredError(visitURL, waitURL string, originalErr error, re
 		Message: originalErr.Error(),
 		version: RequestVersion(req),
 		Code:    ErrInteractionRequired,
-		Info: &ErrorInfo{
-			VisitURL: visitURL,
-			WaitURL:  waitURL,
-		},
 	}
 }
 
@@ -227,7 +272,6 @@ func NewDischargeRequiredErrorWithVersion(m *bakery.Macaroon, path string, origi
 	if originalErr == nil {
 		originalErr = ErrDischargeRequired
 	}
-	logger.Infof("creating discharge-required error for version %v", v)
 	return &Error{
 		Message: originalErr.Error(),
 		version: v,

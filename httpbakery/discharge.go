@@ -1,24 +1,20 @@
 package httpbakery
 
 import (
-	"crypto/rand"
 	"encoding/base64"
-	"fmt"
 	"net/http"
 	"path"
+	"unicode/utf8"
 
 	"github.com/juju/httprequest"
 	"github.com/julienschmidt/httprouter"
 	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
+	"gopkg.in/macaroon.v2-unstable"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
 )
-
-// legacyNamespace holds the standard namespace as used by
-// pre-version3 macaroons.
-var legacyNamespace = checkers.New(nil).Namespace()
 
 // ThirdPartyCaveatChecker is used to check third party caveats.
 type ThirdPartyCaveatChecker interface {
@@ -28,18 +24,22 @@ type ThirdPartyCaveatChecker interface {
 	// with any returned caveats also added to the discharge
 	// macaroon.
 	//
+	// The given token, if non-nil, is a token obtained from
+	// Interactor.Interact as the result of a discharge interaction
+	// after an interaction required error.
+	//
 	// Note than when used in the context of a discharge handler
 	// created by Discharger, any returned errors will be marshaled
 	// as documented in DischargeHandler.ErrorMapper.
-	CheckThirdPartyCaveat(ctx context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error)
+	CheckThirdPartyCaveat(ctx context.Context, info *bakery.ThirdPartyCaveatInfo, req *http.Request, token *DischargeToken) ([]checkers.Caveat, error)
 }
 
 // ThirdPartyCaveatCheckerFunc implements ThirdPartyCaveatChecker
 // by calling a function.
-type ThirdPartyCaveatCheckerFunc func(ctx context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error)
+type ThirdPartyCaveatCheckerFunc func(ctx context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo, token *DischargeToken) ([]checkers.Caveat, error)
 
-func (f ThirdPartyCaveatCheckerFunc) CheckThirdPartyCaveat(ctx context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
-	return f(ctx, req, info)
+func (f ThirdPartyCaveatCheckerFunc) CheckThirdPartyCaveat(ctx context.Context, info *bakery.ThirdPartyCaveatInfo, req *http.Request, token *DischargeToken) ([]checkers.Caveat, error) {
+	return f(ctx, req, info, token)
 }
 
 // newDischargeClient returns a discharge client that addresses the
@@ -98,6 +98,9 @@ type DischargerParams struct {
 //		id: all-UTF-8 third party caveat id
 //		id64: non-padded URL-base64 encoded caveat id
 //		macaroon-id: (optional) id to give to discharge macaroon (defaults to id)
+//		token: (optional) value of discharge token
+//		token64: (optional) base64-encoded value of discharge token.
+//		token-kind: (mandatory if token or token64 provided) discharge token kind.
 //	result on success (http.StatusOK):
 //		{
 //			Macaroon *macaroon.Macaroon
@@ -171,9 +174,12 @@ type dischargeHandler struct {
 // client software.
 type dischargeRequest struct {
 	httprequest.Route `httprequest:"POST /discharge"`
-	Id                string `httprequest:"id,form"`
-	Id64              string `httprequest:"id64,form"`
-	Caveat            string `httprequest:"caveat64,form"`
+	Id                string `httprequest:"id,form,omitempty"`
+	Id64              string `httprequest:"id64,form,omitempty"`
+	Caveat            string `httprequest:"caveat64,form,omitempty"`
+	Token             string `httprequest:"token,form,omitempty"`
+	Token64           string `httprequest:"token64,form,omitempty"`
+	TokenKind         string `httprequest:"token-kind,form,omitempty"`
 }
 
 // dischargeResponse contains the response from a /discharge POST request.
@@ -183,23 +189,34 @@ type dischargeResponse struct {
 
 // Discharge discharges a third party caveat.
 func (h dischargeHandler) Discharge(p httprequest.Params, r *dischargeRequest) (*dischargeResponse, error) {
-	var id []byte
-	if r.Id64 != "" {
-		id1, err := base64.RawURLEncoding.DecodeString(r.Id64)
-		if err != nil {
-			return nil, errgo.Notef(err, "bad base64-encoded caveat id: %v", err)
-		}
-		id = id1
-	} else {
-		id = []byte(r.Id)
+	id, err := maybeBase64Decode(r.Id, r.Id64)
+	if err != nil {
+		return nil, errgo.Notef(err, "bad caveat id")
 	}
 	var caveat []byte
 	if r.Caveat != "" {
-		caveat1, err := base64.RawURLEncoding.DecodeString(r.Caveat)
+		// Note that it's important that when r.Caveat is empty,
+		// we leave DischargeParams.Caveat as nil (Base64Decode
+		// always returns a non-nil byte slice).
+		caveat1, err := macaroon.Base64Decode([]byte(r.Caveat))
 		if err != nil {
 			return nil, errgo.Notef(err, "bad base64-encoded caveat: %v", err)
 		}
 		caveat = caveat1
+	}
+	tokenVal, err := maybeBase64Decode(r.Token, r.Token64)
+	if err != nil {
+		return nil, errgo.Notef(err, "bad discharge token")
+	}
+	var token *DischargeToken
+	if len(tokenVal) != 0 {
+		if r.TokenKind == "" {
+			return nil, errgo.Notef(err, "discharge token provided without token kind")
+		}
+		token = &DischargeToken{
+			Kind:  r.TokenKind,
+			Value: tokenVal,
+		}
 	}
 	m, err := bakery.Discharge(p.Context, bakery.DischargeParams{
 		Id:     id,
@@ -207,7 +224,7 @@ func (h dischargeHandler) Discharge(p httprequest.Params, r *dischargeRequest) (
 		Key:    h.discharger.p.Key,
 		Checker: bakery.ThirdPartyCaveatCheckerFunc(
 			func(ctx context.Context, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
-				return h.discharger.p.Checker.CheckThirdPartyCaveat(ctx, p.Request, cav)
+				return h.discharger.p.Checker.CheckThirdPartyCaveat(ctx, cav, p.Request, token)
 			},
 		),
 		Locator: h.discharger.p.Locator,
@@ -228,7 +245,7 @@ type publicKeyResponse struct {
 	PublicKey *bakery.PublicKey
 }
 
-// publicKeyRequest specifies the /discharge/info endpoint.
+// dischargeInfoRequest specifies the /discharge/info endpoint.
 type dischargeInfoRequest struct {
 	httprequest.Route `httprequest:"GET /discharge/info"`
 }
@@ -264,12 +281,36 @@ func mkHTTPHandler(h httprouter.Handle) http.Handler {
 	})
 }
 
-// randomBytes returns n random bytes.
-func randomBytes(n int) ([]byte, error) {
-	b := make([]byte, n)
-	_, err := rand.Read(b)
-	if err != nil {
-		return nil, fmt.Errorf("cannot generate %d random bytes: %v", n, err)
+// maybeBase64Encode encodes b as is if it's
+// OK to be passed as a URL form parameter,
+// or encoded as base64 otherwise.
+func maybeBase64Encode(b []byte) (s, s64 string) {
+	if utf8.Valid(b) {
+		valid := true
+		for _, c := range b {
+			if c < 32 || c == 127 {
+				valid = false
+				break
+			}
+		}
+		if valid {
+			return string(b), ""
+		}
 	}
-	return b, nil
+	return "", base64.RawURLEncoding.EncodeToString(b)
+}
+
+// maybeBase64Decode implements the inverse of maybeBase64Encode.
+func maybeBase64Decode(s, s64 string) ([]byte, error) {
+	if s64 != "" {
+		data, err := macaroon.Base64Decode([]byte(s64))
+		if err != nil {
+			return nil, errgo.Mask(err)
+		}
+		if len(data) == 0 {
+			return nil, nil
+		}
+		return data, nil
+	}
+	return []byte(s), nil
 }

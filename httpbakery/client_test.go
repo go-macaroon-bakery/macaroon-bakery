@@ -36,10 +36,9 @@ type ClientSuite struct {
 var _ = gc.Suite(&ClientSuite{})
 
 var (
-	macaroonCurrentVersion = bakery.MacaroonVersion(bakery.LatestVersion)
-	testOp                 = bakery.Op{"test", "test"}
-	ages                   = time.Now().Add(24 * time.Hour)
-	testContext            = context.Background()
+	testOp      = bakery.Op{"test", "test"}
+	ages        = time.Now().Add(24 * time.Hour)
+	testContext = context.Background()
 )
 
 // TestSingleServiceFirstParty creates a single service
@@ -116,7 +115,7 @@ func (s *ClientSuite) TestSingleServiceFirstPartyWithHeader(c *gc.C) {
 }
 
 func (s *ClientSuite) TestRepeatedRequestWithBody(c *gc.C) {
-	d := bakerytest.NewDischarger(nil, nil)
+	d := bakerytest.NewDischarger(nil)
 	defer d.Close()
 
 	// Create a target service.
@@ -153,7 +152,7 @@ func (s ClientSuite) TestWithLargeBody(c *gc.C) {
 	// checker enabled and when go issue #12796
 	// is not fixed.
 
-	d := bakerytest.NewDischarger(nil, nil)
+	d := bakerytest.NewDischarger(nil)
 	defer d.Close()
 
 	// Create a target service.
@@ -218,12 +217,13 @@ func (s *ClientSuite) TestDischargeServerWithStringCaveatId(c *gc.C) {
 
 func assertDischargeServerDischargesConditionForVersion(c *gc.C, cond string, version bakery.Version) {
 	called := 0
-	checker := func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+	checker := func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
 		called++
 		c.Check(string(cav.Condition), gc.Equals, cond)
 		return nil, nil
 	}
-	discharger := bakerytest.NewDischarger(nil, httpbakery.ThirdPartyCaveatCheckerFunc(checker))
+	discharger := bakerytest.NewDischarger(nil)
+	discharger.Checker = httpbakery.ThirdPartyCaveatCheckerFunc(checker)
 
 	bKey, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
@@ -311,7 +311,7 @@ func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
 	// service so that each one can know the location
 	// to discharge at.
 	db1 := newBakery("loc", locator, nil)
-	key2, h2 := newHTTPDischarger(db1, httpbakery.ThirdPartyCaveatCheckerFunc(func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+	key2, h2 := newHTTPDischarger(db1, httpbakery.ThirdPartyCaveatCheckerFunc(func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
 		called[2]++
 		if string(cav.Condition) != "is-ok" {
 			return nil, fmt.Errorf("unrecognized caveat at srv2")
@@ -326,7 +326,7 @@ func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
 	})
 
 	db2 := newBakery("loc", locator, nil)
-	key1, h1 := newHTTPDischarger(db2, httpbakery.ThirdPartyCaveatCheckerFunc(func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+	key1, h1 := newHTTPDischarger(db2, httpbakery.ThirdPartyCaveatCheckerFunc(func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
 		called[1]++
 		if _, err := db2.Checker.Auth(httpbakery.RequestMacaroons(req)...).Allow(testContext, testOp); err != nil {
 			c.Logf("returning discharge required error")
@@ -372,12 +372,13 @@ func (s *ClientSuite) TestTwoDischargesRequired(c *gc.C) {
 	// layer of security.
 
 	dischargeCount := 0
-	checker := func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+	checker := func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
 		c.Check(string(cav.Condition), gc.Equals, "is-ok")
 		dischargeCount++
 		return nil, nil
 	}
-	discharger := bakerytest.NewDischarger(nil, httpbakery.ThirdPartyCaveatCheckerFunc(checker))
+	discharger := bakerytest.NewDischarger(nil)
+	discharger.Checker = httpbakery.ThirdPartyCaveatCheckerFunc(checker)
 
 	srv := s.serverRequiringMultipleDischarges(httpbakery.MaxDischargeRetries, discharger)
 	defer srv.Close()
@@ -397,10 +398,11 @@ func (s *ClientSuite) TestTwoDischargesRequired(c *gc.C) {
 }
 
 func (s *ClientSuite) TestTooManyDischargesRequired(c *gc.C) {
-	checker := func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+	checker := func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
 		return nil, nil
 	}
-	discharger := bakerytest.NewDischarger(nil, httpbakery.ThirdPartyCaveatCheckerFunc(checker))
+	discharger := bakerytest.NewDischarger(nil)
+	discharger.Checker = httpbakery.ThirdPartyCaveatCheckerFunc(checker)
 
 	srv := s.serverRequiringMultipleDischarges(httpbakery.MaxDischargeRetries+1, discharger)
 	defer srv.Close()
@@ -486,62 +488,8 @@ func newHTTPDischarger(b *bakery.Bakery, checker httpbakery.ThirdPartyCaveatChec
 	return b.Oven.Key().Public, mux
 }
 
-func (s *ClientSuite) TestDischargeAcquirer(c *gc.C) {
-	rootKey := []byte("secret")
-	m, err := bakery.NewMacaroon(rootKey, nil, "here", bakery.LatestVersion, nil)
-	c.Assert(err, gc.IsNil)
-
-	dischargeRootKey := []byte("shared root key")
-	thirdPartyCaveatId := []byte("3rd party caveat")
-	err = m.M().AddThirdPartyCaveat(dischargeRootKey, thirdPartyCaveatId, "there")
-	c.Assert(err, gc.IsNil)
-
-	dm, err := bakery.NewMacaroon(dischargeRootKey, thirdPartyCaveatId, "there", bakery.LatestVersion, nil)
-	c.Assert(err, gc.IsNil)
-
-	ta := &testAcquirer{dischargeMacaroon: dm}
-	cl := httpbakery.NewClient()
-	cl.DischargeAcquirer = ta
-
-	ms, err := cl.DischargeAll(testContext, m)
-	c.Assert(err, gc.IsNil)
-	c.Assert(ms, gc.HasLen, 2)
-
-	c.Assert(ta.acquireCaveat.Id, gc.DeepEquals, thirdPartyCaveatId)
-	expectCaveat := "must foo"
-	var lastCaveat string
-	err = ms[0].Verify(rootKey, func(s string) error {
-		if s != expectCaveat {
-			return errgo.Newf(`expected %q, got %q`, expectCaveat, s)
-		}
-		lastCaveat = s
-		return nil
-	}, ms[1:])
-	c.Assert(err, gc.IsNil)
-	c.Assert(lastCaveat, gc.Equals, expectCaveat)
-}
-
-type testAcquirer struct {
-	dischargeMacaroon *bakery.Macaroon
-
-	acquireCaveat macaroon.Caveat
-}
-
-// AcquireDischarge implements httpbakery.DischargeAcquirer.
-func (ta *testAcquirer) AcquireDischarge(ctx context.Context, cav macaroon.Caveat, payload []byte) (*bakery.Macaroon, error) {
-	ta.acquireCaveat = cav
-	dm := ta.dischargeMacaroon.Clone()
-	err := dm.AddCaveat(ctx, checkers.Caveat{
-		Condition: "must foo",
-	}, nil, nil)
-	if err != nil {
-		return nil, err
-	}
-	return dm, nil
-}
-
 func (s *ClientSuite) TestMacaroonCookieName(c *gc.C) {
-	d := bakerytest.NewDischarger(nil, nil)
+	d := bakerytest.NewDischarger(nil)
 	defer d.Close()
 
 	checked := make(map[string]bool)
@@ -584,7 +532,6 @@ func (s *ClientSuite) TestMacaroonCookieName(c *gc.C) {
 		c.Assert(err, gc.IsNil)
 		resp, err := client.Do(req)
 		c.Assert(err, gc.IsNil)
-		defer resp.Body.Close()
 		assertResponse(c, resp, "done")
 	}
 	assertCookieNames := func(names ...string) {
@@ -634,7 +581,6 @@ func (s *ClientSuite) TestMacaroonCookiePath(c *gc.C) {
 		client = httpbakery.NewClient()
 		resp, err := client.Do(req)
 		c.Assert(err, gc.IsNil)
-		defer resp.Body.Close()
 		assertResponse(c, resp, "done")
 	}
 	assertCookieCount := func(path string, n int) {
@@ -706,9 +652,10 @@ func (s *ClientSuite) TestMacaroonCookiePath(c *gc.C) {
 }
 
 func (s *ClientSuite) TestThirdPartyDischargeRefused(c *gc.C) {
-	d := bakerytest.NewDischarger(nil, bakerytest.ConditionParser(func(cond, arg string) ([]checkers.Caveat, error) {
+	d := bakerytest.NewDischarger(nil)
+	d.Checker = bakerytest.ConditionParser(func(cond, arg string) ([]checkers.Caveat, error) {
 		return nil, errgo.New("boo! cond " + cond)
-	}))
+	})
 	defer d.Close()
 
 	// Create a target service.
@@ -734,17 +681,18 @@ func (s *ClientSuite) TestThirdPartyDischargeRefused(c *gc.C) {
 }
 
 func (s *ClientSuite) TestDischargeWithInteractionRequiredError(c *gc.C) {
-	d := bakerytest.NewDischarger(nil, bakerytest.ConditionParser(func(cond, arg string) ([]checkers.Caveat, error) {
+	d := bakerytest.NewDischarger(nil)
+	defer d.Close()
+	d.Checker = bakerytest.ConditionParser(func(cond, arg string) ([]checkers.Caveat, error) {
 		return nil, &httpbakery.Error{
 			Code:    httpbakery.ErrInteractionRequired,
 			Message: "interaction required",
 			Info: &httpbakery.ErrorInfo{
-				VisitURL: "http://0.1.2.3/",
-				WaitURL:  "http://0.1.2.3/",
+				LegacyVisitURL: "http://0.1.2.3/",
+				LegacyWaitURL:  "http://0.1.2.3/",
 			},
 		}
-	}))
-	defer d.Close()
+	})
 
 	// Create a target service.
 	b := newBakery("loc", d, nil)
@@ -761,50 +709,11 @@ func (s *ClientSuite) TestDischargeWithInteractionRequiredError(c *gc.C) {
 
 	errCannotVisit := errgo.New("cannot visit")
 	client := httpbakery.NewClient()
-	client.VisitWebPage = func(*url.URL) error {
-		return errCannotVisit
-	}
-
-	// Make the request to the server.
-	resp, err := client.Do(req)
-	c.Assert(err, gc.ErrorMatches, `cannot get discharge from "https://.*": cannot start interactive session: cannot visit`)
-	c.Assert(httpbakery.IsInteractionError(errgo.Cause(err)), gc.Equals, true)
-	ierr, ok := errgo.Cause(err).(*httpbakery.InteractionError)
-	c.Assert(ok, gc.Equals, true)
-	c.Assert(ierr.Reason, gc.Equals, errCannotVisit)
-	c.Assert(resp, gc.IsNil)
-}
-
-func (s *ClientSuite) TestDischargeWithInteractionRequiredErrorAndWebPageVisitor(c *gc.C) {
-	d := bakerytest.NewDischarger(nil, bakerytest.ConditionParser(func(cond, arg string) ([]checkers.Caveat, error) {
-		return nil, &httpbakery.Error{
-			Code:    httpbakery.ErrInteractionRequired,
-			Message: "interaction required",
-			Info: &httpbakery.ErrorInfo{
-				VisitURL: "http://0.1.2.3/",
-				WaitURL:  "http://0.1.2.3/",
-			},
-		}
-	}))
-	defer d.Close()
-
-	// Create a target service.
-	b := newBakery("loc", d, nil)
-
-	ts := httptest.NewServer(serverHandler(serverHandlerParams{
-		bakery:       b,
-		authLocation: d.Location(),
-	}))
-	defer ts.Close()
-
-	// Create a client request.
-	req, err := http.NewRequest("GET", ts.URL, nil)
-	c.Assert(err, gc.IsNil)
-
-	errCannotVisit := errgo.New("cannot visit")
-	client := httpbakery.NewClient()
-	client.WebPageVisitor = visitorFunc(func(_ *httpbakery.Client, m map[string]*url.URL) error {
-		return errCannotVisit
+	client.AddInteractor(legacyInteractor{
+		kind: httpbakery.WebBrowserInteractionKind,
+		legacyInteract: func(ctx context.Context, client *httpbakery.Client, location string, visitURL *url.URL) error {
+			return errCannotVisit
+		},
 	})
 
 	// Make the request to the server.
@@ -813,8 +722,210 @@ func (s *ClientSuite) TestDischargeWithInteractionRequiredErrorAndWebPageVisitor
 	c.Assert(httpbakery.IsInteractionError(errgo.Cause(err)), gc.Equals, true)
 	ierr, ok := errgo.Cause(err).(*httpbakery.InteractionError)
 	c.Assert(ok, gc.Equals, true)
-	c.Assert(ierr.Reason, gc.Equals, errCannotVisit)
+	c.Assert(errgo.Cause(ierr.Reason), gc.Equals, errCannotVisit)
 	c.Assert(resp, gc.IsNil)
+}
+
+var interactionRequiredMethodsTests = []struct {
+	about               string
+	methods             map[string]interface{}
+	interactors         []httpbakery.Interactor
+	expectInteractCalls int
+	expectMethod        string
+	expectError         string
+}{{
+	about: "single method",
+	methods: map[string]interface{}{
+		"test-interactor": "interaction-data",
+	},
+	interactors: []httpbakery.Interactor{
+		testInteractor("test-interactor"),
+	},
+	expectInteractCalls: 1,
+	expectMethod:        "test-interactor",
+}, {
+	about: "two methods, first one not used",
+	methods: map[string]interface{}{
+		"test-interactor": "interaction-data",
+	},
+	interactors: []httpbakery.Interactor{
+		testInteractor("other-interactor"),
+		testInteractor("test-interactor"),
+	},
+	expectInteractCalls: 1,
+	expectMethod:        "test-interactor",
+}, {
+	about: "two methods, first one takes precedence",
+	methods: map[string]interface{}{
+		"test-interactor":  "interaction-data",
+		"other-interactor": "other-data",
+	},
+	interactors: []httpbakery.Interactor{
+		testInteractor("other-interactor"),
+		testInteractor("test-interactor"),
+	},
+	expectInteractCalls: 1,
+	expectMethod:        "other-interactor",
+}, {
+	about: "two methods, first one takes precedence",
+	methods: map[string]interface{}{
+		"test-interactor":  "interaction-data",
+		"other-interactor": "other-data",
+	},
+	interactors: []httpbakery.Interactor{
+		testInteractor("test-interactor"),
+		testInteractor("other-interactor"),
+	},
+	expectInteractCalls: 1,
+	expectMethod:        "test-interactor",
+}, {
+	about: "two methods, first one returns ErrInteractionMethodNotFound",
+	methods: map[string]interface{}{
+		"test-interactor":  "interaction-data",
+		"other-interactor": "other-data",
+	},
+	interactors: []httpbakery.Interactor{
+		interactor{
+			kind: "test-interactor",
+			interact: func(ctx context.Context, client *httpbakery.Client, location string, interactionRequiredErr *httpbakery.Error) (*httpbakery.DischargeToken, error) {
+				return nil, errgo.WithCausef(nil, httpbakery.ErrInteractionMethodNotFound, "")
+			},
+		},
+		testInteractor("other-interactor"),
+	},
+	expectInteractCalls: 2,
+	expectMethod:        "other-interactor",
+}, {
+	about: "interactor returns error",
+	methods: map[string]interface{}{
+		"test-interactor":  "interaction-data",
+		"other-interactor": "other-data",
+	},
+	interactors: []httpbakery.Interactor{
+		interactor{
+			kind: "test-interactor",
+			interact: func(ctx context.Context, client *httpbakery.Client, location string, interactionRequiredErr *httpbakery.Error) (*httpbakery.DischargeToken, error) {
+				return nil, errgo.New("an error")
+			},
+		},
+		testInteractor("other-interactor"),
+	},
+	expectInteractCalls: 1,
+	expectError:         `cannot get discharge from "https://.*": an error`,
+}, {
+	about: "no supported methods",
+	methods: map[string]interface{}{
+		"a-interactor": "interaction-data",
+		"b-interactor": "other-data",
+	},
+	interactors: []httpbakery.Interactor{
+		testInteractor("c-interactor"),
+		testInteractor("d-interactor"),
+	},
+	expectError: `cannot get discharge from "https://.*": cannot start interactive session: no supported interaction method`,
+}, {
+	about: "interactor returns nil token",
+	methods: map[string]interface{}{
+		"test-interactor": "interaction-data",
+	},
+	interactors: []httpbakery.Interactor{
+		interactor{
+			kind: "test-interactor",
+			interact: func(ctx context.Context, client *httpbakery.Client, location string, interactionRequiredErr *httpbakery.Error) (*httpbakery.DischargeToken, error) {
+				return nil, nil
+			},
+		},
+	},
+	expectInteractCalls: 1,
+	expectError:         `cannot get discharge from "https://.*": interaction method returned an empty token`,
+}, {
+	about: "no interaction methods",
+	methods: map[string]interface{}{
+		"test-interactor": "interaction-data",
+	},
+	expectError: `cannot get discharge from "https://.*": cannot start interactive session: interaction required but not possible`,
+}}
+
+func (s *ClientSuite) TestInteractionRequiredMethods(c *gc.C) {
+	d := bakerytest.NewDischarger(nil)
+	defer d.Close()
+	checkedWithToken := 0
+	checkedWithoutToken := 0
+	interactionKind := ""
+	var serverInteractionMethods map[string]interface{}
+	d.Checker = httpbakery.ThirdPartyCaveatCheckerFunc(func(ctx context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
+		if token != nil {
+			checkedWithToken++
+			if token.Kind != "test" {
+				c.Errorf("invalid token value")
+				return nil, errgo.Newf("unexpected token value")
+			}
+			interactionKind = string(token.Value)
+			return nil, nil
+		}
+		checkedWithoutToken++
+		err := httpbakery.NewInteractionRequiredError(nil, req)
+		for key, val := range serverInteractionMethods {
+			err.SetInteraction(key, val)
+		}
+		return nil, err
+	})
+	// Create a target service.
+	b := newBakery("loc", d, nil)
+
+	ts := httptest.NewServer(serverHandler(serverHandlerParams{
+		bakery:       b,
+		authLocation: d.Location(),
+	}))
+	defer ts.Close()
+
+	for i, test := range interactionRequiredMethodsTests {
+		c.Logf("\ntest %d: %s", i, test.about)
+		interactCalls := 0
+		checkedWithToken = 0
+		checkedWithoutToken = 0
+		interactionKind = ""
+		client := httpbakery.NewClient()
+		for _, in := range test.interactors {
+			in := in
+			client.AddInteractor(interactor{
+				kind: in.Kind(),
+				interact: func(ctx context.Context, client *httpbakery.Client, location string, interactionRequiredErr *httpbakery.Error) (*httpbakery.DischargeToken, error) {
+					interactCalls++
+					return in.Interact(ctx, client, location, interactionRequiredErr)
+				},
+			})
+			c.Logf("added interactor %q", in.Kind())
+		}
+		serverInteractionMethods = test.methods
+		// Make the request to the server.
+		req, err := http.NewRequest("GET", ts.URL, nil)
+		c.Assert(err, gc.IsNil)
+		resp, err := client.Do(req)
+		if test.expectError != "" {
+			c.Assert(err, gc.ErrorMatches, test.expectError)
+			c.Assert(resp, gc.IsNil)
+			continue
+		}
+		c.Assert(err, gc.Equals, nil)
+		assertResponse(c, resp, "done")
+		c.Check(interactCalls, gc.Equals, test.expectInteractCalls)
+		c.Check(checkedWithoutToken, gc.Equals, 1)
+		c.Check(checkedWithToken, gc.Equals, 1)
+		c.Check(interactionKind, gc.Equals, test.expectMethod)
+	}
+}
+
+func testInteractor(kind string) httpbakery.Interactor {
+	return interactor{
+		kind: kind,
+		interact: func(ctx context.Context, client *httpbakery.Client, location string, interactionRequiredErr *httpbakery.Error) (*httpbakery.DischargeToken, error) {
+			return &httpbakery.DischargeToken{
+				Kind:  "test",
+				Value: []byte(kind),
+			}, nil
+		},
+	}
 }
 
 var dischargeWithVisitURLErrorTests = []struct {
@@ -833,7 +944,7 @@ var dischargeWithVisitURLErrorTests = []struct {
 		w.Write([]byte("bad response"))
 	},
 	// TODO fix this unhelpful error message
-	expectError: `cannot get discharge from ".*": cannot unmarshal wait response: invalid character 'b' looking for beginning of value`,
+	expectError: `cannot get discharge from ".*": cannot unmarshal wait response: unexpected content type text/plain; want application/json; content: bad response`,
 }}
 
 func (s *ClientSuite) TestDischargeWithVisitURLError(c *gc.C) {
@@ -841,16 +952,17 @@ func (s *ClientSuite) TestDischargeWithVisitURLError(c *gc.C) {
 	visitSrv := httptest.NewServer(visitor)
 	defer visitSrv.Close()
 
-	d := bakerytest.NewDischarger(nil, bakerytest.ConditionParser(func(cond, arg string) ([]checkers.Caveat, error) {
+	d := bakerytest.NewDischarger(nil)
+	d.Checker = bakerytest.ConditionParser(func(cond, arg string) ([]checkers.Caveat, error) {
 		return nil, &httpbakery.Error{
 			Code:    httpbakery.ErrInteractionRequired,
 			Message: "interaction required",
 			Info: &httpbakery.ErrorInfo{
-				VisitURL: visitSrv.URL + "/visit",
-				WaitURL:  visitSrv.URL + "/wait",
+				LegacyVisitURL: visitSrv.URL + "/visit",
+				LegacyWaitURL:  visitSrv.URL + "/wait",
 			},
 		}
-	}))
+	})
 	defer d.Close()
 
 	// Create a target service.
@@ -866,14 +978,17 @@ func (s *ClientSuite) TestDischargeWithVisitURLError(c *gc.C) {
 		visitor.respond = test.respond
 
 		client := httpbakery.NewClient()
-		client.VisitWebPage = func(u *url.URL) error {
-			resp, err := http.Get(u.String())
-			if err != nil {
-				return err
-			}
-			resp.Body.Close()
-			return nil
-		}
+		client.AddInteractor(legacyInteractor{
+			kind: httpbakery.WebBrowserInteractionKind,
+			legacyInteract: func(ctx context.Context, client *httpbakery.Client, location string, visitURL *url.URL) error {
+				resp, err := http.Get(visitURL.String())
+				if err != nil {
+					return err
+				}
+				resp.Body.Close()
+				return nil
+			},
+		})
 
 		// Create a client request.
 		req, err := http.NewRequest("GET", ts.URL, nil)
@@ -935,7 +1050,7 @@ func (s *ClientSuite) TestMacaroonsForURL(c *gc.C) {
 }
 
 func (s *ClientSuite) TestDoWithCustomError(c *gc.C) {
-	d := bakerytest.NewDischarger(nil, nil)
+	d := bakerytest.NewDischarger(nil)
 	defer d.Close()
 
 	// Create a target service.
@@ -998,7 +1113,7 @@ func (s *ClientSuite) TestDoWithCustomError(c *gc.C) {
 }
 
 func (s *ClientSuite) TestHandleError(c *gc.C) {
-	d := bakerytest.NewDischarger(nil, nil)
+	d := bakerytest.NewDischarger(nil)
 	defer d.Close()
 
 	// Create a target service.
@@ -1052,7 +1167,7 @@ func (s *ClientSuite) TestHandleError(c *gc.C) {
 }
 
 func (s *ClientSuite) TestNewClientOldServer(c *gc.C) {
-	d := bakerytest.NewDischarger(nil, nil)
+	d := bakerytest.NewDischarger(nil)
 	defer d.Close()
 
 	// Create a target service.
@@ -1140,12 +1255,10 @@ func (h *visitHandler) serveWait(w http.ResponseWriter, req *http.Request) {
 func assertResponse(c *gc.C, resp *http.Response, expectBody string) {
 	body, err := ioutil.ReadAll(resp.Body)
 	c.Assert(err, gc.IsNil)
+	resp.Body.Close()
 	c.Assert(resp.StatusCode, gc.Equals, http.StatusOK, gc.Commentf("body %q", body))
 	c.Assert(string(body), gc.DeepEquals, expectBody)
-}
-
-func noVisit(*url.URL) error {
-	return fmt.Errorf("should not be visiting")
+	resp.Body = ioutil.NopCloser(bytes.NewReader(body))
 }
 
 type readCounter struct {
@@ -1200,11 +1313,6 @@ type serverHandlerParams struct {
 	// If this is non-empty, a 3rd party caveat will be added
 	// addressed to this location.
 	authLocation string
-
-	// When authLocation is non-empty and thirdPartyCondition
-	// is non-zero, it will be called to determine the condition
-	// to address to he third party.
-	thirdPartyCondition func() string
 
 	// mutateError, if non-zero, will be called with any
 	// discharge-required error before responding
@@ -1307,6 +1415,45 @@ func checkIsSomething(ctx context.Context, _, arg string) error {
 	return nil
 }
 
-func noCaveatChecker(_ *http.Request, cond, arg string) ([]checkers.Caveat, error) {
-	return nil, nil
+type interactor struct {
+	kind     string
+	interact func(ctx context.Context, client *httpbakery.Client, location string, interactionRequiredErr *httpbakery.Error) (*httpbakery.DischargeToken, error)
+}
+
+func (i interactor) Kind() string {
+	return i.kind
+}
+
+func (i interactor) Interact(ctx context.Context, client *httpbakery.Client, location string, interactionRequiredErr *httpbakery.Error) (*httpbakery.DischargeToken, error) {
+	return i.interact(ctx, client, location, interactionRequiredErr)
+}
+
+var (
+	_ httpbakery.Interactor       = interactor{}
+	_ httpbakery.Interactor       = legacyInteractor{}
+	_ httpbakery.LegacyInteractor = legacyInteractor{}
+)
+
+type legacyInteractor struct {
+	kind           string
+	interact       func(ctx context.Context, client *httpbakery.Client, location string, interactionRequiredErr *httpbakery.Error) (*httpbakery.DischargeToken, error)
+	legacyInteract func(ctx context.Context, client *httpbakery.Client, location string, visitURL *url.URL) error
+}
+
+func (i legacyInteractor) Kind() string {
+	return i.kind
+}
+
+func (i legacyInteractor) Interact(ctx context.Context, client *httpbakery.Client, location string, interactionRequiredErr *httpbakery.Error) (*httpbakery.DischargeToken, error) {
+	if i.interact == nil {
+		return nil, errgo.Newf("non-legacy interaction not supported")
+	}
+	return i.interact(ctx, client, location, interactionRequiredErr)
+}
+
+func (i legacyInteractor) LegacyInteract(ctx context.Context, client *httpbakery.Client, location string, visitURL *url.URL) error {
+	if i.legacyInteract == nil {
+		return errgo.Newf("legacy interaction not supported")
+	}
+	return i.legacyInteract(ctx, client, location, visitURL)
 }

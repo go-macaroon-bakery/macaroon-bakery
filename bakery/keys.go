@@ -9,6 +9,7 @@ import (
 	"golang.org/x/crypto/nacl/box"
 	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
+	"gopkg.in/macaroon.v2-unstable"
 )
 
 // KeyLen is the byte length of the Ed25519 public and private keys used for
@@ -70,18 +71,14 @@ func (k Key) boxKey() *[KeyLen]byte {
 
 // UnmarshalText implements encoding.TextUnmarshaler.UnmarshalText.
 func (k *Key) UnmarshalText(text []byte) error {
-	// Note: we cannot decode directly into key because
-	// DecodedLen can return more than the actual number
-	// of bytes that will be required.
-	data := make([]byte, base64.StdEncoding.DecodedLen(len(text)))
-	n, err := base64.StdEncoding.Decode(data, text)
+	data, err := macaroon.Base64Decode(text)
 	if err != nil {
 		return errgo.Notef(err, "cannot decode base64 key")
 	}
-	if n != len(k) {
-		return errgo.Newf("wrong length for key, got %d want %d", n, len(k))
+	if len(data) != len(k) {
+		return errgo.Newf("wrong length for key, got %d want %d", len(data), len(k))
 	}
-	copy(k[:], data[0:n])
+	copy(k[:], data)
 	return nil
 }
 

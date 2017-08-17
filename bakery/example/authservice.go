@@ -1,8 +1,9 @@
 package main
 
 import (
-	"golang.org/x/net/context"
 	"net/http"
+
+	"golang.org/x/net/context"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
@@ -13,13 +14,9 @@ import (
 // that can discharge third-party caveats added
 // to other macaroons.
 func authService(endpoint string, key *bakery.KeyPair) (http.Handler, error) {
-	key, err := bakery.GenerateKey()
-	if err != nil {
-		return nil, err
-	}
 	d := httpbakery.NewDischarger(httpbakery.DischargerParams{
 		Checker: httpbakery.ThirdPartyCaveatCheckerFunc(thirdPartyChecker),
-		Key:     key,
+		Key:     bakery.MustGenerateKey(),
 	})
 
 	mux := http.NewServeMux()
@@ -33,7 +30,7 @@ func authService(endpoint string, key *bakery.KeyPair) (http.Handler, error) {
 //
 // Note how this function can return additional first- and third-party
 // caveats which will be added to the original macaroon's caveats.
-func thirdPartyChecker(ctx context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
+func thirdPartyChecker(ctx context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
 	if string(info.Condition) != "access-allowed" {
 		return nil, checkers.ErrCaveatNotRecognized
 	}

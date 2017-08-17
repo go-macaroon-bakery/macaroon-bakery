@@ -40,7 +40,7 @@ func (s *KeyringSuite) TestCachePrepopulated(c *gc.C) {
 }
 
 func (s *KeyringSuite) TestCacheMiss(c *gc.C) {
-	d := bakerytest.NewDischarger(nil, nil)
+	d := bakerytest.NewDischarger(nil)
 	defer d.Close()
 	kr := httpbakery.NewThirdPartyLocator(nil, nil)
 
@@ -64,7 +64,7 @@ func (s *KeyringSuite) TestCacheMiss(c *gc.C) {
 
 func (s *KeyringSuite) TestInsecureURL(c *gc.C) {
 	// Set up a discharger with an non-HTTPS access point.
-	d := bakerytest.NewDischarger(nil, nil)
+	d := bakerytest.NewDischarger(nil)
 	defer d.Close()
 	httpsDischargeURL, err := url.Parse(d.Location())
 	c.Assert(err, gc.IsNil)
@@ -99,7 +99,7 @@ func (s *KeyringSuite) TestCustomHTTPClient(c *gc.C) {
 }
 
 func (s *KeyringSuite) TestThirdPartyInfoForLocation(c *gc.C) {
-	d := bakerytest.NewDischarger(nil, nil)
+	d := bakerytest.NewDischarger(nil)
 	defer d.Close()
 	client := httpbakery.NewHTTPClient()
 	info, err := httpbakery.ThirdPartyInfoForLocation(testContext, client, d.Location())
@@ -148,7 +148,7 @@ func (s *KeyringSuite) TestThirdPartyInfoForLocationReturnsStatusInternalServerE
 
 func (s *KeyringSuite) TestThirdPartyInfoForLocationFallbackToOldVersion(c *gc.C) {
 	// Start a bakerytest discharger so we benefit from its TLS-verification-skip logic.
-	d := bakerytest.NewDischarger(nil, nil)
+	d := bakerytest.NewDischarger(nil)
 	defer d.Close()
 
 	key, err := bakery.GenerateKey()

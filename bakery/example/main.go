@@ -22,7 +22,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/url"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/httpbakery"
@@ -72,12 +71,7 @@ func serve(newHandler func(string) (http.Handler, error)) (endpointURL string, e
 }
 
 func newClient() *httpbakery.Client {
-	return &httpbakery.Client{
-		Client: httpbakery.NewHTTPClient(),
-		VisitWebPage: func(url *url.URL) error {
-			fmt.Printf("please visit this web page:\n")
-			fmt.Printf("\t%s\n", url)
-			return nil
-		},
-	}
+	c := httpbakery.NewClient()
+	c.AddInteractor(httpbakery.WebBrowserInteractor{})
+	return c
 }
