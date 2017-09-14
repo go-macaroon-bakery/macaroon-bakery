@@ -21,8 +21,12 @@ const WebBrowserInteractionKind = "browser-window"
 // returned, JSON-encoded, from the waitToken
 // URL passed to SetBrowserInteraction.
 type WaitTokenResponse struct {
-	Kind  string `json:"kind"`
-	Token string `json:"token"`
+	Kind string `json:"kind"`
+	// Token holds the token value when it's well-formed utf-8
+	Token string `json:"token,omitempty"`
+	// Token64 holds the token value, base64 encoded, when it's
+	// not well-formed utf-8.
+	Token64 string `json:"token64,omitempty"`
 }
 
 // WaitResponse holds the type that should be returned
@@ -165,10 +169,14 @@ func waitForToken(ctx context.Context, client *Client, waitTokenURL *url.URL) (*
 	if err := httprequest.UnmarshalJSONResponse(httpResp, &resp); err != nil {
 		return nil, errgo.Notef(err, "cannot unmarshal wait response")
 	}
+	tokenVal, err := maybeBase64Decode(resp.Token, resp.Token64)
+	if err != nil {
+		return nil, errgo.Notef(err, "bad discharge token")
+	}
 	// TODO check that kind and value are non-empty?
 	return &DischargeToken{
 		Kind:  resp.Kind,
-		Value: []byte(resp.Token),
+		Value: tokenVal,
 	}, nil
 }
 

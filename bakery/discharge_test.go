@@ -1,6 +1,7 @@
 package bakery_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"unicode/utf8"
 

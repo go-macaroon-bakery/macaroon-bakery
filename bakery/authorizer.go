@@ -133,6 +133,8 @@ func (a ACLAuthorizer) Authorize(ctx context.Context, ident Identity, ops []Op) 
 				return nil, nil, errgo.Notef(err, "cannot check permissions")
 			}
 		} else {
+			// TODO should we allow "everyone" when the identity is
+			// non-nil but isn't an ACLIdentity?
 			allowed[i] = a.AllowPublic && isPublicACL(acl)
 		}
 	}
