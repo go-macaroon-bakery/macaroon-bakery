@@ -91,7 +91,6 @@ func (*macaroonSuite) TestAddThirdPartyCaveat(c *gc.C) {
 		for _, id := range test.existingCaveatIds {
 			err := m.M().AddThirdPartyCaveat(nil, id, "")
 			c.Assert(err, gc.IsNil)
-
 		}
 		bakery.SetMacaroonCaveatIdPrefix(m, test.baseId)
 		err = m.AddCaveat(testContext, checkers.Caveat{

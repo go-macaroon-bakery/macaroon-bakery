@@ -21,7 +21,7 @@ func legacyNamespace() *checkers.Namespace {
 	return ns
 }
 
-// Macaroon represents an undischarged macaroon along its first
+// Macaroon represents an undischarged macaroon along with its first
 // party caveat namespace and associated third party caveat information
 // which should be passed to the third party when discharging a caveat.
 type Macaroon struct {
