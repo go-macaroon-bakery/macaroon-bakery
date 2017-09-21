@@ -62,19 +62,18 @@ var aclAuthorizerTests = []struct {
 }{{
 	about: "no ops, no problem",
 	auth: bakery.ACLAuthorizer{
-		GetACL: func(ctx context.Context, op bakery.Op) ([]string, error) {
-			return nil, nil
+		GetACL: func(ctx context.Context, op bakery.Op) ([]string, bool, error) {
+			return nil, false, nil
 		},
 	},
 }, {
 	about: "identity that does not implement ACLIdentity; user should be denied except for everyone group",
 	auth: bakery.ACLAuthorizer{
-		AllowPublic: true,
-		GetACL: func(ctx context.Context, op bakery.Op) ([]string, error) {
+		GetACL: func(ctx context.Context, op bakery.Op) ([]string, bool, error) {
 			if op.Entity == "a" {
-				return []string{bakery.Everyone}, nil
+				return []string{bakery.Everyone}, true, nil
 			} else {
-				return []string{"alice"}, nil
+				return []string{"alice"}, false, nil
 			}
 		},
 	},
@@ -90,12 +89,11 @@ var aclAuthorizerTests = []struct {
 }, {
 	about: "identity that does not implement ACLIdentity with user == Id; user should be denied except for everyone group",
 	auth: bakery.ACLAuthorizer{
-		AllowPublic: true,
-		GetACL: func(ctx context.Context, op bakery.Op) ([]string, error) {
+		GetACL: func(ctx context.Context, op bakery.Op) ([]string, bool, error) {
 			if op.Entity == "a" {
-				return []string{bakery.Everyone}, nil
+				return []string{bakery.Everyone}, true, nil
 			} else {
-				return []string{"bob"}, nil
+				return []string{"bob"}, false, nil
 			}
 		},
 	},
@@ -109,10 +107,10 @@ var aclAuthorizerTests = []struct {
 	}},
 	expectAllowed: []bool{true, false},
 }, {
-	about: "permission denied for everyone without AllowPublic",
+	about: "permission denied for everyone without allow-public",
 	auth: bakery.ACLAuthorizer{
-		GetACL: func(ctx context.Context, op bakery.Op) ([]string, error) {
-			return []string{bakery.Everyone}, nil
+		GetACL: func(ctx context.Context, op bakery.Op) ([]string, bool, error) {
+			return []string{bakery.Everyone}, false, nil
 		},
 	},
 	identity: simplestIdentity("bob"),
@@ -122,11 +120,10 @@ var aclAuthorizerTests = []struct {
 	}},
 	expectAllowed: []bool{false},
 }, {
-	about: "permission granted to anyone with no identity with AllowPublic",
+	about: "permission granted to anyone with no identity with allow-public",
 	auth: bakery.ACLAuthorizer{
-		AllowPublic: true,
-		GetACL: func(ctx context.Context, op bakery.Op) ([]string, error) {
-			return []string{bakery.Everyone}, nil
+		GetACL: func(ctx context.Context, op bakery.Op) ([]string, bool, error) {
+			return []string{bakery.Everyone}, true, nil
 		},
 	},
 	ops: []bakery.Op{{
@@ -137,12 +134,11 @@ var aclAuthorizerTests = []struct {
 }, {
 	about: "error return causes all authorization to fail",
 	auth: bakery.ACLAuthorizer{
-		AllowPublic: true,
-		GetACL: func(ctx context.Context, op bakery.Op) ([]string, error) {
+		GetACL: func(ctx context.Context, op bakery.Op) ([]string, bool, error) {
 			if op.Entity == "a" {
-				return []string{bakery.Everyone}, nil
+				return []string{bakery.Everyone}, true, nil
 			} else {
-				return nil, errgo.New("some error")
+				return nil, false, errgo.New("some error")
 			}
 		},
 	},
