@@ -101,15 +101,13 @@ type ACLIdentity interface {
 // that implements ACLIdentity and its Allow method returns true for the
 // ACL.
 type ACLAuthorizer struct {
-	// If AllowPublic is true and an ACL contains "everyone",
-	// then authorization will be granted even if there is
-	// no logged in user.
-	AllowPublic bool
-
-	// GetACL returns the ACL that applies to the given operation.
+	// GetACL returns the ACL that applies to the given operation,
+	// and reports whether non-authenticated users should
+	// be allowed access when the ACL contains "everyone".
+	//
 	// If an entity cannot be found or the action is not recognised,
 	// GetACLs should return an empty ACL but no error.
-	GetACL func(ctx context.Context, op Op) ([]string, error)
+	GetACL func(ctx context.Context, op Op) (acl []string, allowPublic bool, err error)
 }
 
 // Authorize implements Authorizer.Authorize by calling ident.Allow to determine
@@ -123,7 +121,7 @@ func (a ACLAuthorizer) Authorize(ctx context.Context, ident Identity, ops []Op) 
 	ident1, _ := ident.(ACLIdentity)
 	allowed = make([]bool, len(ops))
 	for i, op := range ops {
-		acl, err := a.GetACL(ctx, op)
+		acl, allowPublic, err := a.GetACL(ctx, op)
 		if err != nil {
 			return nil, nil, errgo.Mask(err)
 		}
@@ -135,7 +133,7 @@ func (a ACLAuthorizer) Authorize(ctx context.Context, ident Identity, ops []Op) 
 		} else {
 			// TODO should we allow "everyone" when the identity is
 			// non-nil but isn't an ACLIdentity?
-			allowed[i] = a.AllowPublic && isPublicACL(acl)
+			allowed[i] = allowPublic && isPublicACL(acl)
 		}
 	}
 	return allowed, nil, nil

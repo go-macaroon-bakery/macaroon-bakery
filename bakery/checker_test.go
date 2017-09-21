@@ -642,9 +642,8 @@ type opAuthorizer map[bakery.Op][]string
 
 func (auth opAuthorizer) Authorize(ctx context.Context, id bakery.Identity, ops []bakery.Op) (allowed []bool, caveats []checkers.Caveat, err error) {
 	return bakery.ACLAuthorizer{
-		AllowPublic: true,
-		GetACL: func(ctx context.Context, op bakery.Op) ([]string, error) {
-			return auth[op], nil
+		GetACL: func(ctx context.Context, op bakery.Op) ([]string, bool, error) {
+			return auth[op], true, nil
 		},
 	}.Authorize(ctx, id, ops)
 }
