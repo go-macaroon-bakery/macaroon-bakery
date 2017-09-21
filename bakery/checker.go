@@ -260,6 +260,32 @@ func (a *AuthChecker) AllowAny(ctx context.Context, ops ...Op) (*AuthInfo, []boo
 	return a.newAuthInfo(used), authed, err
 }
 
+// Allowed returns all the operations allowed by the provided macaroons
+// as keys in the returned map (all the associated values will be true).
+//
+// It also returns the AuthInfo (always non-nil) similarly to AllowAny.
+//
+// Allowed returns an error only when there is an underlying storage failure,
+// not when operations are not authorized.
+func (a *AuthChecker) Allowed(ctx context.Context) (*AuthInfo, map[Op]bool, error) {
+	used := make([]bool, len(a.macaroons))
+	if err := a.init(ctx); err != nil {
+		return a.newAuthInfo(used), nil, errgo.Mask(err)
+	}
+	ops := make(map[Op]bool)
+	for op, indexes := range a.authIndexes {
+		for _, mindex := range indexes {
+			_, err := a.checkConditions(ctx, op, a.conditions[mindex])
+			if err == nil {
+				used[mindex] = true
+				ops[op] = true
+				break
+			}
+		}
+	}
+	return a.newAuthInfo(used), ops, nil
+}
+
 func (a *AuthChecker) newAuthInfo(used []bool) *AuthInfo {
 	info := &AuthInfo{
 		Identity:  a.identity,

@@ -413,6 +413,47 @@ func (s *checkerSuite) TestAllowAny(c *gc.C) {
 	c.Assert(allowed, jc.DeepEquals, []bool{true, true, true})
 }
 
+func (s *checkerSuite) TestAllowed(c *gc.C) {
+	locator := make(dischargerLocator)
+	ids := s.newIdService("ids", locator)
+	auth := opAuthorizer{
+		readOp("e1"): {"alice"},
+		readOp("e2"): {"alice"},
+		readOp("e3"): {"alice"},
+	}
+	ts := newService(auth, ids, locator)
+
+	// Get two capabilities with overlapping operations.
+	client := newClient(locator)
+	m1, err := client.dischargedCapability(asUser("alice"), ts, readOp("e1"), readOp("e2"))
+	c.Assert(err, gc.IsNil)
+	m2, err := client.dischargedCapability(asUser("alice"), ts, readOp("e2"), readOp("e3"))
+	c.Assert(err, gc.IsNil)
+
+	authInfo, ops, err := ts.checker.Auth(m1, m2).Allowed(context.Background())
+	c.Assert(err, gc.IsNil)
+	c.Assert(ops, jc.DeepEquals, map[bakery.Op]bool{
+		readOp("e1"): true,
+		readOp("e2"): true,
+		readOp("e3"): true,
+	})
+	c.Assert(authInfo.Identity, gc.Equals, nil)
+	c.Assert(authInfo.Macaroons, gc.HasLen, 2)
+
+	// Try again but including the authentication macaroon from the client too.
+	mss := append(client.requestMacaroons(ts), m1, m2)
+	authInfo, ops, err = ts.checker.Auth(mss...).Allowed(context.Background())
+	c.Assert(err, gc.IsNil)
+	c.Assert(ops, jc.DeepEquals, map[bakery.Op]bool{
+		readOp("e1"):   true,
+		readOp("e2"):   true,
+		readOp("e3"):   true,
+		bakery.LoginOp: true,
+	})
+	c.Assert(authInfo.Identity, gc.Equals, bakery.SimpleIdentity("alice"))
+	c.Assert(authInfo.Macaroons, gc.HasLen, 3)
+}
+
 func (s *checkerSuite) TestAuthWithIdentityFromContext(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := basicAuthIdService{}
