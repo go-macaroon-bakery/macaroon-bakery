@@ -199,6 +199,12 @@ func (c *Client) DischargeAll(ctx context.Context, m *bakery.Macaroon) (macaroon
 	return bakery.DischargeAllWithKey(ctx, m, c.AcquireDischarge, c.Key)
 }
 
+// DischargeAllUnbound is like DischargeAll except that it does not
+// bind the resulting macaroons.
+func (c *Client) DischargeAllUnbound(ctx context.Context, ms bakery.Slice) (bakery.Slice, error) {
+	return ms.DischargeAll(ctx, c.AcquireDischarge, c.Key)
+}
+
 // Do is like DoWithContext, except the context is automatically derived.
 // If using go version 1.7 or later the context will be taken from the
 // given request, otherwise context.Background() will be used.
