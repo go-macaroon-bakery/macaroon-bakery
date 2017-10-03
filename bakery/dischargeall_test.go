@@ -32,7 +32,7 @@ func (*DischargeSuite) TestDischargeAllNoDischarges(c *gc.C) {
 	ms, err := bakery.DischargeAll(testContext, m, noDischarge(c))
 	c.Assert(err, gc.IsNil)
 	c.Assert(ms, gc.HasLen, 1)
-	c.Assert(ms[0], gc.Equals, m.M())
+	c.Assert(ms[0].Signature(), gc.DeepEquals, m.M().Signature())
 
 	err = m.M().Verify(rootKey, alwaysOK, nil)
 	c.Assert(err, gc.IsNil)

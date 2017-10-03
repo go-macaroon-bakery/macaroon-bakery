@@ -101,7 +101,7 @@ type ThirdPartyLocator interface {
 	ThirdPartyInfo(ctx context.Context, loc string) (ThirdPartyInfo, error)
 }
 
-// ThirdPartyLocatorMap implements a simple ThirdPartyLocator.
+// ThirdPartyStore implements a simple ThirdPartyLocator.
 // A trailing slash on locations is ignored.
 type ThirdPartyStore struct {
 	m map[string]ThirdPartyInfo

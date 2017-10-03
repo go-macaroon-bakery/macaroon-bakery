@@ -1,8 +1,6 @@
 package bakery
 
 import (
-	"fmt"
-
 	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2-unstable"
@@ -42,58 +40,11 @@ func DischargeAllWithKey(
 	getDischarge func(ctx context.Context, cav macaroon.Caveat, encodedCaveat []byte) (*Macaroon, error),
 	localKey *KeyPair,
 ) (macaroon.Slice, error) {
-	primary := m.M()
-	discharges := macaroon.Slice{primary}
-
-	type needCaveat struct {
-		// cav holds the caveat that needs discharge.
-		cav macaroon.Caveat
-		// encryptedCaveat holds encrypted caveat
-		// if it was held externally.
-		encryptedCaveat []byte
+	discharges, err := Slice{m}.DischargeAll(ctx, getDischarge, localKey)
+	if err != nil {
+		return nil, errgo.Mask(err, errgo.Any)
 	}
-	var need []needCaveat
-	addCaveats := func(m *Macaroon) {
-		for _, cav := range m.M().Caveats() {
-			if cav.Location == "" {
-				continue
-			}
-			need = append(need, needCaveat{
-				cav:             cav,
-				encryptedCaveat: m.caveatData[string(cav.Id)],
-			})
-		}
-	}
-	sig := primary.Signature()
-	addCaveats(m)
-	for len(need) > 0 {
-		cav := need[0]
-		need = need[1:]
-		var dm *Macaroon
-		var err error
-		if localKey != nil && cav.cav.Location == "local" {
-			// TODO use a small caveat id.
-			dm, err = Discharge(ctx, DischargeParams{
-				Key:     localKey,
-				Checker: localDischargeChecker,
-				Caveat:  cav.encryptedCaveat,
-				Id:      cav.cav.Id,
-				Locator: emptyLocator{},
-			})
-		} else {
-			dm, err = getDischarge(ctx, cav.cav, cav.encryptedCaveat)
-		}
-		if err != nil {
-			return nil, errgo.NoteMask(err, fmt.Sprintf("cannot get discharge from %q", cav.cav.Location), errgo.Any)
-		}
-		// It doesn't matter that we're invalidating dm here because we're
-		// about to throw it away.
-		discharge := dm.M()
-		discharge.Bind(sig)
-		discharges = append(discharges, discharge)
-		addCaveats(dm)
-	}
-	return discharges, nil
+	return discharges.Bind(), nil
 }
 
 var localDischargeChecker = ThirdPartyCaveatCheckerFunc(func(_ context.Context, info *ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
