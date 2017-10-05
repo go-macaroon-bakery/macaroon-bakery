@@ -8,7 +8,6 @@ package agent
 
 import (
 	"errors"
-	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -111,7 +110,6 @@ type agentMacaroonResponse struct {
 }
 
 func (i interactor) Interact(ctx context.Context, client *httpbakery.Client, location string, interactionRequiredErr *httpbakery.Error) (*httpbakery.DischargeToken, error) {
-	log.Printf("interactor.Interact")
 	var p InteractionInfo
 	err := interactionRequiredErr.InteractionMethod("agent", &p)
 	if err != nil {
@@ -176,7 +174,6 @@ type LegacyAgentResponse struct {
 // LegacyInteract implements httpbakery.LegactInteractor.LegacyInteract by fetching a
 //
 func (i interactor) LegacyInteract(ctx context.Context, client *httpbakery.Client, location string, visitURL *url.URL) error {
-	log.Printf("interactor.LegacyInteract")
 	c := &httprequest.Client{
 		Doer: client,
 	}
