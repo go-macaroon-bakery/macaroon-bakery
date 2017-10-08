@@ -24,6 +24,17 @@ type Authorizer interface {
 	Authorize(ctx context.Context, id Identity, ops []Op) (allowed []bool, caveats []checkers.Caveat, err error)
 }
 
+// OpsAuthorizer is used to check whether an operation authorizes some other
+// operation. For example, a macaroon with an operation allowing general access to a service
+// might also grant access to a more specific operation.
+type OpsAuthorizer interface {
+	// AuthorizeOp reports which elements of queryOps are authorized by
+	// authorizedOp. On return, each element of the slice should represent
+	// whether the respective element in queryOps has been authorized.
+	// An empty returned slice indicates that no operations are authorized.
+	AuthorizeOps(ctx context.Context, authorizedOp Op, queryOps []Op) ([]bool, error)
+}
+
 var (
 	// OpenAuthorizer is an Authorizer implementation that will authorize all operations without question.
 	OpenAuthorizer openAuthorizer

@@ -50,6 +50,12 @@ type CheckerParams struct {
 	// IdentityClient.DeclaredIdentity.
 	Authorizer Authorizer
 
+	// OpsAuthorizer is used to check whether operations are authorized
+	// by some other already-authorized operation. If it is nil,
+	// NewChecker will assume no operation is authorized by any
+	// operation except itself.
+	OpsAuthorizer OpsAuthorizer
+
 	// IdentityClient is used for interactions with the external
 	// identity service used for authentication.
 	//
@@ -262,6 +268,8 @@ func (a *AuthChecker) AllowAny(ctx context.Context, ops ...Op) (*AuthInfo, []boo
 
 // Allowed returns all the operations allowed by the provided macaroons
 // as keys in the returned map (all the associated values will be true).
+// Note that this does not include operations that would be indirectly
+// allowed via the OpAuthorizer.
 //
 // It also returns the AuthInfo (always non-nil) similarly to AllowAny.
 //
@@ -346,6 +354,10 @@ func (a *AuthChecker) allowAny(ctx context.Context, ops []Op) (authed, used []bo
 	if len(actx.need) == 0 {
 		return nil, actx.used, nil
 	}
+	actx.checkIndirect(ctx)
+	if len(actx.need) == 0 {
+		return nil, actx.used, nil
+	}
 	caveats, err := actx.checkWithAuthorizer(ctx)
 	if err != nil {
 		return actx.authed, actx.used, errgo.Mask(err)
@@ -418,6 +430,45 @@ func (a *allowContext) checkDirect(ctx context.Context) {
 	// macaroons.
 	for _, i := range a.checker.authIndexes[LoginOp] {
 		a.used[i] = true
+	}
+}
+
+// checkIndirect checks to see if any of the remaining operations are authorized
+// indirectly with the already-authorized operations.
+func (a *allowContext) checkIndirect(ctx context.Context) {
+	if a.checker.p.OpsAuthorizer == nil {
+		return
+	}
+	for op, mindexes := range a.checker.authIndexes {
+		if len(a.need) == 0 {
+			return
+		}
+		authedOK, err := a.checker.p.OpsAuthorizer.AuthorizeOps(ctx, op, a.need)
+		if err != nil {
+			// TODO this probably means "can't check" rather than "authorization denied";
+			// perhaps we should return rather than carrying on?
+			a.addError(err)
+			continue
+		}
+		for i, ok := range authedOK {
+			if !ok {
+				continue
+			}
+			// This operation is potentially authorized. See whether we have a macaroon
+			// that actually allows this operation.
+			for _, mindex := range mindexes {
+				if _, err := a.checker.checkConditions(ctx, a.need[i], a.checker.conditions[mindex]); err != nil {
+					a.addError(err)
+					continue
+				}
+				// Operation is authorized. Mark the appropriate macaroon as used,
+				// and remove the operation from the needed list so that we don't
+				// bother AuthorizeOps with it again.
+				a.used[mindex] = true
+				a.authed[a.needIndex[i]] = true
+			}
+		}
+		a.updateNeed()
 	}
 }
 

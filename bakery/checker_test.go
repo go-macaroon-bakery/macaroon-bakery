@@ -2,6 +2,7 @@ package bakery_test
 
 import (
 	"sort"
+	"strings"
 	"time"
 
 	jujutesting "github.com/juju/testing"
@@ -35,7 +36,7 @@ func (s *checkerSuite) SetUpTest(c *gc.C) {
 func (s *checkerSuite) TestAuthorizeWithOpenAccessAndNoMacaroons(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
-	auth := opAuthorizer{readOp("something"): {bakery.Everyone}}
+	auth := opACL{readOp("something"): {bakery.Everyone}}
 	ts := newService(auth, ids, locator)
 	client := newClient(locator)
 
@@ -62,7 +63,7 @@ func (s *checkerSuite) TestAuthorizationDenied(c *gc.C) {
 func (s *checkerSuite) TestAuthorizeWithAuthenticationRequired(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
-	auth := opAuthorizer{readOp("something"): {"bob"}}
+	auth := opACL{readOp("something"): {"bob"}}
 	ts := newService(auth, ids, locator)
 	client := newClient(locator)
 
@@ -85,7 +86,7 @@ func asUser(username string) context.Context {
 func (s *checkerSuite) TestAuthorizeMultipleOps(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
-	auth := opAuthorizer{readOp("something"): {"bob"}, readOp("otherthing"): {"bob"}}
+	auth := opACL{readOp("something"): {"bob"}, readOp("otherthing"): {"bob"}}
 	ts := newService(auth, ids, locator)
 	client := newClient(locator)
 
@@ -101,7 +102,7 @@ func (s *checkerSuite) TestAuthorizeMultipleOps(c *gc.C) {
 func (s *checkerSuite) TestCapability(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
-	auth := opAuthorizer{readOp("something"): {"bob"}}
+	auth := opACL{readOp("something"): {"bob"}}
 	ts := newService(auth, ids, locator)
 	client := newClient(locator)
 
@@ -121,7 +122,7 @@ func (s *checkerSuite) TestCapability(c *gc.C) {
 func (s *checkerSuite) TestCapabilityMultipleEntities(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
-	auth := opAuthorizer{readOp("e1"): {"bob"}, readOp("e2"): {"bob"}, readOp("e3"): {"bob"}}
+	auth := opACL{readOp("e1"): {"bob"}, readOp("e2"): {"bob"}, readOp("e3"): {"bob"}}
 	ts := newService(auth, ids, locator)
 	client := newClient(locator)
 
@@ -148,7 +149,7 @@ func (s *checkerSuite) TestCapabilityMultipleEntities(c *gc.C) {
 func (s *checkerSuite) TestMultipleCapabilities(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
-	auth := opAuthorizer{readOp("e1"): {"alice"}, readOp("e2"): {"bob"}}
+	auth := opACL{readOp("e1"): {"alice"}, readOp("e2"): {"bob"}}
 	ts := newService(auth, ids, locator)
 
 	// Acquire two capabilities as different users and check
@@ -180,7 +181,7 @@ func (s *checkerSuite) TestMultipleCapabilities(c *gc.C) {
 func (s *checkerSuite) TestCombineCapabilities(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
-	auth := opAuthorizer{readOp("e1"): {"alice"}, readOp("e2"): {"bob"}, readOp("e3"): {"bob", "alice"}}
+	auth := opACL{readOp("e1"): {"alice"}, readOp("e2"): {"bob"}, readOp("e3"): {"bob", "alice"}}
 	ts := newService(auth, ids, locator)
 
 	// Acquire two capabilities as different users and check
@@ -201,7 +202,7 @@ func (s *checkerSuite) TestCombineCapabilities(c *gc.C) {
 func (s *checkerSuite) TestPartiallyAuthorizedRequest(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
-	auth := opAuthorizer{readOp("e1"): {"alice"}, readOp("e2"): {"bob"}}
+	auth := opACL{readOp("e1"): {"alice"}, readOp("e2"): {"bob"}}
 	ts := newService(auth, ids, locator)
 
 	// Acquire a capability for e1 but rely on authentication to
@@ -264,7 +265,7 @@ func (s *checkerSuite) TestAuthWithThirdPartyCaveats(c *gc.C) {
 func (s *checkerSuite) TestCapabilityCombinesFirstPartyCaveats(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
-	auth := opAuthorizer{readOp("e1"): {"alice"}, readOp("e2"): {"bob"}}
+	auth := opACL{readOp("e1"): {"alice"}, readOp("e2"): {"bob"}}
 	ts := newService(auth, ids, locator)
 
 	// Acquire two capabilities as different users, add some first party caveats
@@ -341,7 +342,7 @@ var firstPartyCaveatSquashingTests = []struct {
 func (s *checkerSuite) TestFirstPartyCaveatSquashing(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
-	auth := opAuthorizer{readOp("e1"): {"alice"}, readOp("e2"): {"alice"}}
+	auth := opACL{readOp("e1"): {"alice"}, readOp("e2"): {"alice"}}
 	ts := newService(auth, ids, locator)
 	for i, test := range firstPartyCaveatSquashingTests {
 		c.Logf("test %d: %v", i, test.about)
@@ -382,7 +383,7 @@ func (s *checkerSuite) TestLoginOnly(c *gc.C) {
 func (s *checkerSuite) TestAllowAny(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
-	auth := opAuthorizer{readOp("e1"): {"alice"}, readOp("e2"): {"bob"}}
+	auth := opACL{readOp("e1"): {"alice"}, readOp("e2"): {"bob"}}
 	ts := newService(auth, ids, locator)
 
 	// Acquire a capability for e1 but rely on authentication to
@@ -416,7 +417,7 @@ func (s *checkerSuite) TestAllowAny(c *gc.C) {
 func (s *checkerSuite) TestAllowed(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
-	auth := opAuthorizer{
+	auth := opACL{
 		readOp("e1"): {"alice"},
 		readOp("e2"): {"alice"},
 		readOp("e3"): {"alice"},
@@ -457,7 +458,7 @@ func (s *checkerSuite) TestAllowed(c *gc.C) {
 func (s *checkerSuite) TestAuthWithIdentityFromContext(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := basicAuthIdService{}
-	auth := opAuthorizer{readOp("e1"): {"sherlock"}, readOp("e2"): {"bob"}}
+	auth := opACL{readOp("e1"): {"sherlock"}, readOp("e2"): {"bob"}}
 	ts := newService(auth, ids, locator)
 
 	// Check that we can perform the ops with basic auth in the
@@ -483,7 +484,7 @@ func (s *checkerSuite) TestAuthLoginOpWithIdentityFromContext(c *gc.C) {
 func (s *checkerSuite) TestOperationAllowCaveat(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
-	auth := opAuthorizer{readOp("e1"): {"bob"}, writeOp("e1"): {"bob"}, readOp("e2"): {"bob"}}
+	auth := opACL{readOp("e1"): {"bob"}, writeOp("e1"): {"bob"}, readOp("e2"): {"bob"}}
 	ts := newService(auth, ids, locator)
 	client := newClient(locator)
 
@@ -509,7 +510,7 @@ func (s *checkerSuite) TestOperationAllowCaveat(c *gc.C) {
 func (s *checkerSuite) TestOperationDenyCaveat(c *gc.C) {
 	locator := make(dischargerLocator)
 	ids := s.newIdService("ids", locator)
-	auth := opAuthorizer{readOp("e1"): {"bob"}, writeOp("e1"): {"bob"}, readOp("e2"): {"bob"}}
+	auth := opACL{readOp("e1"): {"bob"}, writeOp("e1"): {"bob"}, readOp("e2"): {"bob"}}
 	ts := newService(auth, ids, locator)
 	client := newClient(locator)
 
@@ -530,6 +531,114 @@ func (s *checkerSuite) TestOperationDenyCaveat(c *gc.C) {
 	// A write operation should fail even though the original macaroon allowed it.
 	_, err = ts.do(testContext, []macaroon.Slice{{m.M()}}, writeOp("e1"))
 	c.Assert(err, gc.ErrorMatches, `discharge required`)
+}
+
+func (s *checkerSuite) TestAllowWithOpsAuthorizer(c *gc.C) {
+	locator := make(dischargerLocator)
+	store := newMacaroonStore(mustGenerateKey(), locator)
+	ts := &service{
+		// Note: we're making a checker with no Authorizer and no IdentityClient.
+		checker: bakery.NewChecker(bakery.CheckerParams{
+			Checker:         testChecker,
+			OpsAuthorizer:   hierarchicalOpsAuthorizer{},
+			MacaroonOpStore: store,
+		}),
+		store: store,
+	}
+	// Manufacture a macaroon granting access to /user/bob and
+	// everything underneath it (by virtue of the hierarchicalOpsAuthorizer).
+	m, err := ts.store.NewMacaroon(testContext, []bakery.Op{{
+		Entity: "path-/user/bob",
+		Action: "*",
+	}}, nil, ts.checker.Namespace())
+	c.Assert(err, gc.Equals, nil)
+	// Check that we can do some operation.
+	_, err = ts.do(testContext, []macaroon.Slice{{m.M()}}, writeOp("path-/user/bob/foo"))
+	c.Assert(err, gc.Equals, nil)
+
+	// Check that we can't do an operation on an entity outside the
+	// original operation's purview.
+	_, err = ts.do(testContext, []macaroon.Slice{{m.M()}}, writeOp("path-/user/alice"))
+	c.Assert(err, gc.ErrorMatches, `permission denied`)
+}
+
+func (s *checkerSuite) TestAllowAnyWithOpsAuthorizer(c *gc.C) {
+	locator := make(dischargerLocator)
+	store := newMacaroonStore(mustGenerateKey(), locator)
+	ts := &service{
+		// Note: we're making a checker with no Authorizer and no IdentityClient.
+		checker: bakery.NewChecker(bakery.CheckerParams{
+			Checker:         testChecker,
+			OpsAuthorizer:   hierarchicalOpsAuthorizer{},
+			MacaroonOpStore: store,
+		}),
+		store: store,
+	}
+	// Manufacture a macaroon granting read-only access to /user/bob and
+	// everything underneath it (by virtue of the hierarchicalOpsAuthorizer).
+	m, err := ts.store.NewMacaroon(testContext, []bakery.Op{{
+		Entity: "path-/user/bob",
+		Action: "read",
+	}}, nil, ts.checker.Namespace())
+	c.Assert(err, gc.Equals, nil)
+
+	ai, allowed, err := ts.doAny(testContext, []macaroon.Slice{{m.M()}},
+		writeOp("path-/user/bob"),
+		readOp("path-/user/bob"),
+		readOp("path-/user/bob/foo"),
+		readOp("other"),
+	)
+	c.Check(err, gc.ErrorMatches, `permission denied`)
+	c.Check(allowed, jc.DeepEquals, []bool{false, true, true, false})
+	c.Check(ai.Identity, gc.Equals, nil)
+	c.Check(ai.Macaroons, gc.HasLen, 1)
+}
+
+func (s *checkerSuite) TestAllowAnyWithOpsAuthorizerAndMultipleMacaroons(c *gc.C) {
+	locator := make(dischargerLocator)
+	store := newMacaroonStore(mustGenerateKey(), locator)
+	ts := &service{
+		// Note: we're making a checker with no Authorizer and no IdentityClient.
+		checker: bakery.NewChecker(bakery.CheckerParams{
+			Checker:         testChecker,
+			OpsAuthorizer:   hierarchicalOpsAuthorizer{},
+			MacaroonOpStore: store,
+		}),
+		store: store,
+	}
+	m1, err := ts.store.NewMacaroon(testContext, []bakery.Op{{
+		Entity: "path-/user/bob",
+		Action: "read",
+	}}, nil, ts.checker.Namespace())
+	c.Assert(err, gc.Equals, nil)
+	m2, err := ts.store.NewMacaroon(testContext, []bakery.Op{{
+		Entity: "path-/user/alice",
+		Action: "*",
+	}}, nil, ts.checker.Namespace())
+	c.Assert(err, gc.Equals, nil)
+
+	ai, allowed, err := ts.doAny(testContext, []macaroon.Slice{{m1.M()}, {m2.M()}},
+		writeOp("path-/user/bob"),
+		readOp("path-/user/alice/foo"),
+		writeOp("path-/user/alice/bar"),
+		readOp("path-/user/bob/foo"),
+		readOp("path-/"),
+	)
+	c.Check(err, gc.ErrorMatches, `permission denied`)
+	c.Check(allowed, jc.DeepEquals, []bool{false, true, true, true, false})
+	c.Check(ai.Identity, gc.Equals, nil)
+	c.Check(ai.Macaroons, gc.HasLen, 2)
+
+	// Check with all operations authorized so that we can cover the
+	// return-early-when-all-OK path in checkIndirect.
+	ai, allowed, err = ts.doAny(testContext, []macaroon.Slice{{m1.M()}, {m2.M()}},
+		readOp("path-/user/bob"),
+		readOp("path-/user/bob/foo"),
+	)
+	c.Check(err, gc.Equals, nil)
+	c.Check(allowed, gc.IsNil)
+	c.Check(ai.Identity, gc.Equals, nil)
+	c.Check(ai.Macaroons, gc.HasLen, 1)
 }
 
 func (s *checkerSuite) TestDuplicateLoginMacaroons(c *gc.C) {
@@ -635,12 +744,12 @@ func writeOp(entity string) bakery.Op {
 	}
 }
 
-// opAuthorizer implements bakery.Authorizer by looking the operation
+// opACL implements bakery.Authorizer by looking the operation
 // up in the given map. If the username is in the associated slice
 // or the slice contains "everyone", authorization is granted.
-type opAuthorizer map[bakery.Op][]string
+type opACL map[bakery.Op][]string
 
-func (auth opAuthorizer) Authorize(ctx context.Context, id bakery.Identity, ops []bakery.Op) (allowed []bool, caveats []checkers.Caveat, err error) {
+func (auth opACL) Authorize(ctx context.Context, id bakery.Identity, ops []bakery.Op) (allowed []bool, caveats []checkers.Caveat, err error) {
 	return bakery.ACLAuthorizer{
 		GetACL: func(ctx context.Context, op bakery.Op) ([]string, bool, error) {
 			return auth[op], true, nil
@@ -841,6 +950,34 @@ func (l dischargerLocator) ThirdPartyInfo(ctx context.Context, loc string) (bake
 		PublicKey: d.key.Public,
 		Version:   bakery.LatestVersion,
 	}, nil
+}
+
+type hierarchicalOpsAuthorizer struct{}
+
+func (a hierarchicalOpsAuthorizer) AuthorizeOps(ctx context.Context, authorizedOp bakery.Op, queryOps []bakery.Op) ([]bool, error) {
+	ok := make([]bool, len(queryOps))
+	for i, op := range queryOps {
+		if isParentPathEntity(authorizedOp.Entity, op.Entity) && (authorizedOp.Action == op.Action || authorizedOp.Action == "*") {
+			ok[i] = true
+		}
+	}
+	return ok, nil
+}
+
+// isParentPathEntity reports whether both entity1 and entity2
+// represent paths and entity1 is a parent of entity2.
+func isParentPathEntity(entity1, entity2 string) bool {
+	path1, path2 := strings.TrimPrefix(entity1, "path-"), strings.TrimPrefix(entity2, "path-")
+	if len(path1) == len(entity1) || len(path2) == len(entity2) {
+		return false
+	}
+	if !strings.HasPrefix(path2, path1) {
+		return false
+	}
+	if len(path1) == len(path2) {
+		return true
+	}
+	return path2[len(path1)] == '/'
 }
 
 type client struct {
