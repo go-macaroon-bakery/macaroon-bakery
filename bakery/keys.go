@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"strings"
+	"sync"
 
 	"golang.org/x/crypto/nacl/box"
 	"golang.org/x/net/context"
@@ -98,13 +99,15 @@ type ThirdPartyInfo struct {
 type ThirdPartyLocator interface {
 	// ThirdPartyInfo returns information on the third
 	// party at the given location. It returns ErrNotFound if no match is found.
+	// This method must be safe to call concurrently.
 	ThirdPartyInfo(ctx context.Context, loc string) (ThirdPartyInfo, error)
 }
 
 // ThirdPartyStore implements a simple ThirdPartyLocator.
 // A trailing slash on locations is ignored.
 type ThirdPartyStore struct {
-	m map[string]ThirdPartyInfo
+	mu sync.RWMutex
+	m  map[string]ThirdPartyInfo
 }
 
 // NewThirdPartyStore returns a new instance of ThirdPartyStore
@@ -117,7 +120,10 @@ func NewThirdPartyStore() *ThirdPartyStore {
 
 // AddInfo associates the given information with the
 // given location, ignoring any trailing slash.
+// This method is OK to call concurrently with sThirdPartyInfo.
 func (s *ThirdPartyStore) AddInfo(loc string, info ThirdPartyInfo) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.m[canonicalLocation(loc)] = info
 }
 
@@ -127,6 +133,8 @@ func canonicalLocation(loc string) string {
 
 // ThirdPartyInfo implements the ThirdPartyLocator interface.
 func (s *ThirdPartyStore) ThirdPartyInfo(ctx context.Context, loc string) (ThirdPartyInfo, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	if info, ok := s.m[canonicalLocation(loc)]; ok {
 		return info, nil
 	}
