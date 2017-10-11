@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/http/httputil"
 	"net/url"
+	"sync"
 
 	"github.com/juju/httprequest"
 	jujutesting "github.com/juju/testing"
@@ -86,6 +87,24 @@ func (s *KeyringSuite) TestInsecureURL(c *gc.C) {
 		PublicKey: d.Key.Public,
 		Version:   bakery.LatestVersion,
 	})
+}
+
+func (s *KeyringSuite) TestConcurrentThirdPartyInfo(c *gc.C) {
+	// This test is designed to fail only if run with the race detector
+	// enabled.
+	d := bakerytest.NewDischarger(nil)
+	defer d.Close()
+	kr := httpbakery.NewThirdPartyLocator(nil, nil)
+	var wg sync.WaitGroup
+	for i := 0; i < 2; i++ {
+		wg.Add(1)
+		go func() {
+			_, err := kr.ThirdPartyInfo(testContext, d.Location())
+			c.Check(err, gc.IsNil)
+			defer wg.Done()
+		}()
+	}
+	wg.Wait()
 }
 
 func (s *KeyringSuite) TestCustomHTTPClient(c *gc.C) {
