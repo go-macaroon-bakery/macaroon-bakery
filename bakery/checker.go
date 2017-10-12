@@ -273,6 +273,8 @@ func (a *AuthChecker) Allowed(ctx context.Context) (*AuthInfo, map[Op]bool, erro
 		return a.newAuthInfo(used), nil, errgo.Mask(err)
 	}
 	ops := make(map[Op]bool)
+	// TODO this is non-deterministic; perhaps we should sort the
+	// operations before ranging over them?
 	for op, indexes := range a.authIndexes {
 		for _, mindex := range indexes {
 			_, err := a.checkConditions(ctx, op, a.conditions[mindex])
@@ -299,111 +301,164 @@ func (a *AuthChecker) newAuthInfo(used []bool) *AuthInfo {
 	return info
 }
 
+// allowContext holds temporary state used by AuthChecker.allowAny.
+type allowContext struct {
+	checker *AuthChecker
+
+	// used holds which elements of the request macaroons
+	// have been used by the authorization logic.
+	used []bool
+
+	// authed holds which of the requested operations have
+	// been authorized so far.
+	authed []bool
+
+	// need holds all of the requested operations that
+	// are remaining to be authorized. needIndex holds the
+	// index of each of these operations in the original operations slice
+	need      []Op
+	needIndex []int
+
+	// errors holds any errors encountered during authorization.
+	errors []error
+}
+
 // allowAny is the internal version of AllowAny. Instead of returning an
 // authInfo struct, it returns a slice describing which operations have
 // been successfully authorized and a slice describing which macaroons
 // have been used in the authorization.
+// If all operations were authorized, authed and err will be nil.
 func (a *AuthChecker) allowAny(ctx context.Context, ops []Op) (authed, used []bool, err error) {
 	if err := a.init(ctx); err != nil {
 		return nil, nil, errgo.Mask(err)
 	}
-	used = make([]bool, len(a.macaroons))
-	authed = make([]bool, len(ops))
-	numAuthed := 0
-	var errors []error
-	for i, op := range ops {
-		for _, mindex := range a.authIndexes[op] {
-			_, err := a.checkConditions(ctx, op, a.conditions[mindex])
-			if err != nil {
-				logger.Infof("condition check %q failed: %v", a.conditions[mindex], err)
-				errors = append(errors, err)
-				continue
-			}
-			authed[i] = true
-			numAuthed++
-			used[mindex] = true
-			// Use the first authorized macaroon only.
-			break
-		}
-		if op == LoginOp && !authed[i] && a.identity != nil {
-			// Allow LoginOp when there's an authenticated user even
-			// when there's no macaroon that specifically authorizes it.
-			authed[i] = true
-		}
+	actx := &allowContext{
+		checker:   a,
+		used:      make([]bool, len(a.macaroons)),
+		authed:    make([]bool, len(ops)),
+		need:      append([]Op(nil), ops...),
+		needIndex: make([]int, len(ops)),
 	}
-	if a.identity != nil {
-		// We've authenticated as a user, so even if the operations didn't
-		// specifically require it, we add the login macaroon
-		// to the macaroons used.
-		// Note that the LoginOp conditions have already been checked
-		// successfully in initOnceFunc so no need to check again.
-		// Note also that there may not be any macaroons if the
-		// identity client decided on an identity even with no
-		// macaroons.
-		for _, i := range a.authIndexes[LoginOp] {
-			used[i] = true
-		}
+	for i := range actx.needIndex {
+		actx.needIndex[i] = i
 	}
-	if numAuthed == len(ops) {
-		// All operations allowed.
-		return nil, used, nil
+	actx.checkDirect(ctx)
+	if len(actx.need) == 0 {
+		return nil, actx.used, nil
 	}
-	// There are some unauthorized operations.
-	need := make([]Op, 0, len(ops)-numAuthed)
-	needIndex := make([]int, cap(need))
-	for i, ok := range authed {
-		if !ok {
-			needIndex[len(need)] = i
-			need = append(need, ops[i])
-		}
-	}
-
-	// Try to authorize the operations even if we haven't got an authenticated user.
-	oks, caveats, err := a.p.Authorizer.Authorize(ctx, a.identity, need)
+	caveats, err := actx.checkWithAuthorizer(ctx)
 	if err != nil {
-		// TODO if there are macaroons supplied that have failed, perhaps we shouldn't
-		// do this but return those errors instead? Doing things the current
-		// way means that we lose the previous errors.
-		return authed, used, errgo.Notef(err, "cannot check permissions")
+		return actx.authed, actx.used, errgo.Mask(err)
 	}
-
-	stillNeed := make([]Op, 0, len(need))
-	for i := range need {
-		if i < len(oks) && oks[i] {
-			authed[needIndex[i]] = true
-		} else {
-			stillNeed = append(stillNeed, ops[needIndex[i]])
-		}
-	}
-	if len(stillNeed) == 0 && len(caveats) == 0 {
+	if len(actx.need) == 0 && len(caveats) == 0 {
 		// No more ops need to be authenticated and no caveats to be discharged.
-		return authed, used, nil
+		return actx.authed, actx.used, nil
 	}
-	logger.Debugf("operations still needed after auth check: %#v", stillNeed)
+	logger.Debugf("operations still needed after auth check: %#v", actx.need)
 	if a.identity == nil && len(a.identityCaveats) > 0 {
-		return authed, used, &DischargeRequiredError{
+		return actx.authed, actx.used, &DischargeRequiredError{
 			Message: "authentication required",
 			Ops:     []Op{LoginOp},
 			Caveats: a.identityCaveats,
 		}
 	}
 	if len(caveats) == 0 {
-		allErrors := make([]error, 0, len(a.initErrors)+len(errors))
+		allErrors := make([]error, 0, len(a.initErrors)+len(actx.errors))
 		allErrors = append(allErrors, a.initErrors...)
-		allErrors = append(allErrors, errors...)
+		allErrors = append(allErrors, actx.errors...)
 		var err error
 		if len(allErrors) > 0 {
 			// TODO return all errors?
 			logger.Infof("all auth errors: %q", allErrors)
 			err = allErrors[0]
 		}
-		return authed, used, errgo.WithCausef(err, ErrPermissionDenied, "")
+		return actx.authed, actx.used, errgo.WithCausef(err, ErrPermissionDenied, "")
 	}
-	return authed, used, &DischargeRequiredError{
+	return actx.authed, actx.used, &DischargeRequiredError{
 		Message: "some operations have extra caveats",
 		Ops:     ops,
 		Caveats: caveats,
 	}
+}
+
+// checkDirect checks which operations are directly authorized by
+// the macaroon operations.
+func (a *allowContext) checkDirect(ctx context.Context) {
+	defer a.updateNeed()
+	for i, op := range a.need {
+		authed := false
+		for _, mindex := range a.checker.authIndexes[op] {
+			_, err := a.checker.checkConditions(ctx, op, a.checker.conditions[mindex])
+			if err == nil {
+				// Use the first authorized macaroon only.
+				a.used[mindex] = true
+				authed = true
+				break
+			}
+			logger.Infof("condition check %q failed: %v", a.checker.conditions[mindex], err)
+			a.addError(err)
+		}
+		// Allow LoginOp when there's an authenticated user even
+		// when there's no macaroon that specifically authorizes it.
+		authed = authed || (op == LoginOp && a.checker.identity != nil)
+		if authed {
+			a.authed[a.needIndex[i]] = true
+		}
+	}
+	if a.checker.identity == nil {
+		return
+	}
+	// We've authenticated as a user, so even if the operations didn't
+	// specifically require it, we add the login macaroon
+	// to the macaroons used.
+	// Note that the LoginOp conditions have already been checked
+	// successfully in initOnceFunc so no need to check again.
+	// Note also that there may not be any macaroons if the
+	// identity client decided on an identity even with no
+	// macaroons.
+	for _, i := range a.checker.authIndexes[LoginOp] {
+		a.used[i] = true
+	}
+}
+
+// checkWithAuthorizer checks which operations are authorized by the
+// Authorizer instance. We call Authorize even when we haven't got an
+// authenticated identity.
+func (a *allowContext) checkWithAuthorizer(ctx context.Context) ([]checkers.Caveat, error) {
+	oks, caveats, err := a.checker.p.Authorizer.Authorize(ctx, a.checker.identity, a.need)
+	if err != nil {
+		// TODO if there are macaroons supplied that have failed, perhaps we shouldn't
+		// do this but return those errors instead? Doing things the current
+		// way means that we lose the previous errors.
+		return nil, errgo.Notef(err, "cannot check permissions")
+	}
+	for i, ok := range oks {
+		if ok {
+			a.authed[a.needIndex[i]] = true
+		}
+	}
+	a.updateNeed()
+	return caveats, nil
+}
+
+// updateNeed removes all authorized operations from a.need
+// and updates a.needIndex appropriately too.
+func (a *allowContext) updateNeed() {
+	j := 0
+	for i, opIndex := range a.needIndex {
+		if a.authed[opIndex] {
+			continue
+		}
+		if i != j {
+			a.need[j], a.needIndex[j] = a.need[i], a.needIndex[i]
+		}
+		j++
+	}
+	a.need, a.needIndex = a.need[0:j], a.needIndex[0:j]
+}
+
+func (a *allowContext) addError(err error) {
+	a.errors = append(a.errors, err)
 }
 
 // AllowCapability checks that the user is allowed to perform all the

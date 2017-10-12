@@ -397,8 +397,8 @@ func (s *checkerSuite) TestAllowAny(c *gc.C) {
 	authInfo, allowed, err := client.doAny(asUser("bob"), ts, readOp("e1"), readOp("e2"), bakery.LoginOp)
 	c.Assert(err, gc.ErrorMatches, `discharge required`)
 	c.Assert(authInfo, gc.NotNil)
-	c.Assert(authInfo.Macaroons, gc.HasLen, 1)
-	c.Assert(allowed, jc.DeepEquals, []bool{true, false, false})
+	c.Check(authInfo.Macaroons, gc.HasLen, 1)
+	c.Check(allowed, jc.DeepEquals, []bool{true, false, false})
 	c.Assert(s.discharges, gc.HasLen, 0) // We shouldn't have discharged.
 
 	// Log in as bob.
