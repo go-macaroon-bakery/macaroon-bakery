@@ -441,7 +441,10 @@ func (s *ClientSuite) serverRequiringMultipleDischarges(n int, discharger *baker
 		if err != nil {
 			panic(fmt.Errorf("cannot make new macaroon: %v", err))
 		}
-		err = httpbakery.NewDischargeRequiredError(m, "", errgo.New("foo"), req)
+		err = httpbakery.NewDischargeRequiredError(httpbakery.DischargeRequiredErrorParams{
+			OriginalError: errgo.New("foo"),
+			Macaroon:      m,
+		})
 		httpbakery.WriteError(testContext, w, err)
 	}))
 }
@@ -450,7 +453,9 @@ func (s *ClientSuite) TestVersion0Generates407Status(c *gc.C) {
 	m, err := bakery.NewMacaroon([]byte("root key"), []byte("id"), "location", bakery.Version0, nil)
 	c.Assert(err, gc.IsNil)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		err := httpbakery.NewDischargeRequiredError(m, "", errgo.New("foo"), req)
+		err := httpbakery.NewDischargeRequiredError(httpbakery.DischargeRequiredErrorParams{
+			Macaroon: m,
+		})
 		httpbakery.WriteError(testContext, w, err)
 	}))
 	defer srv.Close()
@@ -463,7 +468,9 @@ func (s *ClientSuite) TestVersion1Generates401Status(c *gc.C) {
 	m, err := bakery.NewMacaroon([]byte("root key"), []byte("id"), "location", bakery.Version1, nil)
 	c.Assert(err, gc.IsNil)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		err := httpbakery.NewDischargeRequiredError(m, "", errgo.New("foo"), req)
+		err := httpbakery.NewDischargeRequiredError(httpbakery.DischargeRequiredErrorParams{
+			Macaroon: m,
+		})
 		httpbakery.WriteError(testContext, w, err)
 	}))
 	defer srv.Close()
@@ -1326,11 +1333,6 @@ type serverHandlerParams struct {
 	// alwaysReadBody specifies whether the handler should always read
 	// the entire request body before returning.
 	alwaysReadBody bool
-
-	// version holds the version of the bakery that the
-	// server will purport to serve. If zero, bakery.LatestVersion
-	// will be assumed.
-	version bakery.Version
 }
 
 // serverHandler returns an HTTP handler that checks macaroon authorization
@@ -1368,18 +1370,7 @@ func serverHandler(hp serverHandlerParams) http.Handler {
 // a newly minted macaroon referencing the original check error
 // checkErr. If hp.authLocation is non-empty, the issued macaroon will
 // contain an "is-ok" third party caveat addressed to that location.
-//
-// If req is non-nil, it will be used to pass to NewDischargeRequiredErrorForRequest,
-// otherwise the old protocol (triggered by NewDischargeRequiredError) will be used.
 func newDischargeRequiredError(hp serverHandlerParams, checkErr error, req *http.Request) error {
-	if hp.version == 0 {
-		hp.version = bakery.LatestVersion
-	}
-	if req != nil {
-		if v := httpbakery.RequestVersion(req); v < bakery.LatestVersion {
-			hp.version = v
-		}
-	}
 	var caveats []checkers.Caveat
 	if hp.authLocation != "" {
 		caveats = []checkers.Caveat{{
@@ -1394,7 +1385,11 @@ func newDischargeRequiredError(hp serverHandlerParams, checkErr error, req *http
 	if err != nil {
 		panic(fmt.Errorf("cannot make new macaroon: %v", err))
 	}
-	err = httpbakery.NewDischargeRequiredErrorWithVersion(m, "", checkErr, hp.version)
+	err = httpbakery.NewDischargeRequiredError(httpbakery.DischargeRequiredErrorParams{
+		Macaroon:      m,
+		OriginalError: checkErr,
+		Request:       req,
+	})
 	if hp.mutateError != nil {
 		hp.mutateError(err.(*httpbakery.Error))
 	}

@@ -11,6 +11,7 @@ import (
 	"gopkg.in/errgo.v1"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
+	"gopkg.in/macaroon-bakery.v2-unstable/internal/httputil"
 )
 
 // ErrorCode holds an error code that classifies
@@ -46,7 +47,7 @@ func WriteError(ctx context.Context, w http.ResponseWriter, err error) {
 //
 // Note: Do not construct Error values with ErrDischargeRequired or
 // ErrInteractionRequired codes directly - use the
-// NewDischargeRequiredErrorForRequest or NewInteractionRequiredError
+// NewDischargeRequiredError or NewInteractionRequiredError
 // functions instead.
 type Error struct {
 	Code    ErrorCode  `json:",omitempty"`
@@ -54,7 +55,7 @@ type Error struct {
 	Info    *ErrorInfo `json:",omitempty"`
 
 	// version holds the protocol version that was used
-	// to create the error (see NewDischargeRequiredErrorWithVersion).
+	// to create the error (see NewDischargeRequiredError).
 	version bakery.Version
 }
 
@@ -248,37 +249,63 @@ func NewInteractionRequiredError(originalErr error, req *http.Request) *Error {
 	}
 }
 
-// NewDischargeRequiredError is like NewDischargeRequiredErrorWithVersion
-// except that it determines the client's bakery protocol version from
-// the request and returns an error response appropriate for that.
-func NewDischargeRequiredError(m *bakery.Macaroon, path string, originalErr error, req *http.Request) error {
-	v := RequestVersion(req)
-	return NewDischargeRequiredErrorWithVersion(m, path, originalErr, v)
+type DischargeRequiredErrorParams struct {
+	// Macaroon holds the macaroon that needs to be discharged
+	// by the client.
+	Macaroon *bakery.Macaroon
+
+	// OriginalError holds the reason that the discharge-required
+	// error was created. If it's nil, ErrDischargeRequired will
+	// be used.
+	OriginalError error
+
+	// CookiePath holds the path for the client to give the cookie
+	// holding the discharged macaroon. If it's empty, then a
+	// relative path from the request URL path to / will be used if
+	// Request is provided, or "/" otherwise.
+	CookiePath string
+
+	// CookieNameSuffix holds the suffix for the client
+	// to give the cookie holding the discharged macaroon
+	// (after the "macaroon-" prefix).
+	// If it's empty, "auth" will be used.
+	CookieNameSuffix string
+
+	// Request holds the request that the error is in response to.
+	// It is used to form the cookie path if CookiePath is empty.
+	Request *http.Request
 }
 
-// NewDischargeRequiredErrorWithVersion returns an error of type *Error that
-// reports the given original error and includes the given macaroon.
+// NewDischargeRequiredErrorWithVersion returns an error of type *Error
+// that contains a macaroon to the client and acts as a request that the
+// macaroon be discharged to authorize the request.
 //
-// The returned macaroon will be declared as valid for the given URL
-// path, which may be relative. When the client stores the discharged
-// macaroon as a cookie this will be the path associated with the
-// cookie. See ErrorInfo.MacaroonPath for more information.
-//
-// To request a particular cookie name:
-//
-//	err := NewDischargeRequiredErrorForRequest(...)
-//	err.(*httpbakery.Error).Info.CookieNameSuffix = cookieName
-func NewDischargeRequiredErrorWithVersion(m *bakery.Macaroon, path string, originalErr error, v bakery.Version) error {
-	if originalErr == nil {
-		originalErr = ErrDischargeRequired
+// The client is responsible for discharging the macaroon and
+// storing it as a cookie (or including it as a Macaroon header)
+// to be used for the subsequent request.
+func NewDischargeRequiredError(p DischargeRequiredErrorParams) error {
+	if p.OriginalError == nil {
+		p.OriginalError = ErrDischargeRequired
+	}
+	if p.CookiePath == "" {
+		p.CookiePath = "/"
+		if p.Request != nil {
+			path, err := httputil.RelativeURLPath(p.Request.URL.Path, "/")
+			if err == nil {
+				p.CookiePath = path
+			}
+		}
+	}
+	if p.CookieNameSuffix == "" {
+		p.CookieNameSuffix = "auth"
 	}
 	return &Error{
-		Message: originalErr.Error(),
-		version: v,
+		version: p.Macaroon.Version(),
+		Message: p.OriginalError.Error(),
 		Code:    ErrDischargeRequired,
 		Info: &ErrorInfo{
-			Macaroon:     m,
-			MacaroonPath: path,
+			Macaroon:     p.Macaroon,
+			MacaroonPath: p.CookiePath,
 		},
 	}
 }

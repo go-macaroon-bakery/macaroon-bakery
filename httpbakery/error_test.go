@@ -21,11 +21,12 @@ type ErrorSuite struct{}
 var _ = gc.Suite(&ErrorSuite{})
 
 func (s *ErrorSuite) TestWriteDischargeRequiredError(c *gc.C) {
-	m, err := bakery.NewMacaroon([]byte("secret"), []byte("id"), "a location", bakery.Version1, nil)
+	m, err := bakery.NewMacaroon([]byte("secret"), []byte("id"), "a location", bakery.LatestVersion, nil)
 	c.Assert(err, gc.IsNil)
 	tests := []struct {
 		about            string
 		path             string
+		requestPath      string
 		err              error
 		expectedResponse httpbakery.Error
 	}{{
@@ -36,40 +37,61 @@ func (s *ErrorSuite) TestWriteDischargeRequiredError(c *gc.C) {
 			Code:    httpbakery.ErrDischargeRequired,
 			Message: "an error",
 			Info: &httpbakery.ErrorInfo{
-				Macaroon: m,
+				Macaroon:     m,
+				MacaroonPath: "/",
 			},
 		},
 	}, {
 		about: `write discharge required with "an error" but and set a path`,
-		path:  "http://foobar:1234",
+		path:  "/foo",
 		err:   errors.New("an error"),
 		expectedResponse: httpbakery.Error{
 			Code:    httpbakery.ErrDischargeRequired,
 			Message: "an error",
 			Info: &httpbakery.ErrorInfo{
 				Macaroon:     m,
-				MacaroonPath: "http://foobar:1234",
+				MacaroonPath: "/foo",
 			},
 		},
 	}, {
 		about: `write discharge required with nil error but set a path`,
-		path:  "http://foobar:1234",
-		err:   nil,
+		path:  "/foo",
 		expectedResponse: httpbakery.Error{
 			Code:    httpbakery.ErrDischargeRequired,
 			Message: httpbakery.ErrDischargeRequired.Error(),
 			Info: &httpbakery.ErrorInfo{
 				Macaroon:     m,
-				MacaroonPath: "http://foobar:1234",
+				MacaroonPath: "/foo",
 			},
 		},
-	},
-	}
+	}, {
+		about:       `empty cookie path`,
+		requestPath: "/foo/bar/baz",
+		expectedResponse: httpbakery.Error{
+			Code:    httpbakery.ErrDischargeRequired,
+			Message: httpbakery.ErrDischargeRequired.Error(),
+			Info: &httpbakery.ErrorInfo{
+				Macaroon:     m,
+				MacaroonPath: "../../",
+			},
+		},
+	}}
 
 	for i, t := range tests {
-		c.Logf("Running test %d %s", i, t.about)
+		c.Logf("test %d: %s", i, t.about)
+		var req *http.Request
+		if t.requestPath != "" {
+			req0, err := http.NewRequest("GET", t.requestPath, nil)
+			c.Check(err, gc.Equals, nil)
+			req = req0
+		}
 		response := httptest.NewRecorder()
-		err := httpbakery.NewDischargeRequiredErrorWithVersion(m, t.path, t.err, bakery.Version3)
+		err := httpbakery.NewDischargeRequiredError(httpbakery.DischargeRequiredErrorParams{
+			Macaroon:      m,
+			CookiePath:    t.path,
+			OriginalError: t.err,
+			Request:       req,
+		})
 		httpbakery.WriteError(testContext, response, err)
 		httptesting.AssertJSONResponse(c, response, http.StatusUnauthorized, t.expectedResponse)
 	}

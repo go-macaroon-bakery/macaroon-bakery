@@ -112,8 +112,11 @@ func (srv *targetServiceHandler) writeError(ctx context.Context, w http.Response
 		return
 	}
 
-	herr := httpbakery.NewDischargeRequiredError(m, "/", derr, req)
-	herr.(*httpbakery.Error).Info.CookieNameSuffix = "auth"
+	herr := httpbakery.NewDischargeRequiredError(httpbakery.DischargeRequiredErrorParams{
+		Macaroon:      m,
+		OriginalError: derr,
+		Request:       req,
+	})
 	httpbakery.WriteError(ctx, w, herr)
 }
 

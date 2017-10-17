@@ -296,7 +296,10 @@ func (s *legacyAgentSuite) visit(p httprequest.Params, dischargeId string, rende
 	if err != nil {
 		return errgo.Notef(err, "cannot create macaroon")
 	}
-	return httpbakery.NewDischargeRequiredError(m, "/", nil, p.Request)
+	return httpbakery.NewDischargeRequiredError(httpbakery.DischargeRequiredErrorParams{
+		Macaroon: m,
+		Request:  p.Request,
+	})
 }
 
 // LegacyAgentHandler represents a handler for legacy
