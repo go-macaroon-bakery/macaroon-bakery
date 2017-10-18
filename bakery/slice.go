@@ -2,12 +2,13 @@ package bakery
 
 import (
 	"fmt"
-	"golang.org/x/net/context"
 	"time"
 
+	"golang.org/x/net/context"
 	errgo "gopkg.in/errgo.v1"
-	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
 	macaroon "gopkg.in/macaroon.v2-unstable"
+
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
 )
 
 // Slice holds a slice of unbound macaroons.

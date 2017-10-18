@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
@@ -15,7 +14,8 @@ import (
 )
 
 type targetServiceHandler struct {
-	bakery       *bakery.Bakery
+	checker      *bakery.Checker
+	oven         *httpbakery.Oven
 	authEndpoint string
 	endpoint     string
 	mux          *http.ServeMux
@@ -43,7 +43,8 @@ func targetService(endpoint, authEndpoint string, authPK *bakery.PublicKey) (htt
 	})
 	mux := http.NewServeMux()
 	srv := &targetServiceHandler{
-		bakery:       b,
+		checker:      b.Checker,
+		oven:         &httpbakery.Oven{Oven: b.Oven},
 		authEndpoint: authEndpoint,
 	}
 	mux.Handle("/gold/", srv.auth(http.HandlerFunc(srv.serveGold)))
@@ -70,9 +71,9 @@ func (srv *targetServiceHandler) auth(h http.Handler) http.Handler {
 			fail(w, http.StatusInternalServerError, "%v", err)
 			return
 		}
-		authChecker := srv.bakery.Checker.Auth(httpbakery.RequestMacaroons(req)...)
+		authChecker := srv.checker.Auth(httpbakery.RequestMacaroons(req)...)
 		if _, err = authChecker.Allow(ctx, ops...); err != nil {
-			srv.writeError(ctx, w, req, err)
+			httpbakery.WriteError(ctx, w, srv.oven.Error(ctx, req, err))
 			return
 		}
 		h.ServeHTTP(w, req)
@@ -93,31 +94,6 @@ func opsForRequest(req *http.Request) ([]bakery.Op, error) {
 		Entity: elems[1],
 		Action: req.Method,
 	}}, nil
-}
-
-// writeError writes an error to w in response to req. If the error was
-// generated because of a required macaroon that the client does not
-// have, we mint a macaroon that, when discharged, will grant the client
-// the right to execute the given operation.
-func (srv *targetServiceHandler) writeError(ctx context.Context, w http.ResponseWriter, req *http.Request, verr error) {
-	derr, ok := errgo.Cause(verr).(*bakery.DischargeRequiredError)
-	if !ok {
-		fail(w, http.StatusForbidden, "%v", verr)
-		return
-	}
-	// Mint an appropriate macaroon and send it back to the client.
-	m, err := srv.bakery.Oven.NewMacaroon(ctx, httpbakery.RequestVersion(req), time.Now().Add(5*time.Minute), derr.Caveats, derr.Ops...)
-	if err != nil {
-		fail(w, http.StatusInternalServerError, "cannot mint macaroon: %v", err)
-		return
-	}
-
-	herr := httpbakery.NewDischargeRequiredError(httpbakery.DischargeRequiredErrorParams{
-		Macaroon:      m,
-		OriginalError: derr,
-		Request:       req,
-	})
-	httpbakery.WriteError(ctx, w, herr)
 }
 
 func fail(w http.ResponseWriter, code int, msg string, args ...interface{}) {

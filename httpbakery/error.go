@@ -31,6 +31,7 @@ const (
 	ErrDischargeRequired         = ErrorCode("macaroon discharge required")
 	ErrInteractionRequired       = ErrorCode("interaction required")
 	ErrInteractionMethodNotFound = ErrorCode("discharger does not provide an supported interaction method")
+	ErrPermissionDenied          = ErrorCode("permission denied")
 )
 
 var httpReqServer = httprequest.Server{
@@ -170,6 +171,8 @@ func ErrorToResponse(ctx context.Context, err error) (int, interface{}) {
 	switch errorBody.Code {
 	case ErrBadRequest:
 		status = http.StatusBadRequest
+	case ErrPermissionDenied:
+		status = http.StatusUnauthorized
 	case ErrDischargeRequired, ErrInteractionRequired:
 		switch errorBody.version {
 		case bakery.Version0:
@@ -211,6 +214,7 @@ func errorResponseBody(err error) *Error {
 		errResp.Message = err.Error()
 		return &errResp
 	}
+
 	// It's not an error. Preserve as much info as
 	// we can find.
 	errResp.Message = err.Error()
