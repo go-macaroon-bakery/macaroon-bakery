@@ -16,6 +16,7 @@ import (
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/identchecker"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakerytest"
 	"gopkg.in/macaroon-bakery.v2-unstable/httpbakery"
 )
@@ -34,7 +35,7 @@ func (*OvenSuite) TestOvenWithAuthnMacaroon(c *gc.C) {
 	if err != nil {
 		panic(err)
 	}
-	b := bakery.New(bakery.BakeryParams{
+	b := identchecker.NewBakery(identchecker.BakeryParams{
 		Location:       "here",
 		Locator:        discharger,
 		Key:            key,
@@ -49,7 +50,7 @@ func (*OvenSuite) TestOvenWithAuthnMacaroon(c *gc.C) {
 	}
 	errorCalled := 0
 	handler := httpReqServer.HandleErrors(func(p httprequest.Params) error {
-		if _, err := b.Checker.Auth(httpbakery.RequestMacaroons(p.Request)...).Allow(p.Context, bakery.LoginOp); err != nil {
+		if _, err := b.Checker.Auth(httpbakery.RequestMacaroons(p.Request)...).Allow(p.Context, identchecker.LoginOp); err != nil {
 			errorCalled++
 			return oven.Error(testContext, p.Request, err)
 		}
@@ -90,13 +91,16 @@ func (*OvenSuite) TestOvenWithAuthzMacaroon(c *gc.C) {
 	if err != nil {
 		panic(err)
 	}
-	b := bakery.New(bakery.BakeryParams{
+	b := identchecker.NewBakery(identchecker.BakeryParams{
 		Location:       "here",
 		Locator:        locator,
 		Key:            key,
 		Checker:        httpbakery.NewChecker(),
 		IdentityClient: discharger,
-		Authorizer: bakery.AuthorizerFunc(func(ctx context.Context, id bakery.Identity, op bakery.Op) (bool, []checkers.Caveat, error) {
+		Authorizer: identchecker.AuthorizerFunc(func(ctx context.Context, id identchecker.Identity, op bakery.Op) (bool, []checkers.Caveat, error) {
+			if id == nil {
+				return false, nil, nil
+			}
 			return true, []checkers.Caveat{{
 				Location:  discharger2.Location(),
 				Condition: "something",
@@ -133,6 +137,10 @@ func (*OvenSuite) TestOvenWithAuthzMacaroon(c *gc.C) {
 	body, _ := ioutil.ReadAll(resp.Body)
 	c.Assert(resp.StatusCode, gc.Equals, http.StatusOK, gc.Commentf("body: %q", body))
 
+	cookies := client.Jar.Cookies(mustParseURL(discharger.Location()))
+	for i, cookie := range cookies {
+		c.Logf("cookie %d: %s %q", i, cookie.Name, cookie.Value)
+	}
 	mss := httpbakery.MacaroonsForURL(client.Jar, mustParseURL(discharger.Location()))
 	c.Assert(mss, gc.HasLen, 2)
 
@@ -169,17 +177,17 @@ func newTestIdentityServer() *testIdentityServer {
 	}
 }
 
-func (s *testIdentityServer) IdentityFromContext(ctx context.Context) (bakery.Identity, []checkers.Caveat, error) {
+func (s *testIdentityServer) IdentityFromContext(ctx context.Context) (identchecker.Identity, []checkers.Caveat, error) {
 	return nil, []checkers.Caveat{{
 		Location:  s.Location(),
 		Condition: "is-authenticated-user",
 	}}, nil
 }
 
-func (s *testIdentityServer) DeclaredIdentity(ctx context.Context, declared map[string]string) (bakery.Identity, error) {
+func (s *testIdentityServer) DeclaredIdentity(ctx context.Context, declared map[string]string) (identchecker.Identity, error) {
 	username, ok := declared["username"]
 	if !ok {
 		return nil, errgo.New("no username declared")
 	}
-	return bakery.SimpleIdentity(username), nil
+	return identchecker.SimpleIdentity(username), nil
 }

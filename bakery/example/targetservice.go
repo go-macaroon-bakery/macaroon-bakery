@@ -10,11 +10,12 @@ import (
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/identchecker"
 	"gopkg.in/macaroon-bakery.v2-unstable/httpbakery"
 )
 
 type targetServiceHandler struct {
-	checker      *bakery.Checker
+	checker      *identchecker.Checker
 	oven         *httpbakery.Oven
 	authEndpoint string
 	endpoint     string
@@ -32,7 +33,7 @@ func targetService(endpoint, authEndpoint string, authPK *bakery.PublicKey) (htt
 	}
 	pkLocator := httpbakery.NewThirdPartyLocator(nil, nil)
 	pkLocator.AllowInsecure()
-	b := bakery.New(bakery.BakeryParams{
+	b := identchecker.NewBakery(identchecker.BakeryParams{
 		Key:      key,
 		Location: endpoint,
 		Locator:  pkLocator,
@@ -107,7 +108,7 @@ type authorizer struct {
 // Authorize implements bakery.Authorizer.Authorize by
 // allowing anyone to do anything if a third party
 // approves it.
-func (a authorizer) Authorize(ctx context.Context, id bakery.Identity, ops []bakery.Op) (allowed []bool, caveats []checkers.Caveat, err error) {
+func (a authorizer) Authorize(ctx context.Context, id identchecker.Identity, ops []bakery.Op) (allowed []bool, caveats []checkers.Caveat, err error) {
 	allowed = make([]bool, len(ops))
 	for i := range allowed {
 		allowed[i] = true

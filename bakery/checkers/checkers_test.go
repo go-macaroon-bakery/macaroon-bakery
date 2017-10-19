@@ -43,7 +43,7 @@ var isCaveatNotRecognized = errgo.Is(checkers.ErrCaveatNotRecognized)
 
 var checkerTests = []struct {
 	about      string
-	addContext func(context.Context) context.Context
+	addContext func(context.Context, *checkers.Namespace) context.Context
 	checks     []checkTest
 }{{
 	about: "nothing in context, no extra checkers",
@@ -73,7 +73,7 @@ var checkerTests = []struct {
 	}},
 }, {
 	about: "time from clock",
-	addContext: func(ctx context.Context) context.Context {
+	addContext: func(ctx context.Context, _ *checkers.Namespace) context.Context {
 		return checkers.ContextWithClock(ctx, testClock{})
 	},
 	checks: []checkTest{{
@@ -110,12 +110,19 @@ var checkerTests = []struct {
 	}},
 }, {
 	about: "declared, some entries",
-	addContext: func(ctx context.Context) context.Context {
-		return checkers.ContextWithDeclared(ctx, map[string]string{
-			"a":   "aval",
-			"b":   "bval",
-			"spc": " a b",
-		})
+	addContext: func(ctx context.Context, ns *checkers.Namespace) context.Context {
+		m, _ := macaroon.New([]byte("k"), []byte("id"), "", macaroon.LatestVersion)
+		add := func(attr, val string) {
+			cav := ns.ResolveCaveat(checkers.DeclaredCaveat(attr, val))
+			err := m.AddFirstPartyCaveat(cav.Condition)
+			if err != nil {
+				panic(err)
+			}
+		}
+		add("a", "aval")
+		add("b", "bval")
+		add("spc", " a b")
+		return checkers.ContextWithMacaroons(ctx, ns, macaroon.Slice{m})
 	},
 	checks: []checkTest{{
 		caveat: checkers.DeclaredCaveat("a", "aval").Condition,
@@ -173,7 +180,7 @@ func (s *CheckersSuite) TestCheckers(c *gc.C) {
 		c.Logf("test %d: %s", i, test.about)
 		ctx := context.Background()
 		if test.addContext != nil {
-			ctx = test.addContext(ctx)
+			ctx = test.addContext(ctx, checker.Namespace())
 		}
 		for j, check := range test.checks {
 			c.Logf("\tcheck %d", j)
@@ -343,86 +350,6 @@ func (*CheckersSuite) TestInferDeclared(c *gc.C) {
 			ms[i] = m
 		}
 		c.Assert(checkers.InferDeclared(nil, ms), jc.DeepEquals, test.expect)
-	}
-}
-
-var operationsCheckerTests = []struct {
-	about       string
-	caveat      checkers.Caveat
-	ops         []string
-	expectError string
-}{{
-	about:  "all allowed",
-	caveat: checkers.AllowCaveat("op1", "op2", "op4", "op3"),
-	ops:    []string{"op1", "op3", "op2"},
-}, {
-	about:  "none denied",
-	caveat: checkers.DenyCaveat("op1", "op2"),
-	ops:    []string{"op3", "op4"},
-}, {
-	about:       "one not allowed",
-	caveat:      checkers.AllowCaveat("op1", "op2"),
-	ops:         []string{"op1", "op3"},
-	expectError: `op3 not allowed`,
-}, {
-	about:       "one denied",
-	caveat:      checkers.DenyCaveat("op1", "op2"),
-	ops:         []string{"op4", "op5", "op2"},
-	expectError: `op2 not allowed`,
-}, {
-	about:       "no operations, allow caveat",
-	caveat:      checkers.AllowCaveat("op1"),
-	ops:         []string{},
-	expectError: `op1 not allowed`,
-}, {
-	about:  "no operations, deny caveat",
-	caveat: checkers.DenyCaveat("op1"),
-	ops:    []string{},
-}, {
-	about: "no operations, empty allow caveat",
-	caveat: checkers.Caveat{
-		Condition: checkers.CondAllow,
-	},
-	ops:         []string{},
-	expectError: `no operations allowed`,
-}}
-
-func (*CheckersSuite) TestOperationsChecker(c *gc.C) {
-	checker := checkers.New(nil)
-	for i, test := range operationsCheckerTests {
-		c.Logf("%d: %s", i, test.about)
-		ctx := checkers.ContextWithOperations(context.Background(), test.ops...)
-		err := checker.CheckFirstPartyCaveat(ctx, test.caveat.Condition)
-		if test.expectError == "" {
-			c.Assert(err, gc.IsNil)
-			continue
-		}
-		c.Assert(err, gc.ErrorMatches, ".*: "+test.expectError)
-	}
-}
-
-var operationErrorCaveatTests = []struct {
-	about           string
-	caveat          checkers.Caveat
-	expectCondition string
-}{{
-	about:           "empty allow",
-	caveat:          checkers.AllowCaveat(),
-	expectCondition: "error no operations allowed",
-}, {
-	about:           "allow: invalid operation name",
-	caveat:          checkers.AllowCaveat("op1", "operation number 2"),
-	expectCondition: `error invalid operation name "operation number 2"`,
-}, {
-	about:           "deny: invalid operation name",
-	caveat:          checkers.DenyCaveat("op1", "operation number 2"),
-	expectCondition: `error invalid operation name "operation number 2"`,
-}}
-
-func (*CheckersSuite) TestOperationErrorCaveatTest(c *gc.C) {
-	for i, test := range operationErrorCaveatTests {
-		c.Logf("%d: %s", i, test.about)
-		c.Assert(test.caveat.Condition, gc.Matches, test.expectCondition)
 	}
 }
 

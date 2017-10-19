@@ -73,6 +73,12 @@ type OvenParams struct {
 	// party caveats can be added.
 	Locator ThirdPartyLocator
 
+	// LegacyMacaroonOp holds the operation to associate with old
+	// macaroons that don't have associated operations.
+	// If this is empty, legacy macaroons will not be associated
+	// with any operations.
+	LegacyMacaroonOp Op
+
 	// TODO max macaroon or macaroon id size?
 }
 
@@ -104,7 +110,7 @@ func (o *Oven) VerifyMacaroon(ctx context.Context, ms macaroon.Slice) (ops []Op,
 	if len(ms) == 0 {
 		return nil, nil, errgo.Newf("no macaroons in slice")
 	}
-	storageId, ops, err := decodeMacaroonId(ms[0].Id())
+	storageId, ops, err := o.decodeMacaroonId(ms[0].Id())
 	if err != nil {
 		return nil, nil, errgo.Mask(err)
 	}
@@ -129,7 +135,7 @@ func (o *Oven) VerifyMacaroon(ctx context.Context, ms macaroon.Slice) (ops []Op,
 	return ops, conditions, nil
 }
 
-func decodeMacaroonId(id []byte) (storageId []byte, ops []Op, err error) {
+func (o *Oven) decodeMacaroonId(id []byte) (storageId []byte, ops []Op, err error) {
 	base64Decoded := false
 	if id[0] == 'A' {
 		// The first byte is not a version number and it's 'A', which is the
@@ -183,7 +189,10 @@ func decodeMacaroonId(id []byte) (storageId []byte, ops []Op, err error) {
 			storageId = id[0:i]
 		}
 	}
-	return storageId, []Op{LoginOp}, nil
+	if op := o.p.LegacyMacaroonOp; op != (Op{}) {
+		ops = []Op{op}
+	}
+	return storageId, ops, nil
 }
 
 // NewMacaroon takes a macaroon with the given version from the oven, associates it with the given operations

@@ -27,6 +27,7 @@ func (s *ErrorSuite) TestWriteDischargeRequiredError(c *gc.C) {
 		about            string
 		path             string
 		requestPath      string
+		cookieNameSuffix string
 		err              error
 		expectedResponse httpbakery.Error
 	}{{
@@ -37,8 +38,9 @@ func (s *ErrorSuite) TestWriteDischargeRequiredError(c *gc.C) {
 			Code:    httpbakery.ErrDischargeRequired,
 			Message: "an error",
 			Info: &httpbakery.ErrorInfo{
-				Macaroon:     m,
-				MacaroonPath: "/",
+				Macaroon:         m,
+				MacaroonPath:     "/",
+				CookieNameSuffix: "auth",
 			},
 		},
 	}, {
@@ -49,8 +51,9 @@ func (s *ErrorSuite) TestWriteDischargeRequiredError(c *gc.C) {
 			Code:    httpbakery.ErrDischargeRequired,
 			Message: "an error",
 			Info: &httpbakery.ErrorInfo{
-				Macaroon:     m,
-				MacaroonPath: "/foo",
+				Macaroon:         m,
+				MacaroonPath:     "/foo",
+				CookieNameSuffix: "auth",
 			},
 		},
 	}, {
@@ -60,8 +63,9 @@ func (s *ErrorSuite) TestWriteDischargeRequiredError(c *gc.C) {
 			Code:    httpbakery.ErrDischargeRequired,
 			Message: httpbakery.ErrDischargeRequired.Error(),
 			Info: &httpbakery.ErrorInfo{
-				Macaroon:     m,
-				MacaroonPath: "/foo",
+				Macaroon:         m,
+				MacaroonPath:     "/foo",
+				CookieNameSuffix: "auth",
 			},
 		},
 	}, {
@@ -71,8 +75,21 @@ func (s *ErrorSuite) TestWriteDischargeRequiredError(c *gc.C) {
 			Code:    httpbakery.ErrDischargeRequired,
 			Message: httpbakery.ErrDischargeRequired.Error(),
 			Info: &httpbakery.ErrorInfo{
-				Macaroon:     m,
-				MacaroonPath: "../../",
+				Macaroon:         m,
+				MacaroonPath:     "../../",
+				CookieNameSuffix: "auth",
+			},
+		},
+	}, {
+		about:            `specified cookie name suffix`,
+		cookieNameSuffix: "some-name",
+		expectedResponse: httpbakery.Error{
+			Code:    httpbakery.ErrDischargeRequired,
+			Message: httpbakery.ErrDischargeRequired.Error(),
+			Info: &httpbakery.ErrorInfo{
+				Macaroon:         m,
+				MacaroonPath:     "/",
+				CookieNameSuffix: "some-name",
 			},
 		},
 	}}
@@ -87,10 +104,11 @@ func (s *ErrorSuite) TestWriteDischargeRequiredError(c *gc.C) {
 		}
 		response := httptest.NewRecorder()
 		err := httpbakery.NewDischargeRequiredError(httpbakery.DischargeRequiredErrorParams{
-			Macaroon:      m,
-			CookiePath:    t.path,
-			OriginalError: t.err,
-			Request:       req,
+			Macaroon:         m,
+			CookiePath:       t.path,
+			OriginalError:    t.err,
+			CookieNameSuffix: t.cookieNameSuffix,
+			Request:          req,
 		})
 		httpbakery.WriteError(testContext, response, err)
 		httptesting.AssertJSONResponse(c, response, http.StatusUnauthorized, t.expectedResponse)

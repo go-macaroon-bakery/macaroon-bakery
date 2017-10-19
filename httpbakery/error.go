@@ -308,8 +308,9 @@ func NewDischargeRequiredError(p DischargeRequiredErrorParams) error {
 		Message: p.OriginalError.Error(),
 		Code:    ErrDischargeRequired,
 		Info: &ErrorInfo{
-			Macaroon:     p.Macaroon,
-			MacaroonPath: p.CookiePath,
+			Macaroon:         p.Macaroon,
+			MacaroonPath:     p.CookiePath,
+			CookieNameSuffix: p.CookieNameSuffix,
 		},
 	}
 }

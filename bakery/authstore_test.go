@@ -22,10 +22,10 @@ type macaroonStore struct {
 // newMacaroonStore returns a MacaroonVerifier implementation
 // that stores root keys in memory and puts all operations
 // in the macaroon id.
-func newMacaroonStore(key *bakery.KeyPair, locator bakery.ThirdPartyLocator) *macaroonStore {
+func newMacaroonStore(locator bakery.ThirdPartyLocator) *macaroonStore {
 	return &macaroonStore{
 		rootKeyStore: bakery.NewMemRootKeyStore(),
-		key:          key,
+		key:          mustGenerateKey(),
 		locator:      locator,
 	}
 }

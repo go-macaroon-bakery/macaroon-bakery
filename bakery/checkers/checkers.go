@@ -21,8 +21,6 @@ const (
 	CondDeclared   = "declared"
 	CondTimeBefore = "time-before"
 	CondError      = "error"
-	CondAllow      = "allow"
-	CondDeny       = "deny"
 )
 
 const (
@@ -51,8 +49,6 @@ type CheckerInfo struct {
 var allCheckers = map[string]Func{
 	CondTimeBefore: checkTimeBefore,
 	CondDeclared:   checkDeclared,
-	CondAllow:      checkAllow,
-	CondDeny:       checkDeny,
 	CondError:      checkError,
 }
 

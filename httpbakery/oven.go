@@ -64,7 +64,7 @@ func (oven *Oven) Error(ctx context.Context, req *http.Request, err error) error
 		expiryDuration = DefaultAuthzExpiry
 	}
 	cookieName := "authz"
-	if len(derr.Ops) == 1 && derr.Ops[0] == bakery.LoginOp {
+	if derr.ForAuthentication {
 		// Authentication macaroons are a bit different, so use
 		// a different cookie name so both can be presented together.
 		cookieName = "authn"
@@ -77,6 +77,7 @@ func (oven *Oven) Error(ctx context.Context, req *http.Request, err error) error
 	if err != nil {
 		return errgo.Notef(err, "cannot mint new macaroon")
 	}
+	logger.Infof("Oven.Error, id %q; cookieName: %q; ops: %#v", m.M().Id(), cookieName, derr.Ops)
 	if err := m.AddCaveat(ctx, checkers.TimeBeforeCaveat(time.Now().Add(expiryDuration)), nil, nil); err != nil {
 		return errgo.Notef(err, "cannot add time-before caveat")
 	}

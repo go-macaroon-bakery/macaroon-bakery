@@ -12,6 +12,7 @@ import (
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/identchecker"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakerytest"
 	"gopkg.in/macaroon-bakery.v2-unstable/httpbakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/httpbakery/agent"
@@ -19,8 +20,8 @@ import (
 
 type legacyAgentSuite struct {
 	testing.LoggingSuite
-	agentBakery  *bakery.Bakery
-	serverBakery *bakery.Bakery
+	agentBakery  *identchecker.Bakery
+	serverBakery *identchecker.Bakery
 	discharger   *bakerytest.Discharger
 }
 
@@ -31,11 +32,11 @@ var _ = gc.Suite(&legacyAgentSuite{})
 func (s *legacyAgentSuite) SetUpTest(c *gc.C) {
 	s.LoggingSuite.SetUpTest(c)
 	s.discharger = bakerytest.NewDischarger(nil)
-	s.agentBakery = bakery.New(bakery.BakeryParams{
+	s.agentBakery = identchecker.NewBakery(identchecker.BakeryParams{
 		IdentityClient: idmClient{s.discharger.Location()},
 		Key:            bakery.MustGenerateKey(),
 	})
-	s.serverBakery = bakery.New(bakery.BakeryParams{
+	s.serverBakery = identchecker.NewBakery(identchecker.BakeryParams{
 		Locator:        s.discharger,
 		IdentityClient: idmClient{s.discharger.Location()},
 		Key:            bakery.MustGenerateKey(),
@@ -122,7 +123,7 @@ func (s *legacyAgentSuite) TestAgentLoginError(c *gc.C) {
 			context.Background(),
 			bakery.LatestVersion,
 			identityCaveats(s.discharger.Location()),
-			bakery.LoginOp,
+			identchecker.LoginOp,
 		)
 		c.Assert(err, gc.IsNil)
 		ms, err := client.DischargeAll(context.Background(), m)
@@ -175,14 +176,14 @@ func (s *legacyAgentSuite) TestSetUpAuth(c *gc.C) {
 		context.Background(),
 		bakery.LatestVersion,
 		identityCaveats(s.discharger.Location()),
-		bakery.LoginOp,
+		identchecker.LoginOp,
 	)
 	c.Assert(err, gc.IsNil)
 	ms, err := client.DischargeAll(context.Background(), m)
 	c.Assert(err, gc.IsNil)
-	authInfo, err := s.serverBakery.Checker.Auth(ms).Allow(context.Background(), bakery.LoginOp)
+	authInfo, err := s.serverBakery.Checker.Auth(ms).Allow(context.Background(), identchecker.LoginOp)
 	c.Assert(err, gc.IsNil)
-	c.Assert(authInfo.Identity, gc.Equals, bakery.SimpleIdentity("test-user"))
+	c.Assert(authInfo.Identity, gc.Equals, identchecker.SimpleIdentity("test-user"))
 }
 
 func (s *legacyAgentSuite) TestNoMatchingSite(c *gc.C) {
@@ -227,7 +228,7 @@ func (s *legacyAgentSuite) TestNoMatchingSite(c *gc.C) {
 		context.Background(),
 		bakery.LatestVersion,
 		identityCaveats(s.discharger.Location()),
-		bakery.LoginOp,
+		identchecker.LoginOp,
 	)
 
 	c.Assert(err, gc.IsNil)
@@ -241,7 +242,7 @@ type idmClient struct {
 	dischargerURL string
 }
 
-func (c idmClient) IdentityFromContext(ctx context.Context) (bakery.Identity, []checkers.Caveat, error) {
+func (c idmClient) IdentityFromContext(ctx context.Context) (identchecker.Identity, []checkers.Caveat, error) {
 	return nil, identityCaveats(c.dischargerURL), nil
 }
 
@@ -252,8 +253,8 @@ func identityCaveats(dischargerURL string) []checkers.Caveat {
 	}}
 }
 
-func (c idmClient) DeclaredIdentity(ctx context.Context, declared map[string]string) (bakery.Identity, error) {
-	return bakery.SimpleIdentity(declared["username"]), nil
+func (c idmClient) DeclaredIdentity(ctx context.Context, declared map[string]string) (identchecker.Identity, error) {
+	return identchecker.SimpleIdentity(declared["username"]), nil
 }
 
 // handleLoginMethods handles a legacy visit request
@@ -275,7 +276,7 @@ func (s *legacyAgentSuite) visit(p httprequest.Params, dischargeId string, rende
 	if err != nil {
 		return errgo.Notef(err, "cannot read agent login")
 	}
-	authInfo, authErr := s.agentBakery.Checker.Auth(httpbakery.RequestMacaroons(p.Request)...).Allow(ctx, bakery.LoginOp)
+	authInfo, authErr := s.agentBakery.Checker.Auth(httpbakery.RequestMacaroons(p.Request)...).Allow(ctx, identchecker.LoginOp)
 	if authErr == nil && authInfo.Identity != nil {
 		rendezvous.DischargeComplete(dischargeId, []checkers.Caveat{
 			checkers.DeclaredCaveat("username", authInfo.Identity.Id()),
@@ -287,7 +288,7 @@ func (s *legacyAgentSuite) visit(p httprequest.Params, dischargeId string, rende
 	m, err := s.agentBakery.Oven.NewMacaroon(ctx, version, []checkers.Caveat{
 		bakery.LocalThirdPartyCaveat(userPublicKey, version),
 		checkers.DeclaredCaveat("username", username),
-	}, bakery.LoginOp)
+	}, identchecker.LoginOp)
 	if err != nil {
 		return errgo.Notef(err, "cannot create macaroon")
 	}

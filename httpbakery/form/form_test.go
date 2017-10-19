@@ -14,6 +14,7 @@ import (
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/identchecker"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakerytest"
 	"gopkg.in/macaroon-bakery.v2-unstable/httpbakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/httpbakery/form"
@@ -142,7 +143,7 @@ func (s *formSuite) TestFormLogin(c *gc.C) {
 		m, err := b.Oven.NewMacaroon(context.TODO(), bakery.LatestVersion, []checkers.Caveat{{
 			Location:  discharger.Location(),
 			Condition: "test condition",
-		}}, bakery.LoginOp)
+		}}, identchecker.LoginOp)
 		c.Assert(err, gc.Equals, nil)
 
 		client := httpbakery.NewClient()
@@ -201,7 +202,7 @@ func (s *formSuite) TestFormTitle(c *gc.C) {
 		})
 		return nil, err
 	})
-	b := bakery.New(bakery.BakeryParams{
+	b := identchecker.NewBakery(identchecker.BakeryParams{
 		Key: bakery.MustGenerateKey(),
 		Locator: testLocator{
 			loc:     discharger.Location(),
@@ -213,7 +214,7 @@ func (s *formSuite) TestFormTitle(c *gc.C) {
 		m, err := b.Oven.NewMacaroon(context.TODO(), bakery.LatestVersion, []checkers.Caveat{{
 			Location:  "https://" + test.host,
 			Condition: "test condition",
-		}}, bakery.LoginOp)
+		}}, identchecker.LoginOp)
 		c.Assert(err, gc.Equals, nil)
 		client := httpbakery.NewClient()
 		c.Logf("match %v; replace with %v", test.host, discharger.Location())

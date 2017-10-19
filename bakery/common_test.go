@@ -20,6 +20,8 @@ var testContext = checkers.ContextWithClock(context.Background(), stoppedClock{e
 
 var logger = loggo.GetLogger("bakery.bakery_test")
 
+var basicOp = bakery.Op{"basic", "basic"}
+
 var (
 	epoch = time.Date(1900, 11, 17, 19, 00, 13, 0, time.UTC)
 )
@@ -39,10 +41,9 @@ var testChecker = func() *checkers.Checker {
 func newBakery(location string, locator *bakery.ThirdPartyStore) *bakery.Bakery {
 	key := mustGenerateKey()
 	p := bakery.BakeryParams{
-		Key:            key,
-		Checker:        testChecker,
-		Location:       location,
-		IdentityClient: oneIdentity{},
+		Key:      key,
+		Checker:  testChecker,
+		Location: location,
 	}
 	if locator != nil {
 		p.Locator = locator
@@ -59,31 +60,6 @@ func noDischarge(c *gc.C) func(context.Context, macaroon.Caveat, []byte) (*baker
 		c.Errorf("getDischarge called unexpectedly")
 		return nil, fmt.Errorf("nothing")
 	}
-}
-
-// oneIdentity is an IdentityClient implementation that always
-// returns a single identity from DeclaredIdentity, allowing
-// Allow(LoginOp) to work even when there are no declaration
-// caveats (this is mostly to support the legacy tests which do their
-// own checking of declaration caveats.
-type oneIdentity struct{}
-
-func (oneIdentity) IdentityFromContext(ctx context.Context) (bakery.Identity, []checkers.Caveat, error) {
-	return nil, nil, nil
-}
-
-func (oneIdentity) DeclaredIdentity(ctx context.Context, declared map[string]string) (bakery.Identity, error) {
-	return noone{}, nil
-}
-
-type noone struct{}
-
-func (noone) Id() string {
-	return "noone"
-}
-
-func (noone) Domain() string {
-	return ""
 }
 
 type strKey struct{}
@@ -150,21 +126,6 @@ type stoppedClock struct {
 
 func (t stoppedClock) Now() time.Time {
 	return t.t
-}
-
-type basicAuthKey struct{}
-
-type basicAuth struct {
-	user, password string
-}
-
-func contextWithBasicAuth(ctx context.Context, user, password string) context.Context {
-	return context.WithValue(ctx, basicAuthKey{}, basicAuth{user, password})
-}
-
-func basicAuthFromContext(ctx context.Context) (user, password string) {
-	auth, _ := ctx.Value(basicAuthKey{}).(basicAuth)
-	return auth.user, auth.password
 }
 
 func mustGenerateKey() *bakery.KeyPair {

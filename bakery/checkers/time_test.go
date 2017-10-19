@@ -37,13 +37,6 @@ var expireTimeTests = []struct {
 	expectTime:    t1,
 	expectExpires: true,
 }, {
-	about: "single deny caveat",
-	caveats: []macaroon.Caveat{
-		macaroon.Caveat{
-			Id: []byte(checkers.DenyCaveat("abc").Condition),
-		},
-	},
-}, {
 	about: "multiple time-before caveat",
 	caveats: []macaroon.Caveat{
 		macaroon.Caveat{
@@ -62,13 +55,13 @@ var expireTimeTests = []struct {
 			Id: []byte(checkers.TimeBeforeCaveat(t1).Condition),
 		},
 		macaroon.Caveat{
-			Id: []byte(checkers.AllowCaveat("abc").Condition),
+			Id: []byte("allow bar"),
 		},
 		macaroon.Caveat{
 			Id: []byte(checkers.TimeBeforeCaveat(t2).Condition),
 		},
 		macaroon.Caveat{
-			Id: []byte(checkers.DenyCaveat("def").Condition),
+			Id: []byte("deny foo"),
 		},
 	},
 	expectTime:    t1,
