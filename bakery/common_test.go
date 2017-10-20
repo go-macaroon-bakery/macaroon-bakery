@@ -169,9 +169,5 @@ func basicAuthFromContext(ctx context.Context) (user, password string) {
 }
 
 func mustGenerateKey() *bakery.KeyPair {
-	key, err := bakery.GenerateKey()
-	if err != nil {
-		panic(err)
-	}
-	return key
+	return bakery.MustGenerateKey()
 }

@@ -539,9 +539,9 @@ func (s *checkerSuite) TestAllowWithOpsAuthorizer(c *gc.C) {
 	ts := &service{
 		// Note: we're making a checker with no Authorizer and no IdentityClient.
 		checker: bakery.NewChecker(bakery.CheckerParams{
-			Checker:         testChecker,
-			OpsAuthorizer:   hierarchicalOpsAuthorizer{},
-			MacaroonOpStore: store,
+			Checker:          testChecker,
+			OpsAuthorizer:    hierarchicalOpsAuthorizer{},
+			MacaroonVerifier: store,
 		}),
 		store: store,
 	}
@@ -568,9 +568,9 @@ func (s *checkerSuite) TestAllowAnyWithOpsAuthorizer(c *gc.C) {
 	ts := &service{
 		// Note: we're making a checker with no Authorizer and no IdentityClient.
 		checker: bakery.NewChecker(bakery.CheckerParams{
-			Checker:         testChecker,
-			OpsAuthorizer:   hierarchicalOpsAuthorizer{},
-			MacaroonOpStore: store,
+			Checker:          testChecker,
+			OpsAuthorizer:    hierarchicalOpsAuthorizer{},
+			MacaroonVerifier: store,
 		}),
 		store: store,
 	}
@@ -600,9 +600,9 @@ func (s *checkerSuite) TestAllowAnyWithOpsAuthorizerAndMultipleMacaroons(c *gc.C
 	ts := &service{
 		// Note: we're making a checker with no Authorizer and no IdentityClient.
 		checker: bakery.NewChecker(bakery.CheckerParams{
-			Checker:         testChecker,
-			OpsAuthorizer:   hierarchicalOpsAuthorizer{},
-			MacaroonOpStore: store,
+			Checker:          testChecker,
+			OpsAuthorizer:    hierarchicalOpsAuthorizer{},
+			MacaroonVerifier: store,
 		}),
 		store: store,
 	}
@@ -686,7 +686,7 @@ func (s *checkerSuite) TestMacaroonOpsFatalError(c *gc.C) {
 	// When we get a non-VerificationError error from the
 	// opstore, we don't do any more verification.
 	checker := bakery.NewChecker(bakery.CheckerParams{
-		MacaroonOpStore: macaroonStoreWithError{errgo.New("an error")},
+		MacaroonVerifier: macaroonVerifierWithError{errgo.New("an error")},
 	})
 	m, err := macaroon.New(nil, nil, "", macaroon.V2)
 	c.Assert(err, gc.IsNil)
@@ -840,10 +840,10 @@ func newService(auth bakery.Authorizer, idm bakery.IdentityClient, locator baker
 	store := newMacaroonStore(mustGenerateKey(), locator)
 	return &service{
 		checker: bakery.NewChecker(bakery.CheckerParams{
-			Checker:         testChecker,
-			Authorizer:      auth,
-			IdentityClient:  idm,
-			MacaroonOpStore: store,
+			Checker:          testChecker,
+			Authorizer:       auth,
+			IdentityClient:   idm,
+			MacaroonVerifier: store,
 		}),
 		store: store,
 	}

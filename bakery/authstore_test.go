@@ -19,7 +19,7 @@ type macaroonStore struct {
 	locator bakery.ThirdPartyLocator
 }
 
-// newMacaroonStore returns a MacaroonOpStore implementation
+// newMacaroonStore returns a MacaroonVerifier implementation
 // that stores root keys in memory and puts all operations
 // in the macaroon id.
 func newMacaroonStore(key *bakery.KeyPair, locator bakery.ThirdPartyLocator) *macaroonStore {
@@ -56,7 +56,7 @@ func (s *macaroonStore) NewMacaroon(ctx context.Context, ops []bakery.Op, caveat
 	return m, nil
 }
 
-func (s *macaroonStore) MacaroonOps(ctx context.Context, ms macaroon.Slice) (ops []bakery.Op, conditions []string, err error) {
+func (s *macaroonStore) VerifyMacaroon(ctx context.Context, ms macaroon.Slice) (ops []bakery.Op, conditions []string, err error) {
 	if len(ms) == 0 {
 		return nil, nil, &bakery.VerificationError{
 			Reason: errgo.Newf("no macaroons in slice"),
@@ -87,16 +87,12 @@ func (s *macaroonStore) MacaroonOps(ctx context.Context, ms macaroon.Slice) (ops
 	return mid.Ops, conditions, nil
 }
 
-// macaroonStoreWithError is an implementation of MacaroonOpStore that
+// macaroonVerifierWithError is an implementation of MacaroonVerifier that
 // returns the given error on all store operations.
-type macaroonStoreWithError struct {
+type macaroonVerifierWithError struct {
 	err error
 }
 
-func (s macaroonStoreWithError) NewMacaroon(ctx context.Context, ops []bakery.Op, caveats []checkers.Caveat, ns *checkers.Namespace) (*macaroon.Macaroon, error) {
-	return nil, errgo.Mask(s.err, errgo.Any)
-}
-
-func (s macaroonStoreWithError) MacaroonOps(ctx context.Context, ms macaroon.Slice) (ops []bakery.Op, conditions []string, err error) {
+func (s macaroonVerifierWithError) VerifyMacaroon(ctx context.Context, ms macaroon.Slice) (ops []bakery.Op, conditions []string, err error) {
 	return nil, nil, errgo.Mask(s.err, errgo.Any)
 }

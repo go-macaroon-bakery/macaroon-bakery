@@ -62,9 +62,8 @@ type CheckerParams struct {
 	// If this is nil, no authentication will be possible.
 	IdentityClient IdentityClient
 
-	// MacaroonOps is used to retrieve macaroon root keys
-	// and other associated information.
-	MacaroonOpStore MacaroonOpStore
+	// MacaroonVerifier is used to verify macaroons.
+	MacaroonVerifier MacaroonVerifier
 }
 
 // AuthInfo information about an authorization decision.
@@ -159,7 +158,7 @@ func (a *AuthChecker) initOnceFunc(ctx context.Context) error {
 	a.authIndexes = make(map[Op][]int)
 	a.conditions = make([][]string, len(a.macaroons))
 	for i, ms := range a.macaroons {
-		ops, conditions, err := a.p.MacaroonOpStore.MacaroonOps(ctx, ms)
+		ops, conditions, err := a.p.MacaroonVerifier.VerifyMacaroon(ctx, ms)
 		if err != nil {
 			if !isVerificationError(err) {
 				return errgo.Notef(err, "cannot retrieve macaroon")
