@@ -2,10 +2,8 @@ package bakery
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/base64"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/rogpeppe/fastuuid"
@@ -16,6 +14,22 @@ import (
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/internal/macaroonpb"
 )
+
+// MacaroonVerifier verifies macaroons and returns the operations and
+// caveats they're associated with.
+type MacaroonVerifier interface {
+	// VerifyMacaroon verifies the signature of the given macaroon and returns
+	// information on its associated operations, and all the first party
+	// caveat conditions that need to be checked.
+	//
+	// This method should not check first party caveats itself.
+	//
+	// It should return a *VerificationError if the error occurred
+	// because the macaroon signature failed or the root key
+	// was not found - any other error will be treated as fatal
+	// by Checker and cause authorization to terminate.
+	VerifyMacaroon(ctx context.Context, ms macaroon.Slice) ([]Op, []string, error)
+}
 
 var uuidGen = fastuuid.MustNewGenerator()
 
@@ -46,18 +60,6 @@ type OvenParams struct {
 	// If this is nil, NewMemRootKeyStore will be used to create
 	// a new store to be used for all entities.
 	RootKeyStoreForOps func(ops []Op) RootKeyStore
-
-	// OpsStore is used to persistently store the association of
-	// multi-op entities with their associated operations
-	// when NewMacaroon is called with multiple operations.
-	//
-	// If this is nil, embed the operations will be stored directly in the macaroon id.
-	// Note that this can make the macaroons large.
-	//
-	// When this is in use, operation entities with the prefix "multi-" are
-	// reserved - a "multi-"-prefixed entity represents a set of operations
-	// stored in the OpsStore.
-	OpsStore OpsStore
 
 	// Key holds the private key pair used to encrypt third party caveats.
 	// If it is nil, no third party caveats can be created.
@@ -94,12 +96,12 @@ func NewOven(p OvenParams) *Oven {
 	}
 }
 
-// MacaroonOps implements MacaroonOpStore.MacaroonOps, making Oven
-// an instance of MacaroonOpStore.
+// VerifyMacaroon implements MacaroonVerifier.VerifyMacaroon, making Oven
+// an instance of MacaroonVerifier.
 //
 // For macaroons minted with previous bakery versions, it always
 // returns a single LoginOp operation.
-func (o *Oven) MacaroonOps(ctx context.Context, ms macaroon.Slice) (ops []Op, conditions []string, err error) {
+func (o *Oven) VerifyMacaroon(ctx context.Context, ms macaroon.Slice) (ops []Op, conditions []string, err error) {
 	if len(ms) == 0 {
 		return nil, nil, errgo.Newf("no macaroons in slice")
 	}
@@ -123,13 +125,6 @@ func (o *Oven) MacaroonOps(ctx context.Context, ms macaroon.Slice) (ops []Op, co
 	if err != nil {
 		return nil, nil, &VerificationError{
 			Reason: errgo.Mask(err),
-		}
-	}
-	if o.p.OpsStore != nil && len(ops) == 1 && strings.HasPrefix(ops[0].Entity, "multi-") {
-		// It's a multi-op entity, so retrieve the actual operations it's associated with.
-		ops, err = o.p.OpsStore.GetOps(ctx, ops[0].Entity)
-		if err != nil {
-			return nil, nil, errgo.Notef(err, "cannot get operations for %q", ops[0].Entity)
 		}
 	}
 	return ops, conditions, nil
@@ -293,49 +288,11 @@ func CanonicalOps(ops []Op) []Op {
 func (o *Oven) newMacaroonId(ctx context.Context, ops []Op, storageId []byte, expiry time.Time) (*macaroonpb.MacaroonId, error) {
 	uuid := uuidGen.Next()
 	nonce := uuid[0:16]
-	if len(ops) == 1 || o.p.OpsStore == nil {
-		return &macaroonpb.MacaroonId{
-			Nonce:     nonce,
-			StorageId: storageId,
-			Ops:       macaroonIdOps(ops),
-		}, nil
-	}
-	// We've got several operations and a multi-op store, so use the store.
-	// TODO use the store only if the encoded macaroon id exceeds some size?
-	entity := newOpsEntity(ops)
-	if err := o.p.OpsStore.PutOps(ctx, entity, ops, expiry); err != nil {
-		return nil, errgo.Notef(err, "cannot store ops")
-	}
 	return &macaroonpb.MacaroonId{
 		Nonce:     nonce,
 		StorageId: storageId,
-		Ops: []*macaroonpb.Op{{
-			Entity:  entity,
-			Actions: []string{"*"},
-		}},
+		Ops:       macaroonIdOps(ops),
 	}, nil
-}
-
-// newOpsEntity returns a new multi-op entity name that represents
-// all the given operations and caveats. It returns the same value regardless
-// of the ordering of the operations. It assumes that the operations
-// have been canonicalized and that there's at least one operation.
-func newOpsEntity(ops []Op) string {
-	// Hash the operations, removing duplicates as we go.
-	h := sha256.New()
-	data := make([]byte, len(ops[0].Action)+len(ops[0].Entity)+2)
-	for _, op := range ops {
-		data = data[:0]
-		data = append(data, op.Action...)
-		data = append(data, '\n')
-		data = append(data, op.Entity...)
-		data = append(data, '\n')
-		h.Write(data)
-	}
-	entity := make([]byte, len("multi-")+base64.RawURLEncoding.EncodedLen(sha256.Size))
-	copy(entity, "multi-")
-	base64.RawURLEncoding.Encode(entity[len("multi-"):], h.Sum(data[:0]))
-	return string(entity)
 }
 
 // macaroonIdOps returns operations suitable for serializing

@@ -57,13 +57,6 @@ type BakeryParams struct {
 	// IdentityClient.DeclaredIdentity.
 	Authorizer Authorizer
 
-	// OpsStore is used to persistently store the association of
-	// multi-op entities with their associated operations
-	// when Oven.NewMacaroon is called with multiple operations.
-	//
-	// See OvenParams.OpsStore for details.
-	OpsStore OpsStore
-
 	// Location holds the location to use when creating new macaroons.
 	Location string
 }
@@ -80,7 +73,6 @@ func New(p BakeryParams) *Bakery {
 		Namespace: p.Checker.Namespace(),
 		Location:  p.Location,
 		Locator:   p.Locator,
-		OpsStore:  p.OpsStore,
 	}
 	if p.RootKeyStore != nil {
 		ovenParams.RootKeyStoreForOps = func(ops []Op) RootKeyStore {
@@ -90,10 +82,10 @@ func New(p BakeryParams) *Bakery {
 	oven := NewOven(ovenParams)
 
 	checker := NewChecker(CheckerParams{
-		Checker:         p.Checker,
-		MacaroonOpStore: oven,
-		IdentityClient:  p.IdentityClient,
-		Authorizer:      p.Authorizer,
+		Checker:          p.Checker,
+		MacaroonVerifier: oven,
+		IdentityClient:   p.IdentityClient,
+		Authorizer:       p.Authorizer,
 	})
 	return &Bakery{
 		Oven:    oven,
