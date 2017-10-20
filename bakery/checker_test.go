@@ -722,14 +722,6 @@ func macaroonConditions(caveats []macaroon.Caveat, allowThird bool) []string {
 	return conds
 }
 
-func firstPartyMacaroonCaveats(conds ...string) []macaroon.Caveat {
-	caveats := make([]macaroon.Caveat, len(conds))
-	for i, cond := range conds {
-		caveats[i].Id = []byte(cond)
-	}
-	return caveats
-}
-
 func readOp(entity string) bakery.Op {
 	return bakery.Op{
 		Entity: entity,
