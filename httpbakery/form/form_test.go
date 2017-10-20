@@ -2,7 +2,6 @@ package form_test
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/juju/httprequest"
 	jujutesting "github.com/juju/testing"
@@ -23,8 +22,6 @@ import (
 type formSuite struct {
 	jujutesting.LoggingSuite
 }
-
-var ages = time.Now().Add(time.Hour)
 
 var reqServer = httprequest.Server{
 	ErrorMapper: httpbakery.ErrorToResponse,
@@ -142,7 +139,7 @@ func (s *formSuite) TestFormLogin(c *gc.C) {
 		postForm = test.postForm
 		noFormMethod = test.noFormMethod
 
-		m, err := b.Oven.NewMacaroon(context.TODO(), bakery.LatestVersion, ages, []checkers.Caveat{{
+		m, err := b.Oven.NewMacaroon(context.TODO(), bakery.LatestVersion, []checkers.Caveat{{
 			Location:  discharger.Location(),
 			Condition: "test condition",
 		}}, bakery.LoginOp)
@@ -213,7 +210,7 @@ func (s *formSuite) TestFormTitle(c *gc.C) {
 	})
 	for i, test := range formTitleTests {
 		c.Logf("test %d: %s", i, test.host)
-		m, err := b.Oven.NewMacaroon(context.TODO(), bakery.LatestVersion, ages, []checkers.Caveat{{
+		m, err := b.Oven.NewMacaroon(context.TODO(), bakery.LatestVersion, []checkers.Caveat{{
 			Location:  "https://" + test.host,
 			Condition: "test condition",
 		}}, bakery.LoginOp)

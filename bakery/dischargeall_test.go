@@ -136,7 +136,7 @@ func (*DischargeSuite) TestDischargeAllLocalDischarge(c *gc.C) {
 	clientKey, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
 
-	m, err := oc.Oven.NewMacaroon(testContext, bakery.LatestVersion, ages, []checkers.Caveat{
+	m, err := oc.Oven.NewMacaroon(testContext, bakery.LatestVersion, []checkers.Caveat{
 		bakery.LocalThirdPartyCaveat(&clientKey.Public, bakery.LatestVersion),
 	}, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
@@ -154,7 +154,7 @@ func (*DischargeSuite) TestDischargeAllLocalDischargeVersion1(c *gc.C) {
 	clientKey, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
 
-	m, err := oc.Oven.NewMacaroon(testContext, bakery.Version1, ages, []checkers.Caveat{
+	m, err := oc.Oven.NewMacaroon(testContext, bakery.Version1, []checkers.Caveat{
 		bakery.LocalThirdPartyCaveat(&clientKey.Public, bakery.Version1),
 	}, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)

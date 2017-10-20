@@ -32,10 +32,7 @@ func (s *suite) SetUpTest(c *gc.C) {
 
 var _ = gc.Suite(&suite{})
 
-var (
-	ages        = time.Now().Add(time.Hour)
-	dischargeOp = bakery.Op{"thirdparty", "x"}
-)
+var dischargeOp = bakery.Op{"thirdparty", "x"}
 
 func (s *suite) TestDischargerSimple(c *gc.C) {
 	d := bakerytest.NewDischarger(nil)
@@ -46,7 +43,7 @@ func (s *suite) TestDischargerSimple(c *gc.C) {
 		Locator:  d,
 		Key:      bakery.MustGenerateKey(),
 	})
-	m, err := b.Oven.NewMacaroon(context.Background(), bakery.LatestVersion, ages, []checkers.Caveat{{
+	m, err := b.Oven.NewMacaroon(context.Background(), bakery.LatestVersion, []checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
 	}}, dischargeOp)
@@ -93,7 +90,7 @@ func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 		Locator:  locator,
 		Key:      bakery.MustGenerateKey(),
 	})
-	m, err := b.Oven.NewMacaroon(context.Background(), bakery.LatestVersion, ages, []checkers.Caveat{{
+	m, err := b.Oven.NewMacaroon(context.Background(), bakery.LatestVersion, []checkers.Caveat{{
 		Location:  d2.Location(),
 		Condition: "true",
 	}}, dischargeOp)
@@ -192,7 +189,7 @@ func (s *suite) TestInteractiveDischarger(c *gc.C) {
 		Checker:  &r,
 		Key:      bakery.MustGenerateKey(),
 	})
-	m, err := b.Oven.NewMacaroon(context.Background(), bakery.LatestVersion, ages, []checkers.Caveat{{
+	m, err := b.Oven.NewMacaroon(context.Background(), bakery.LatestVersion, []checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
 	}}, dischargeOp)
@@ -208,8 +205,8 @@ func (s *suite) TestInteractiveDischarger(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 	// First caveat is time-before caveat added by NewMacaroon.
 	// Second is the one added by the discharger above.
-	c.Assert(r.caveats, gc.HasLen, 2)
-	c.Assert(r.caveats[1], gc.Equals, "test pass")
+	c.Assert(r.caveats, gc.HasLen, 1)
+	c.Assert(r.caveats[0], gc.Equals, "test pass")
 
 	c.Check(visited, gc.Equals, true)
 	c.Check(waited, gc.Equals, true)
@@ -249,7 +246,7 @@ func (s *suite) TestLoginDischargerError(c *gc.C) {
 		Locator:  d,
 		Key:      bakery.MustGenerateKey(),
 	})
-	m, err := b.Oven.NewMacaroon(context.Background(), bakery.LatestVersion, ages, []checkers.Caveat{{
+	m, err := b.Oven.NewMacaroon(context.Background(), bakery.LatestVersion, []checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
 	}}, dischargeOp)
@@ -304,7 +301,7 @@ func (s *suite) TestInteractiveDischargerRedirection(c *gc.C) {
 		Key:      bakery.MustGenerateKey(),
 		Checker:  &r,
 	})
-	m, err := b.Oven.NewMacaroon(context.Background(), bakery.LatestVersion, ages, []checkers.Caveat{{
+	m, err := b.Oven.NewMacaroon(context.Background(), bakery.LatestVersion, []checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
 	}}, dischargeOp)
@@ -320,9 +317,7 @@ func (s *suite) TestInteractiveDischargerRedirection(c *gc.C) {
 	_, err = b.Checker.Auth(ms).Allow(context.Background(), dischargeOp)
 	c.Assert(err, gc.IsNil)
 
-	// Note: the first caveat is the "time-before" caveat
-	// that's always created.
-	c.Assert(r.caveats[1:], gc.DeepEquals, []string{"condition"})
+	c.Assert(r.caveats, gc.DeepEquals, []string{"condition"})
 }
 
 type recordingChecker struct {

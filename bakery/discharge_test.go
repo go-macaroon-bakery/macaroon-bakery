@@ -28,7 +28,7 @@ var _ = gc.Suite(&ServiceSuite{})
 func (s *ServiceSuite) TestSingleServiceFirstParty(c *gc.C) {
 	oc := newBakery("bakerytest", nil)
 
-	primary, err := oc.Oven.NewMacaroon(testContext, bakery.LatestVersion, ages, nil, bakery.LoginOp)
+	primary, err := oc.Oven.NewMacaroon(testContext, bakery.LatestVersion, nil, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
 	c.Assert(primary.M().Location(), gc.Equals, "bakerytest")
 	err = oc.Oven.AddCaveat(testContext, primary, strCaveat("something"))
@@ -54,7 +54,7 @@ func (s *ServiceSuite) TestMacaroonPaperFig6(c *gc.C) {
 	fs := newBakery("fs-loc", locator)
 
 	// ts creates a macaroon.
-	tsMacaroon, err := ts.Oven.NewMacaroon(testContext, bakery.LatestVersion, ages, nil, bakery.LoginOp)
+	tsMacaroon, err := ts.Oven.NewMacaroon(testContext, bakery.LatestVersion, nil, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
 
 	// ts somehow sends the macaroon to fs which adds a third party caveat to be discharged by as.
@@ -79,7 +79,7 @@ func (s *ServiceSuite) TestDischargeWithVersion1Macaroon(c *gc.C) {
 	ts := newBakery("ts-loc", locator)
 
 	// ts creates a old-version macaroon.
-	tsMacaroon, err := ts.Oven.NewMacaroon(testContext, bakery.Version1, ages, nil, bakery.LoginOp)
+	tsMacaroon, err := ts.Oven.NewMacaroon(testContext, bakery.Version1, nil, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
 	err = ts.Oven.AddCaveat(testContext, tsMacaroon, checkers.Caveat{Location: "as-loc", Condition: "something"})
 	c.Assert(err, gc.IsNil)
@@ -131,7 +131,7 @@ func (s *ServiceSuite) TestMacaroonPaperFig6FailsWithoutDischarges(c *gc.C) {
 	newBakery("as-loc", locator)
 
 	// ts creates a macaroon.
-	tsMacaroon, err := ts.Oven.NewMacaroon(testContext, bakery.LatestVersion, ages, nil, bakery.LoginOp)
+	tsMacaroon, err := ts.Oven.NewMacaroon(testContext, bakery.LatestVersion, nil, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
 
 	// ts somehow sends the macaroon to fs which adds a third party caveat to be discharged by as.
@@ -152,7 +152,7 @@ func (s *ServiceSuite) TestMacaroonPaperFig6FailsWithBindingOnTamperedSignature(
 	fs := newBakery("fs-loc", locator)
 
 	// ts creates a macaroon.
-	tsMacaroon, err := ts.Oven.NewMacaroon(testContext, bakery.LatestVersion, ages, nil, bakery.LoginOp)
+	tsMacaroon, err := ts.Oven.NewMacaroon(testContext, bakery.LatestVersion, nil, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
 
 	// ts somehow sends the macaroon to fs which adds a third party caveat to be discharged by as.
@@ -195,7 +195,7 @@ func (s *ServiceSuite) TestNeedDeclared(c *gc.C) {
 
 	// firstParty mints a macaroon with a third-party caveat addressed
 	// to thirdParty with a need-declared caveat.
-	m, err := firstParty.Oven.NewMacaroon(testContext, bakery.LatestVersion, ages, []checkers.Caveat{
+	m, err := firstParty.Oven.NewMacaroon(testContext, bakery.LatestVersion, []checkers.Caveat{
 		checkers.NeedDeclaredCaveat(checkers.Caveat{
 			Location:  "third",
 			Condition: "something",
@@ -285,7 +285,7 @@ func (s *ServiceSuite) TestDischargeTwoNeedDeclared(c *gc.C) {
 
 	// firstParty mints a macaroon with two third party caveats
 	// with overlapping attributes.
-	m, err := firstParty.Oven.NewMacaroon(testContext, bakery.LatestVersion, ages, []checkers.Caveat{
+	m, err := firstParty.Oven.NewMacaroon(testContext, bakery.LatestVersion, []checkers.Caveat{
 		checkers.NeedDeclaredCaveat(checkers.Caveat{
 			Location:  "third",
 			Condition: "x",
@@ -355,7 +355,7 @@ func (s *ServiceSuite) TestDischargeMacaroonCannotBeUsedAsNormalMacaroon(c *gc.C
 	thirdParty := newBakery("third", locator)
 
 	// First party mints a macaroon with a 3rd party caveat.
-	m, err := firstParty.Oven.NewMacaroon(testContext, bakery.LatestVersion, ages, []checkers.Caveat{{
+	m, err := firstParty.Oven.NewMacaroon(testContext, bakery.LatestVersion, []checkers.Caveat{{
 		Location:  "third",
 		Condition: "true",
 	}}, bakery.LoginOp)
@@ -387,7 +387,7 @@ func (s *ServiceSuite) TestThirdPartyDischargeMacaroonIdsAreSmall(c *gc.C) {
 	}
 	ts := bakeries["ts-loc"]
 
-	tsMacaroon, err := ts.Oven.NewMacaroon(testContext, bakery.LatestVersion, ages, nil, bakery.LoginOp)
+	tsMacaroon, err := ts.Oven.NewMacaroon(testContext, bakery.LatestVersion, nil, bakery.LoginOp)
 	c.Assert(err, gc.IsNil)
 	err = ts.Oven.AddCaveat(testContext, tsMacaroon, checkers.Caveat{Location: "as1-loc", Condition: "something"})
 	c.Assert(err, gc.IsNil)

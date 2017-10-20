@@ -56,11 +56,11 @@ func (*ovenSuite) TestCanonicalOps(c *gc.C) {
 func (*ovenSuite) TestMultipleOps(c *gc.C) {
 	oven := bakery.NewOven(bakery.OvenParams{})
 	ops := []bakery.Op{{"one", "read"}, {"one", "write"}, {"two", "read"}}
-	m, err := oven.NewMacaroon(testContext, bakery.LatestVersion, ages, nil, ops...)
+	m, err := oven.NewMacaroon(testContext, bakery.LatestVersion, nil, ops...)
 	c.Assert(err, gc.IsNil)
 	gotOps, conds, err := oven.VerifyMacaroon(testContext, macaroon.Slice{m.M()})
 	c.Assert(err, gc.IsNil)
-	c.Assert(conds, gc.HasLen, 1) // time-before caveat.
+	c.Assert(conds, gc.HasLen, 0)
 	c.Assert(bakery.CanonicalOps(gotOps), jc.DeepEquals, ops)
 }
 
@@ -68,11 +68,11 @@ func (*ovenSuite) TestMultipleOpsInId(c *gc.C) {
 	oven := bakery.NewOven(bakery.OvenParams{})
 
 	ops := []bakery.Op{{"one", "read"}, {"one", "write"}, {"two", "read"}}
-	m, err := oven.NewMacaroon(testContext, bakery.LatestVersion, ages, nil, ops...)
+	m, err := oven.NewMacaroon(testContext, bakery.LatestVersion, nil, ops...)
 	c.Assert(err, gc.IsNil)
 	gotOps, conds, err := oven.VerifyMacaroon(testContext, macaroon.Slice{m.M()})
 	c.Assert(err, gc.IsNil)
-	c.Assert(conds, gc.HasLen, 1) // time-before caveat.
+	c.Assert(conds, gc.HasLen, 0)
 	c.Assert(bakery.CanonicalOps(gotOps), jc.DeepEquals, ops)
 }
 
@@ -80,10 +80,10 @@ func (*ovenSuite) TestMultipleOpsInIdWithVersion1(c *gc.C) {
 	oven := bakery.NewOven(bakery.OvenParams{})
 
 	ops := []bakery.Op{{"one", "read"}, {"one", "write"}, {"two", "read"}}
-	m, err := oven.NewMacaroon(testContext, bakery.Version1, ages, nil, ops...)
+	m, err := oven.NewMacaroon(testContext, bakery.Version1, nil, ops...)
 	c.Assert(err, gc.IsNil)
 	gotOps, conds, err := oven.VerifyMacaroon(testContext, macaroon.Slice{m.M()})
 	c.Assert(err, gc.IsNil)
-	c.Assert(conds, gc.HasLen, 1) // time-before caveat.
+	c.Assert(conds, gc.HasLen, 0)
 	c.Assert(bakery.CanonicalOps(gotOps), jc.DeepEquals, ops)
 }

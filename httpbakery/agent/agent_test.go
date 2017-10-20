@@ -2,7 +2,6 @@ package agent_test
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/juju/httprequest"
 	"github.com/juju/testing"
@@ -59,7 +58,6 @@ func (s *agentSuite) TestSetUpAuth(c *gc.C) {
 			return dischargerBakery.Oven.NewMacaroon(
 				context.Background(),
 				bakery.LatestVersion,
-				time.Now().Add(time.Minute),
 				[]checkers.Caveat{
 					bakery.LocalThirdPartyCaveat(pubKey, version),
 				},
@@ -106,7 +104,6 @@ func (s *agentSuite) TestSetUpAuth(c *gc.C) {
 	m, err := s.serverBakery.Oven.NewMacaroon(
 		context.Background(),
 		bakery.LatestVersion,
-		time.Now().Add(time.Minute),
 		[]checkers.Caveat{{
 			Location:  s.discharger.Location(),
 			Condition: "some-third-party-caveat",

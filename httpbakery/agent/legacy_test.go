@@ -121,7 +121,6 @@ func (s *legacyAgentSuite) TestAgentLoginError(c *gc.C) {
 		m, err := s.serverBakery.Oven.NewMacaroon(
 			context.Background(),
 			bakery.LatestVersion,
-			time.Now().Add(time.Minute),
 			identityCaveats(s.discharger.Location()),
 			bakery.LoginOp,
 		)
@@ -175,7 +174,6 @@ func (s *legacyAgentSuite) TestSetUpAuth(c *gc.C) {
 	m, err := s.serverBakery.Oven.NewMacaroon(
 		context.Background(),
 		bakery.LatestVersion,
-		time.Now().Add(time.Minute),
 		identityCaveats(s.discharger.Location()),
 		bakery.LoginOp,
 	)
@@ -228,7 +226,6 @@ func (s *legacyAgentSuite) TestNoMatchingSite(c *gc.C) {
 	m, err := s.serverBakery.Oven.NewMacaroon(
 		context.Background(),
 		bakery.LatestVersion,
-		time.Now().Add(time.Minute),
 		identityCaveats(s.discharger.Location()),
 		bakery.LoginOp,
 	)
@@ -259,8 +256,6 @@ func (c idmClient) DeclaredIdentity(ctx context.Context, declared map[string]str
 	return bakery.SimpleIdentity(declared["username"]), nil
 }
 
-var ages = time.Now().Add(time.Hour)
-
 // handleLoginMethods handles a legacy visit request
 // to ask for the set of login methods.
 // It reports whether it has handled the request.
@@ -289,7 +284,7 @@ func (s *legacyAgentSuite) visit(p httprequest.Params, dischargeId string, rende
 		return nil
 	}
 	version := httpbakery.RequestVersion(p.Request)
-	m, err := s.agentBakery.Oven.NewMacaroon(ctx, version, ages, []checkers.Caveat{
+	m, err := s.agentBakery.Oven.NewMacaroon(ctx, version, []checkers.Caveat{
 		bakery.LocalThirdPartyCaveat(userPublicKey, version),
 		checkers.DeclaredCaveat("username", username),
 	}, bakery.LoginOp)
