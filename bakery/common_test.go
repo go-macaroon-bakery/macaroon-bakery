@@ -22,7 +22,6 @@ var logger = loggo.GetLogger("bakery.bakery_test")
 
 var (
 	epoch = time.Date(1900, 11, 17, 19, 00, 13, 0, time.UTC)
-	ages  = epoch.Add(24 * time.Hour)
 )
 
 var testChecker = func() *checkers.Checker {

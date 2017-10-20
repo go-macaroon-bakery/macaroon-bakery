@@ -37,7 +37,6 @@ var _ = gc.Suite(&ClientSuite{})
 
 var (
 	testOp      = bakery.Op{"test", "test"}
-	ages        = time.Now().Add(24 * time.Hour)
 	testContext = context.Background()
 )
 
@@ -58,7 +57,7 @@ func (s *ClientSuite) TestSingleServiceFirstParty(c *gc.C) {
 	defer ts.Close()
 
 	// Mint a macaroon for the target service.
-	serverMacaroon, err := b.Oven.NewMacaroon(testContext, bakery.LatestVersion, ages, nil, testOp)
+	serverMacaroon, err := b.Oven.NewMacaroon(testContext, bakery.LatestVersion, nil, testOp)
 	c.Assert(err, gc.IsNil)
 	c.Assert(serverMacaroon.M().Location(), gc.Equals, "loc")
 	err = b.Oven.AddCaveat(testContext, serverMacaroon, isSomethingCaveat())
@@ -90,7 +89,7 @@ func (s *ClientSuite) TestSingleServiceFirstPartyWithHeader(c *gc.C) {
 	defer ts.Close()
 
 	// Mint a macaroon for the target service.
-	serverMacaroon, err := b.Oven.NewMacaroon(testContext, bakery.LatestVersion, ages, nil, testOp)
+	serverMacaroon, err := b.Oven.NewMacaroon(testContext, bakery.LatestVersion, nil, testOp)
 	c.Assert(err, gc.IsNil)
 	c.Assert(serverMacaroon.M().Location(), gc.Equals, "loc")
 	err = b.Oven.AddCaveat(testContext, serverMacaroon, isSomethingCaveat())
@@ -437,7 +436,7 @@ func (s *ClientSuite) serverRequiringMultipleDischarges(n int, discharger *baker
 				Condition: fmt.Sprintf("error %d attempts left", n),
 			})
 		}
-		m, err := b.Oven.NewMacaroon(context.TODO(), bakery.LatestVersion, ages, caveats, testOp)
+		m, err := b.Oven.NewMacaroon(context.TODO(), bakery.LatestVersion, caveats, testOp)
 		if err != nil {
 			panic(fmt.Errorf("cannot make new macaroon: %v", err))
 		}
@@ -1011,9 +1010,9 @@ func (s *ClientSuite) TestMacaroonsForURL(c *gc.C) {
 	// Create a target service.
 	b := newBakery("loc", nil, nil)
 
-	m1, err := b.Oven.NewMacaroon(testContext, bakery.LatestVersion, ages, nil, testOp)
+	m1, err := b.Oven.NewMacaroon(testContext, bakery.LatestVersion, nil, testOp)
 	c.Assert(err, gc.IsNil)
-	m2, err := b.Oven.NewMacaroon(testContext, bakery.LatestVersion, ages, nil, testOp)
+	m2, err := b.Oven.NewMacaroon(testContext, bakery.LatestVersion, nil, testOp)
 	c.Assert(err, gc.IsNil)
 
 	u1 := mustParseURL("http://0.1.2.3/")
@@ -1133,7 +1132,7 @@ func (s *ClientSuite) TestHandleError(c *gc.C) {
 	}))
 	defer srv.Close()
 
-	m, err := b.Oven.NewMacaroon(testContext, bakery.LatestVersion, ages, []checkers.Caveat{{
+	m, err := b.Oven.NewMacaroon(testContext, bakery.LatestVersion, []checkers.Caveat{{
 		Location:  d.Location(),
 		Condition: "something",
 	}}, testOp)
@@ -1209,7 +1208,7 @@ func (s *ClientSuite) TestHandleErrorDifferentError(c *gc.C) {
 func (s *ClientSuite) TestNewCookieExpires(c *gc.C) {
 	t := time.Now().Add(time.Minute)
 	b := newBakery("loc", nil, nil)
-	m, err := b.Oven.NewMacaroon(testContext, bakery.LatestVersion, ages, []checkers.Caveat{
+	m, err := b.Oven.NewMacaroon(testContext, bakery.LatestVersion, []checkers.Caveat{
 		checkers.TimeBeforeCaveat(t),
 	}, testOp)
 
@@ -1381,7 +1380,7 @@ func newDischargeRequiredError(hp serverHandlerParams, checkErr error, req *http
 	if hp.caveats != nil {
 		caveats = append(caveats, hp.caveats()...)
 	}
-	m, err := hp.bakery.Oven.NewMacaroon(testContext, bakery.LatestVersion, ages, caveats, testOp)
+	m, err := hp.bakery.Oven.NewMacaroon(testContext, bakery.LatestVersion, caveats, testOp)
 	if err != nil {
 		panic(fmt.Errorf("cannot make new macaroon: %v", err))
 	}

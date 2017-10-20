@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/base64"
 	"sort"
-	"time"
 
 	"github.com/rogpeppe/fastuuid"
 	"golang.org/x/net/context"
@@ -189,10 +188,7 @@ func decodeMacaroonId(id []byte) (storageId []byte, ops []Op, err error) {
 
 // NewMacaroon takes a macaroon with the given version from the oven, associates it with the given operations
 // and attaches the given caveats. There must be at least one operation specified.
-//
-// The macaroon will expire at the given time - a TimeBefore first party caveat will be added with
-// that time.
-func (o *Oven) NewMacaroon(ctx context.Context, version Version, expiry time.Time, caveats []checkers.Caveat, ops ...Op) (*Macaroon, error) {
+func (o *Oven) NewMacaroon(ctx context.Context, version Version, caveats []checkers.Caveat, ops ...Op) (*Macaroon, error) {
 	if len(ops) == 0 {
 		return nil, errgo.Newf("cannot mint a macaroon associated with no operations")
 	}
@@ -201,7 +197,7 @@ func (o *Oven) NewMacaroon(ctx context.Context, version Version, expiry time.Tim
 	if err != nil {
 		return nil, errgo.Mask(err)
 	}
-	id, err := o.newMacaroonId(ctx, ops, storageId, expiry)
+	id, err := o.newMacaroonId(ctx, ops, storageId)
 	if err != nil {
 		return nil, errgo.Mask(err)
 	}
@@ -224,9 +220,6 @@ func (o *Oven) NewMacaroon(ctx context.Context, version Version, expiry time.Tim
 	m, err := NewMacaroon(rootKey, idBytes, o.p.Location, version, o.p.Namespace)
 	if err != nil {
 		return nil, errgo.Notef(err, "cannot create macaroon with version %v", version)
-	}
-	if err := o.AddCaveat(ctx, m, checkers.TimeBeforeCaveat(expiry)); err != nil {
-		return nil, errgo.Mask(err)
 	}
 	if err := o.AddCaveats(ctx, m, caveats); err != nil {
 		return nil, errgo.Mask(err)
@@ -285,7 +278,7 @@ func CanonicalOps(ops []Op) []Op {
 	return canonOps[0 : j+1]
 }
 
-func (o *Oven) newMacaroonId(ctx context.Context, ops []Op, storageId []byte, expiry time.Time) (*macaroonpb.MacaroonId, error) {
+func (o *Oven) newMacaroonId(ctx context.Context, ops []Op, storageId []byte) (*macaroonpb.MacaroonId, error) {
 	uuid := uuidGen.Next()
 	nonce := uuid[0:16]
 	return &macaroonpb.MacaroonId{

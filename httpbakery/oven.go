@@ -8,6 +8,7 @@ import (
 	errgo "gopkg.in/errgo.v1"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
 )
 
 // Oven is like bakery.Oven except it provides a method for
@@ -72,9 +73,12 @@ func (oven *Oven) Error(ctx context.Context, req *http.Request, err error) error
 			expiryDuration = DefaultAuthnExpiry
 		}
 	}
-	m, err := oven.Oven.NewMacaroon(ctx, RequestVersion(req), time.Now().Add(expiryDuration), derr.Caveats, derr.Ops...)
+	m, err := oven.Oven.NewMacaroon(ctx, RequestVersion(req), derr.Caveats, derr.Ops...)
 	if err != nil {
 		return errgo.Notef(err, "cannot mint new macaroon")
+	}
+	if err := m.AddCaveat(ctx, checkers.TimeBeforeCaveat(time.Now().Add(expiryDuration)), nil, nil); err != nil {
+		return errgo.Notef(err, "cannot add time-before caveat")
 	}
 	return NewDischargeRequiredError(DischargeRequiredErrorParams{
 		Macaroon:         m,
