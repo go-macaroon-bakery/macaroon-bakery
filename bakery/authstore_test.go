@@ -100,24 +100,3 @@ func (s macaroonStoreWithError) NewMacaroon(ctx context.Context, ops []bakery.Op
 func (s macaroonStoreWithError) MacaroonOps(ctx context.Context, ms macaroon.Slice) (ops []bakery.Op, conditions []string, err error) {
 	return nil, nil, errgo.Mask(s.err, errgo.Any)
 }
-
-func withoutLoginOp(ops []bakery.Op) []bakery.Op {
-	// Remove LoginOp from the operations associated with the new macaroon.
-	hasLoginOp := false
-	for _, op := range ops {
-		if op == bakery.LoginOp {
-			hasLoginOp = true
-			break
-		}
-	}
-	if !hasLoginOp {
-		return ops
-	}
-	newOps := make([]bakery.Op, 0, len(ops))
-	for _, op := range ops {
-		if op != bakery.LoginOp {
-			newOps = append(newOps, op)
-		}
-	}
-	return newOps
-}

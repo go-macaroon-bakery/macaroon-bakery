@@ -23,8 +23,6 @@ func alwaysOK(string) error {
 	return nil
 }
 
-var macaroonCurrentVersion = bakery.MacaroonVersion(bakery.LatestVersion)
-
 func (*DischargeSuite) TestDischargeAllNoDischarges(c *gc.C) {
 	rootKey := []byte("root key")
 	m, err := bakery.NewMacaroon(rootKey, []byte("id0"), "loc0", bakery.LatestVersion, testChecker.Namespace())
