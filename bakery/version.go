@@ -1,6 +1,6 @@
 package bakery
 
-import "gopkg.in/macaroon.v2-unstable"
+import "gopkg.in/macaroon.v2"
 
 // Version represents a version of the bakery protocol.
 type Version int

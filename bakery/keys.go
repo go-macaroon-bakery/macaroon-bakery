@@ -10,7 +10,7 @@ import (
 	"golang.org/x/crypto/nacl/box"
 	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
-	"gopkg.in/macaroon.v2-unstable"
+	"gopkg.in/macaroon.v2"
 )
 
 // KeyLen is the byte length of the Ed25519 public and private keys used for

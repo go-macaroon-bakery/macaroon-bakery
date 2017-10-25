@@ -10,7 +10,7 @@ import (
 	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 	errgo "gopkg.in/errgo.v1"
-	"gopkg.in/macaroon.v2-unstable"
+	"gopkg.in/macaroon.v2"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
@@ -95,11 +95,11 @@ func (s *checkerSuite) TestCapabilityCombinesFirstPartyCaveats(c *gc.C) {
 	// and combine them together into a single capability
 	// capable of both operations.
 	m1 := ts.newMacaroon(readOp("e1"))
-	m1[0].AddFirstPartyCaveat("true 1")
-	m1[0].AddFirstPartyCaveat("true 2")
+	m1[0].AddFirstPartyCaveat([]byte("true 1"))
+	m1[0].AddFirstPartyCaveat([]byte("true 2"))
 	m2 := ts.newMacaroon(readOp("e2"))
-	m2[0].AddFirstPartyCaveat("true 3")
-	m2[0].AddFirstPartyCaveat("true 4")
+	m2[0].AddFirstPartyCaveat([]byte("true 3"))
+	m2[0].AddFirstPartyCaveat([]byte("true 4"))
 
 	client := newClient(nil)
 	client.addMacaroon(ts, "authz1", m1)
@@ -156,12 +156,12 @@ func (s *checkerSuite) TestFirstPartyCaveatSquashing(c *gc.C) {
 		// Make a first macaroon with all the required first party caveats.
 		m1 := ts.newMacaroon(readOp("e1"))
 		for _, cond := range resolveCaveats(ts.checker.Namespace(), test.caveats) {
-			err := m1[0].AddFirstPartyCaveat(cond)
+			err := m1[0].AddFirstPartyCaveat([]byte(cond))
 			c.Assert(err, gc.Equals, nil)
 		}
 
 		m2 := ts.newMacaroon(readOp("e2"))
-		err := m2[0].AddFirstPartyCaveat("notused")
+		err := m2[0].AddFirstPartyCaveat([]byte("notused"))
 		c.Assert(err, gc.Equals, nil)
 
 		client := newClient(nil)
@@ -200,7 +200,7 @@ func (s *checkerSuite) TestAllowWithInvalidMacaroon(c *gc.C) {
 	ts := newService(nil)
 	client := newClient(nil)
 	m1 := ts.newMacaroon(readOp("e1"), readOp("e2"))
-	m1[0].AddFirstPartyCaveat("invalid")
+	m1[0].AddFirstPartyCaveat([]byte("invalid"))
 	m2 := ts.newMacaroon(readOp("e1"))
 	client.addMacaroon(ts, "auth1", m1)
 	client.addMacaroon(ts, "auth2", m2)
@@ -447,7 +447,7 @@ func (svc *service) capability(ctx context.Context, ms []macaroon.Slice, ops ...
 		return nil, errgo.Mask(err)
 	}
 	for _, cond := range ai.Conditions() {
-		if err := m.M().AddFirstPartyCaveat(cond); err != nil {
+		if err := m.M().AddFirstPartyCaveat([]byte(cond)); err != nil {
 			return nil, errgo.Mask(err)
 		}
 	}
