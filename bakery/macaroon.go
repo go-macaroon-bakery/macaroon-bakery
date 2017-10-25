@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
-	"gopkg.in/macaroon.v2-unstable"
+	"gopkg.in/macaroon.v2"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
 )
@@ -251,7 +251,7 @@ func (m *Macaroon) AddCaveats(ctx context.Context, cavs []checkers.Caveat, key *
 // key. See LocalThirdPartyCaveat for a way of creating such caveats.
 func (m *Macaroon) AddCaveat(ctx context.Context, cav checkers.Caveat, key *KeyPair, loc ThirdPartyLocator) error {
 	if cav.Location == "" {
-		if err := m.m.AddFirstPartyCaveat(m.namespace.ResolveCaveat(cav).Condition); err != nil {
+		if err := m.m.AddFirstPartyCaveat([]byte(m.namespace.ResolveCaveat(cav).Condition)); err != nil {
 			return errgo.Mask(err)
 		}
 		return nil

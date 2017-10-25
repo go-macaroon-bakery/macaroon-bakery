@@ -8,7 +8,7 @@ import (
 	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
-	"gopkg.in/macaroon.v2-unstable"
+	"gopkg.in/macaroon.v2"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
 )
@@ -114,7 +114,7 @@ var checkerTests = []struct {
 		m, _ := macaroon.New([]byte("k"), []byte("id"), "", macaroon.LatestVersion)
 		add := func(attr, val string) {
 			cav := ns.ResolveCaveat(checkers.DeclaredCaveat(attr, val))
-			err := m.AddFirstPartyCaveat(cav.Condition)
+			err := m.AddFirstPartyCaveat([]byte(cav.Condition))
 			if err != nil {
 				panic(err)
 			}
@@ -342,7 +342,7 @@ func (*CheckersSuite) TestInferDeclared(c *gc.C) {
 			for _, cav := range caveats {
 				cav = ns.ResolveCaveat(cav)
 				if cav.Location == "" {
-					m.AddFirstPartyCaveat(cav.Condition)
+					m.AddFirstPartyCaveat([]byte(cav.Condition))
 				} else {
 					m.AddThirdPartyCaveat(nil, []byte(cav.Condition), cav.Location)
 				}

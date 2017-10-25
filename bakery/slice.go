@@ -6,7 +6,7 @@ import (
 
 	"golang.org/x/net/context"
 	errgo "gopkg.in/errgo.v1"
-	macaroon "gopkg.in/macaroon.v2-unstable"
+	macaroon "gopkg.in/macaroon.v2"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
 )

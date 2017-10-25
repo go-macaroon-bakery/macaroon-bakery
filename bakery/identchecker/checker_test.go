@@ -9,7 +9,7 @@ import (
 	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 	errgo "gopkg.in/errgo.v1"
-	"gopkg.in/macaroon.v2-unstable"
+	"gopkg.in/macaroon.v2"
 
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
@@ -274,12 +274,12 @@ func (s *checkerSuite) TestCapabilityCombinesFirstPartyCaveats(c *gc.C) {
 	// capable of both operations.
 	m1, err := newClient(locator).capability(asUser("alice"), ts, readOp("e1"))
 	c.Assert(err, gc.IsNil)
-	m1.M().AddFirstPartyCaveat("true 1")
-	m1.M().AddFirstPartyCaveat("true 2")
+	m1.M().AddFirstPartyCaveat([]byte("true 1"))
+	m1.M().AddFirstPartyCaveat([]byte("true 2"))
 	m2, err := newClient(locator).capability(asUser("bob"), ts, readOp("e2"))
 	c.Assert(err, gc.IsNil)
-	m2.M().AddFirstPartyCaveat("true 3")
-	m2.M().AddFirstPartyCaveat("true 4")
+	m2.M().AddFirstPartyCaveat([]byte("true 3"))
+	m2.M().AddFirstPartyCaveat([]byte("true 4"))
 
 	client := newClient(locator)
 	client.addMacaroon(ts, "authz1", macaroon.Slice{m1.M()})
@@ -581,7 +581,7 @@ func (svc *service) capability(ctx context.Context, ms []macaroon.Slice, ops ...
 			// TODO check namespace too.
 			continue
 		}
-		if err := m.M().AddFirstPartyCaveat(cond); err != nil {
+		if err := m.M().AddFirstPartyCaveat([]byte(cond)); err != nil {
 			return nil, errgo.Mask(err)
 		}
 	}
