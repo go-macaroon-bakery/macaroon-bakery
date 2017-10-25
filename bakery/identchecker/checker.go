@@ -4,10 +4,10 @@
 package identchecker
 
 import (
-	"context"
 	"sync"
 
 	"github.com/juju/loggo"
+	"golang.org/x/net/context"
 	errgo "gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2"
 

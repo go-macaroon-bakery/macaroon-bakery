@@ -237,7 +237,7 @@ var interactionMethodTests = []struct {
 	expect: struct {
 		X string
 	}{},
-	expectError: `cannot unmarshal data for interaction method "x": json: cannot unmarshal number into Go struct field .X of type string`,
+	expectError: `cannot unmarshal data for interaction method "x": json: cannot unmarshal number into .* of type string`,
 }, {
 	about: "success",
 	err: &httpbakery.Error{
