@@ -1,4 +1,4 @@
-package bakery
+package identchecker
 
 import (
 	"golang.org/x/net/context"

@@ -42,13 +42,20 @@ type DischargeRequiredError struct {
 	// Caveats holds the caveats that must be added
 	// to macaroons that authorize the above operations.
 	Caveats []checkers.Caveat
+
+	// ForAuthentication holds whether the macaroon holding
+	// the discharges will be used for authentication, and hence
+	// should have wider scope and longer lifetime.
+	// The bakery package never sets this field, but bakery/identchecker
+	// uses it.
+	ForAuthentication bool
 }
 
 func (e *DischargeRequiredError) Error() string {
 	return "macaroon discharge required: " + e.Message
 }
 
-func isDischargeRequiredError(err error) bool {
+func IsDischargeRequiredError(err error) bool {
 	_, ok := err.(*DischargeRequiredError)
 	return ok
 }

@@ -28,12 +28,12 @@ var _ = gc.Suite(&ServiceSuite{})
 func (s *ServiceSuite) TestSingleServiceFirstParty(c *gc.C) {
 	oc := newBakery("bakerytest", nil)
 
-	primary, err := oc.Oven.NewMacaroon(testContext, bakery.LatestVersion, nil, bakery.LoginOp)
+	primary, err := oc.Oven.NewMacaroon(testContext, bakery.LatestVersion, nil, basicOp)
 	c.Assert(err, gc.IsNil)
 	c.Assert(primary.M().Location(), gc.Equals, "bakerytest")
 	err = oc.Oven.AddCaveat(testContext, primary, strCaveat("something"))
 
-	_, err = oc.Checker.Auth(macaroon.Slice{primary.M()}).Allow(strContext("something"), bakery.LoginOp)
+	_, err = oc.Checker.Auth(macaroon.Slice{primary.M()}).Allow(strContext("something"), basicOp)
 	c.Assert(err, gc.IsNil)
 }
 
@@ -54,7 +54,7 @@ func (s *ServiceSuite) TestMacaroonPaperFig6(c *gc.C) {
 	fs := newBakery("fs-loc", locator)
 
 	// ts creates a macaroon.
-	tsMacaroon, err := ts.Oven.NewMacaroon(testContext, bakery.LatestVersion, nil, bakery.LoginOp)
+	tsMacaroon, err := ts.Oven.NewMacaroon(testContext, bakery.LatestVersion, nil, basicOp)
 	c.Assert(err, gc.IsNil)
 
 	// ts somehow sends the macaroon to fs which adds a third party caveat to be discharged by as.
@@ -69,7 +69,7 @@ func (s *ServiceSuite) TestMacaroonPaperFig6(c *gc.C) {
 	})
 	c.Assert(err, gc.IsNil)
 
-	_, err = ts.Checker.Auth(d).Allow(testContext, bakery.LoginOp)
+	_, err = ts.Checker.Auth(d).Allow(testContext, basicOp)
 	c.Assert(err, gc.IsNil)
 }
 
@@ -79,7 +79,7 @@ func (s *ServiceSuite) TestDischargeWithVersion1Macaroon(c *gc.C) {
 	ts := newBakery("ts-loc", locator)
 
 	// ts creates a old-version macaroon.
-	tsMacaroon, err := ts.Oven.NewMacaroon(testContext, bakery.Version1, nil, bakery.LoginOp)
+	tsMacaroon, err := ts.Oven.NewMacaroon(testContext, bakery.Version1, nil, basicOp)
 	c.Assert(err, gc.IsNil)
 	err = ts.Oven.AddCaveat(testContext, tsMacaroon, checkers.Caveat{Location: "as-loc", Condition: "something"})
 	c.Assert(err, gc.IsNil)
@@ -92,7 +92,7 @@ func (s *ServiceSuite) TestDischargeWithVersion1Macaroon(c *gc.C) {
 	})
 	c.Assert(err, gc.IsNil)
 
-	_, err = ts.Checker.Auth(d).Allow(testContext, bakery.LoginOp)
+	_, err = ts.Checker.Auth(d).Allow(testContext, basicOp)
 	c.Assert(err, gc.IsNil)
 
 	for _, m := range d {
@@ -105,8 +105,8 @@ func (s *ServiceSuite) TestVersion1MacaroonId(c *gc.C) {
 	// UUID suffix.
 	rootKeyStore := bakery.NewMemRootKeyStore()
 	b := bakery.New(bakery.BakeryParams{
-		RootKeyStore:   rootKeyStore,
-		IdentityClient: oneIdentity{},
+		RootKeyStore:     rootKeyStore,
+		LegacyMacaroonOp: basicOp,
 	})
 
 	key, id, err := rootKeyStore.RootKey(testContext)
@@ -118,7 +118,7 @@ func (s *ServiceSuite) TestVersion1MacaroonId(c *gc.C) {
 	m, err := macaroon.New(key, []byte(fmt.Sprintf("%s-deadl00f", id)), "", macaroon.V1)
 	c.Assert(err, gc.IsNil)
 
-	_, err = b.Checker.Auth(macaroon.Slice{m}).Allow(testContext, bakery.LoginOp)
+	_, err = b.Checker.Auth(macaroon.Slice{m}).Allow(testContext, basicOp)
 	c.Assert(err, gc.IsNil)
 }
 
@@ -131,7 +131,7 @@ func (s *ServiceSuite) TestMacaroonPaperFig6FailsWithoutDischarges(c *gc.C) {
 	newBakery("as-loc", locator)
 
 	// ts creates a macaroon.
-	tsMacaroon, err := ts.Oven.NewMacaroon(testContext, bakery.LatestVersion, nil, bakery.LoginOp)
+	tsMacaroon, err := ts.Oven.NewMacaroon(testContext, bakery.LatestVersion, nil, basicOp)
 	c.Assert(err, gc.IsNil)
 
 	// ts somehow sends the macaroon to fs which adds a third party caveat to be discharged by as.
@@ -139,7 +139,7 @@ func (s *ServiceSuite) TestMacaroonPaperFig6FailsWithoutDischarges(c *gc.C) {
 	c.Assert(err, gc.IsNil)
 
 	// client makes request to ts
-	_, err = ts.Checker.Auth(macaroon.Slice{tsMacaroon.M()}).Allow(testContext, bakery.LoginOp)
+	_, err = ts.Checker.Auth(macaroon.Slice{tsMacaroon.M()}).Allow(testContext, basicOp)
 	c.Assert(err, gc.ErrorMatches, `verification failed: cannot find discharge macaroon for caveat .*`, gc.Commentf("%#v", err))
 }
 
@@ -152,7 +152,7 @@ func (s *ServiceSuite) TestMacaroonPaperFig6FailsWithBindingOnTamperedSignature(
 	fs := newBakery("fs-loc", locator)
 
 	// ts creates a macaroon.
-	tsMacaroon, err := ts.Oven.NewMacaroon(testContext, bakery.LatestVersion, nil, bakery.LoginOp)
+	tsMacaroon, err := ts.Oven.NewMacaroon(testContext, bakery.LatestVersion, nil, basicOp)
 	c.Assert(err, gc.IsNil)
 
 	// ts somehow sends the macaroon to fs which adds a third party caveat to be discharged by as.
@@ -173,7 +173,7 @@ func (s *ServiceSuite) TestMacaroonPaperFig6FailsWithBindingOnTamperedSignature(
 	}
 
 	// client makes request to ts.
-	_, err = ts.Checker.Auth(d).Allow(testContext, bakery.LoginOp)
+	_, err = ts.Checker.Auth(d).Allow(testContext, basicOp)
 	// TODO fix this error message.
 	c.Assert(err, gc.ErrorMatches, "verification failed: signature mismatch after caveat verification")
 }
@@ -200,7 +200,7 @@ func (s *ServiceSuite) TestNeedDeclared(c *gc.C) {
 			Location:  "third",
 			Condition: "something",
 		}, "foo", "bar"),
-	}, bakery.LoginOp)
+	}, basicOp)
 
 	c.Assert(err, gc.IsNil)
 
@@ -220,8 +220,8 @@ func (s *ServiceSuite) TestNeedDeclared(c *gc.C) {
 
 	// Make sure the macaroons actually check out correctly
 	// when provided with the declared checker.
-	ctx := checkers.ContextWithDeclared(testContext, declared)
-	_, err = firstParty.Checker.Auth(d).Allow(ctx, bakery.LoginOp)
+	ctx := checkers.ContextWithMacaroons(testContext, firstParty.Checker.Namespace(), d)
+	_, err = firstParty.Checker.Auth(d).Allow(ctx, basicOp)
 	c.Assert(err, gc.IsNil)
 
 	// Try again when the third party does add a required declaration.
@@ -244,8 +244,8 @@ func (s *ServiceSuite) TestNeedDeclared(c *gc.C) {
 		"arble": "b",
 	})
 
-	ctx = checkers.ContextWithDeclared(testContext, declared)
-	_, err = firstParty.Checker.Auth(d).Allow(ctx, bakery.LoginOp)
+	ctx = checkers.ContextWithMacaroons(testContext, firstParty.Checker.Namespace(), d)
+	_, err = firstParty.Checker.Auth(d).Allow(ctx, basicOp)
 	c.Assert(err, gc.IsNil)
 
 	// Try again, but this time pretend a client is sneakily trying
@@ -273,9 +273,9 @@ func (s *ServiceSuite) TestNeedDeclared(c *gc.C) {
 		"arble": "b",
 	})
 
-	ctx = checkers.ContextWithDeclared(testContext, declared)
-	_, err = firstParty.Checker.Auth(d).Allow(testContext, bakery.LoginOp)
-	c.Assert(err, gc.ErrorMatches, `cannot authorize login macaroon: caveat "declared foo a" not satisfied: got foo=null, expected "a"`)
+	ctx = checkers.ContextWithMacaroons(testContext, firstParty.Checker.Namespace(), d)
+	_, err = firstParty.Checker.Auth(d).Allow(testContext, basicOp)
+	c.Assert(err, gc.ErrorMatches, `caveat "declared foo a" not satisfied: got foo=null, expected "a"`)
 }
 
 func (s *ServiceSuite) TestDischargeTwoNeedDeclared(c *gc.C) {
@@ -294,7 +294,7 @@ func (s *ServiceSuite) TestDischargeTwoNeedDeclared(c *gc.C) {
 			Location:  "third",
 			Condition: "y",
 		}, "bar", "baz"),
-	}, bakery.LoginOp)
+	}, basicOp)
 
 	c.Assert(err, gc.IsNil)
 
@@ -313,8 +313,8 @@ func (s *ServiceSuite) TestDischargeTwoNeedDeclared(c *gc.C) {
 		"bar": "",
 		"baz": "",
 	})
-	ctx := checkers.ContextWithDeclared(testContext, declared)
-	_, err = firstParty.Checker.Auth(d).Allow(ctx, bakery.LoginOp)
+	ctx := checkers.ContextWithMacaroons(testContext, firstParty.Checker.Namespace(), d)
+	_, err = firstParty.Checker.Auth(d).Allow(ctx, basicOp)
 	c.Assert(err, gc.IsNil)
 
 	// If they return conflicting values, the discharge fails.
@@ -344,9 +344,9 @@ func (s *ServiceSuite) TestDischargeTwoNeedDeclared(c *gc.C) {
 		"bar": "",
 		"baz": "bazval",
 	})
-	ctx = checkers.ContextWithDeclared(testContext, declared)
-	_, err = firstParty.Checker.Auth(d).Allow(testContext, bakery.LoginOp)
-	c.Assert(err, gc.ErrorMatches, `cannot authorize login macaroon: caveat "declared foo fooval1" not satisfied: got foo=null, expected "fooval1"`)
+	ctx = checkers.ContextWithMacaroons(testContext, firstParty.Checker.Namespace(), d)
+	_, err = firstParty.Checker.Auth(d).Allow(testContext, basicOp)
+	c.Assert(err, gc.ErrorMatches, `caveat "declared foo fooval1" not satisfied: got foo=null, expected "fooval1"`)
 }
 
 func (s *ServiceSuite) TestDischargeMacaroonCannotBeUsedAsNormalMacaroon(c *gc.C) {
@@ -358,7 +358,7 @@ func (s *ServiceSuite) TestDischargeMacaroonCannotBeUsedAsNormalMacaroon(c *gc.C
 	m, err := firstParty.Oven.NewMacaroon(testContext, bakery.LatestVersion, []checkers.Caveat{{
 		Location:  "third",
 		Condition: "true",
-	}}, bakery.LoginOp)
+	}}, basicOp)
 	c.Assert(err, gc.IsNil)
 
 	// Acquire the discharge macaroon, but don't bind it to the original.
@@ -374,7 +374,7 @@ func (s *ServiceSuite) TestDischargeMacaroonCannotBeUsedAsNormalMacaroon(c *gc.C
 	c.Assert(unbound, gc.NotNil)
 
 	// Make sure it cannot be used as a normal macaroon in the third party.
-	_, err = thirdParty.Checker.Auth(macaroon.Slice{unbound}).Allow(testContext, bakery.LoginOp)
+	_, err = thirdParty.Checker.Auth(macaroon.Slice{unbound}).Allow(testContext, basicOp)
 	c.Assert(err, gc.ErrorMatches, `cannot retrieve macaroon: cannot unmarshal macaroon id: .*`)
 }
 
@@ -387,7 +387,7 @@ func (s *ServiceSuite) TestThirdPartyDischargeMacaroonIdsAreSmall(c *gc.C) {
 	}
 	ts := bakeries["ts-loc"]
 
-	tsMacaroon, err := ts.Oven.NewMacaroon(testContext, bakery.LatestVersion, nil, bakery.LoginOp)
+	tsMacaroon, err := ts.Oven.NewMacaroon(testContext, bakery.LatestVersion, nil, basicOp)
 	c.Assert(err, gc.IsNil)
 	err = ts.Oven.AddCaveat(testContext, tsMacaroon, checkers.Caveat{Location: "as1-loc", Condition: "something"})
 	c.Assert(err, gc.IsNil)
@@ -413,7 +413,7 @@ func (s *ServiceSuite) TestThirdPartyDischargeMacaroonIdsAreSmall(c *gc.C) {
 	})
 	c.Assert(err, gc.IsNil)
 
-	_, err = ts.Checker.Auth(d).Allow(testContext, bakery.LoginOp)
+	_, err = ts.Checker.Auth(d).Allow(testContext, basicOp)
 	c.Assert(err, gc.IsNil)
 
 	for i, m := range d {

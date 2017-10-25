@@ -138,13 +138,13 @@ func (*DischargeSuite) TestDischargeAllLocalDischarge(c *gc.C) {
 
 	m, err := oc.Oven.NewMacaroon(testContext, bakery.LatestVersion, []checkers.Caveat{
 		bakery.LocalThirdPartyCaveat(&clientKey.Public, bakery.LatestVersion),
-	}, bakery.LoginOp)
+	}, basicOp)
 	c.Assert(err, gc.IsNil)
 
 	ms, err := bakery.DischargeAllWithKey(testContext, m, noDischarge(c), clientKey)
 	c.Assert(err, gc.IsNil)
 
-	_, err = oc.Checker.Auth(ms).Allow(testContext, bakery.LoginOp)
+	_, err = oc.Checker.Auth(ms).Allow(testContext, basicOp)
 	c.Assert(err, gc.IsNil)
 }
 
@@ -156,12 +156,12 @@ func (*DischargeSuite) TestDischargeAllLocalDischargeVersion1(c *gc.C) {
 
 	m, err := oc.Oven.NewMacaroon(testContext, bakery.Version1, []checkers.Caveat{
 		bakery.LocalThirdPartyCaveat(&clientKey.Public, bakery.Version1),
-	}, bakery.LoginOp)
+	}, basicOp)
 	c.Assert(err, gc.IsNil)
 
 	ms, err := bakery.DischargeAllWithKey(testContext, m, noDischarge(c), clientKey)
 	c.Assert(err, gc.IsNil)
 
-	_, err = oc.Checker.Auth(ms).Allow(testContext, bakery.LoginOp)
+	_, err = oc.Checker.Auth(ms).Allow(testContext, basicOp)
 	c.Assert(err, gc.IsNil)
 }

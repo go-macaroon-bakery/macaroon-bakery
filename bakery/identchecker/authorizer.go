@@ -1,9 +1,10 @@
-package bakery
+package identchecker
 
 import (
 	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
 )
 
@@ -21,18 +22,7 @@ type Authorizer interface {
 	// third party caveats that apply.
 	// If allowed is shorter then ops, the additional elements are assumed to
 	// be false.
-	Authorize(ctx context.Context, id Identity, ops []Op) (allowed []bool, caveats []checkers.Caveat, err error)
-}
-
-// OpsAuthorizer is used to check whether an operation authorizes some other
-// operation. For example, a macaroon with an operation allowing general access to a service
-// might also grant access to a more specific operation.
-type OpsAuthorizer interface {
-	// AuthorizeOp reports which elements of queryOps are authorized by
-	// authorizedOp. On return, each element of the slice should represent
-	// whether the respective element in queryOps has been authorized.
-	// An empty returned slice indicates that no operations are authorized.
-	AuthorizeOps(ctx context.Context, authorizedOp Op, queryOps []Op) ([]bool, error)
+	Authorize(ctx context.Context, id Identity, ops []bakery.Op) (allowed []bool, caveats []checkers.Caveat, err error)
 }
 
 var (
@@ -54,7 +44,7 @@ var (
 type openAuthorizer struct{}
 
 // Authorize implements Authorizer.Authorize.
-func (openAuthorizer) Authorize(ctx context.Context, id Identity, ops []Op) (allowed []bool, caveats []checkers.Caveat, err error) {
+func (openAuthorizer) Authorize(ctx context.Context, id Identity, ops []bakery.Op) (allowed []bool, caveats []checkers.Caveat, err error) {
 	allowed = make([]bool, len(ops))
 	for i := range allowed {
 		allowed[i] = true
@@ -65,17 +55,17 @@ func (openAuthorizer) Authorize(ctx context.Context, id Identity, ops []Op) (all
 type closedAuthorizer struct{}
 
 // Authorize implements Authorizer.Authorize.
-func (closedAuthorizer) Authorize(ctx context.Context, id Identity, ops []Op) (allowed []bool, caveats []checkers.Caveat, err error) {
+func (closedAuthorizer) Authorize(ctx context.Context, id Identity, ops []bakery.Op) (allowed []bool, caveats []checkers.Caveat, err error) {
 	return make([]bool, len(ops)), nil, nil
 }
 
 // AuthorizerFunc implements a simplified version of Authorizer
 // that operates on a single operation at a time.
-type AuthorizerFunc func(ctx context.Context, id Identity, op Op) (bool, []checkers.Caveat, error)
+type AuthorizerFunc func(ctx context.Context, id Identity, op bakery.Op) (bool, []checkers.Caveat, error)
 
 // Authorize implements Authorizer.Authorize by calling f
 // with the given identity for each operation.
-func (f AuthorizerFunc) Authorize(ctx context.Context, id Identity, ops []Op) (allowed []bool, caveats []checkers.Caveat, err error) {
+func (f AuthorizerFunc) Authorize(ctx context.Context, id Identity, ops []bakery.Op) (allowed []bool, caveats []checkers.Caveat, err error) {
 	allowed = make([]bool, len(ops))
 	for i, op := range ops {
 		ok, fcaveats, err := f(ctx, id, op)
@@ -118,13 +108,13 @@ type ACLAuthorizer struct {
 	//
 	// If an entity cannot be found or the action is not recognised,
 	// GetACLs should return an empty ACL but no error.
-	GetACL func(ctx context.Context, op Op) (acl []string, allowPublic bool, err error)
+	GetACL func(ctx context.Context, op bakery.Op) (acl []string, allowPublic bool, err error)
 }
 
 // Authorize implements Authorizer.Authorize by calling ident.Allow to determine
 // whether the identity is a member of the ACLs associated with the given
 // operations.
-func (a ACLAuthorizer) Authorize(ctx context.Context, ident Identity, ops []Op) (allowed []bool, caveats []checkers.Caveat, err error) {
+func (a ACLAuthorizer) Authorize(ctx context.Context, ident Identity, ops []bakery.Op) (allowed []bool, caveats []checkers.Caveat, err error) {
 	if len(ops) == 0 {
 		// Anyone is allowed to do nothing.
 		return nil, nil, nil

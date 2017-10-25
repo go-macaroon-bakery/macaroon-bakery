@@ -8,17 +8,30 @@ import (
 	"gopkg.in/macaroon.v2-unstable"
 )
 
-type declaredKey struct{}
+type macaroonsKey struct{}
 
-// ContextWithDeclared returns a context with attached declared information,
-// as returned from InferDeclared.
-func ContextWithDeclared(ctx context.Context, declared map[string]string) context.Context {
-	return context.WithValue(ctx, declaredKey{}, declared)
+type macaroonsValue struct {
+	ns *Namespace
+	ms macaroon.Slice
 }
 
-func declaredFromContext(ctx context.Context) map[string]string {
-	m, _ := ctx.Value(declaredKey{}).(map[string]string)
-	return m
+// ContextWithMacaroons returns the given context associated with a
+// macaroon slice and the name space to use to interpret caveats in
+// the macaroons.
+func ContextWithMacaroons(ctx context.Context, ns *Namespace, ms macaroon.Slice) context.Context {
+	return context.WithValue(ctx, macaroonsKey{}, macaroonsValue{
+		ns: ns,
+		ms: ms,
+	})
+}
+
+// MacaroonsFromContext returns the namespace and macaroons associated
+// with the context by ContextWithMacaroons. This can be used to
+// implement "structural" first-party caveats that are predicated on
+// the macaroons being validated.
+func MacaroonsFromContext(ctx context.Context) (*Namespace, macaroon.Slice) {
+	v, _ := ctx.Value(macaroonsKey{}).(macaroonsValue)
+	return v.ns, v.ms
 }
 
 // DeclaredCaveat returns a "declared" caveat asserting that the given key is
@@ -56,7 +69,8 @@ func checkDeclared(ctx context.Context, _, arg string) error {
 	if len(parts) != 2 {
 		return errgo.Newf("declared caveat has no value")
 	}
-	attrs := declaredFromContext(ctx)
+	ns, ms := MacaroonsFromContext(ctx)
+	attrs := InferDeclared(ns, ms)
 	val, ok := attrs[parts[0]]
 	if !ok {
 		return errgo.Newf("got %s=null, expected %q", parts[0], parts[1])

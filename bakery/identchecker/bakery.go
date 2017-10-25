@@ -1,13 +1,12 @@
-package bakery
+package identchecker
 
 import (
+	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
 	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
 )
 
-// Bakery is a convenience type that contains both an Oven
-// and a Checker.
 type Bakery struct {
-	Oven    *Oven
+	Oven    *bakery.Oven
 	Checker *Checker
 }
 
@@ -22,7 +21,7 @@ type Bakery struct {
 type BakeryParams struct {
 	// Checker holds the checker used to check first party caveats.
 	// If this is nil, New will use checkers.New(nil).
-	Checker FirstPartyCaveatChecker
+	Checker bakery.FirstPartyCaveatChecker
 
 	// RootKeyStore holds the root key store to use. If you need to
 	// use a different root key store for different operations,
@@ -33,58 +32,60 @@ type BakeryParams struct {
 	// Note that that is almost certain insufficient for production services
 	// that are spread across multiple instances or that need
 	// to persist keys across restarts.
-	RootKeyStore RootKeyStore
+	RootKeyStore bakery.RootKeyStore
 
 	// Locator is used to find out information on third parties when
 	// adding third party caveats. If this is nil, no non-local third
 	// party caveats can be added.
-	Locator ThirdPartyLocator
+	Locator bakery.ThirdPartyLocator
 
 	// Key holds the private key of the oven. If this is nil,
 	// no third party caveats may be added.
-	Key *KeyPair
+	Key *bakery.KeyPair
 
-	// OpsAuthorizer is used to check whether operations are authorized
-	// by some other already-authorized operation. If it is nil,
-	// NewChecker will assume no operation is authorized by any
-	// operation except itself.
-	OpsAuthorizer OpsAuthorizer
+	// IdentityClient holds the identity implementation to use for
+	// authentication. If this is nil, no authentication will be possible.
+	IdentityClient IdentityClient
+
+	// Authorizer is used to check whether an authenticated user is
+	// allowed to perform operations. If it is nil, New will
+	// use ClosedAuthorizer.
+	//
+	// The identity parameter passed to Authorizer.Allow will
+	// always have been obtained from a call to
+	// IdentityClient.DeclaredIdentity.
+	Authorizer Authorizer
 
 	// Location holds the location to use when creating new macaroons.
 	Location string
-
-	// LegacyMacaroonOp holds the operation to associate with old
-	// macaroons that don't have associated operations.
-	// If this is empty, legacy macaroons will not be associated
-	// with any operations.
-	LegacyMacaroonOp Op
 }
 
-// New returns a new Bakery instance which combines an Oven with a
+// NewBakery returns a new Bakery instance which combines an Oven with a
 // Checker for the convenience of callers that wish to use both
 // together.
-func New(p BakeryParams) *Bakery {
+func NewBakery(p BakeryParams) *Bakery {
 	if p.Checker == nil {
 		p.Checker = checkers.New(nil)
 	}
-	ovenParams := OvenParams{
+	ovenParams := bakery.OvenParams{
 		Key:              p.Key,
 		Namespace:        p.Checker.Namespace(),
 		Location:         p.Location,
 		Locator:          p.Locator,
-		LegacyMacaroonOp: p.LegacyMacaroonOp,
+		LegacyMacaroonOp: LoginOp,
 	}
 	if p.RootKeyStore != nil {
-		ovenParams.RootKeyStoreForOps = func(ops []Op) RootKeyStore {
+		ovenParams.RootKeyStoreForOps = func(ops []bakery.Op) bakery.RootKeyStore {
 			return p.RootKeyStore
 		}
 	}
-	oven := NewOven(ovenParams)
+	oven := bakery.NewOven(ovenParams)
 
 	checker := NewChecker(CheckerParams{
 		Checker:          p.Checker,
 		MacaroonVerifier: oven,
-		OpsAuthorizer:    p.OpsAuthorizer,
+		IdentityClient:   p.IdentityClient,
+		Authorizer:       p.Authorizer,
 	})
 	return &Bakery{
 		Oven:    oven,
