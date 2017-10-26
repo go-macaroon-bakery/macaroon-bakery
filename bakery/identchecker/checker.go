@@ -158,7 +158,7 @@ func (c *AuthChecker) Allow(ctx context.Context, ops ...bakery.Op) (*AuthInfo, e
 		// No login macaroon found. Try to infer an identity from the context.
 		identity1, caveats1, err := c.inferIdentityFromContext(ctx)
 		if err != nil {
-			return nil, errgo.Mask(err)
+			return nil, errgo.WithCausef(err, bakery.ErrPermissionDenied, "")
 		}
 		identity, identityCaveats = identity1, caveats1
 
@@ -216,6 +216,7 @@ func (c *AuthChecker) Allow(ctx context.Context, ops ...bakery.Op) (*AuthInfo, e
 		return nil, errgo.WithCausef(loginErr, bakery.ErrPermissionDenied, "")
 	}
 	return nil, &bakery.DischargeRequiredError{
+		Message:           "authentication required",
 		Ops:               []bakery.Op{LoginOp},
 		Caveats:           identityCaveats,
 		ForAuthentication: true,
@@ -263,7 +264,7 @@ func (c *AuthChecker) inferIdentityFromMacaroon(ctx context.Context, ns *checker
 	declared := checkers.InferDeclared(ns, ms)
 	identity, err := c.checker.p.IdentityClient.DeclaredIdentity(ctx, declared)
 	if err != nil {
-		return nil, errgo.Mask(err)
+		return nil, errgo.Notef(err, "could not determine identity")
 	}
 	if identity == nil {
 		// Shouldn't happen if DeclaredIdentity behaves itself, but
@@ -288,7 +289,7 @@ func (c *AuthChecker) inferIdentityFromContext(ctx context.Context) (Identity, [
 	// already tried any LoginOp macaroons if present.
 	identity, caveats, err := c.checker.p.IdentityClient.IdentityFromContext(ctx)
 	if err != nil {
-		return nil, nil, errgo.Mask(err)
+		return nil, nil, errgo.Notef(err, "could not determine identity")
 	}
 	if len(caveats) != 0 {
 		return nil, caveats, nil
