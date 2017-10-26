@@ -5,7 +5,7 @@ import (
 
 	errgo "gopkg.in/errgo.v1"
 
-	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
 )
 
 var (

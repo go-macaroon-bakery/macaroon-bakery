@@ -5,7 +5,7 @@ import (
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2"
 
-	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
 )
 
 // DischargeAll gathers discharge macaroons for all the third party

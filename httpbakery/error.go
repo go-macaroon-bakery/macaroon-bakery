@@ -10,8 +10,8 @@ import (
 	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 
-	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
-	"gopkg.in/macaroon-bakery.v2-unstable/internal/httputil"
+	"gopkg.in/macaroon-bakery.v2/bakery"
+	"gopkg.in/macaroon-bakery.v2/internal/httputil"
 )
 
 // ErrorCode holds an error code that classifies

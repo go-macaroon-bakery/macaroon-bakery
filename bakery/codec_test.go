@@ -7,7 +7,7 @@ import (
 	"golang.org/x/crypto/nacl/box"
 	gc "gopkg.in/check.v1"
 
-	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
 )
 
 type codecSuite struct {
