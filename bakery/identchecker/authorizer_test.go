@@ -7,9 +7,9 @@ import (
 	gc "gopkg.in/check.v1"
 	errgo "gopkg.in/errgo.v1"
 
-	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
-	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
-	"gopkg.in/macaroon-bakery.v2-unstable/bakery/identchecker"
+	"gopkg.in/macaroon-bakery.v2/bakery"
+	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2/bakery/identchecker"
 )
 
 type authorizerSuite struct {

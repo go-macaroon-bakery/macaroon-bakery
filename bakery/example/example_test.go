@@ -7,7 +7,7 @@ import (
 	jujutesting "github.com/juju/testing"
 	gc "gopkg.in/check.v1"
 
-	"gopkg.in/macaroon-bakery.v2-unstable/bakery"
+	"gopkg.in/macaroon-bakery.v2/bakery"
 )
 
 func TestPackage(t *testing.T) {

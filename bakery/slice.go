@@ -8,7 +8,7 @@ import (
 	errgo "gopkg.in/errgo.v1"
 	macaroon "gopkg.in/macaroon.v2"
 
-	"gopkg.in/macaroon-bakery.v2-unstable/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
 )
 
 // Slice holds a slice of unbound macaroons.

@@ -10,7 +10,7 @@ import (
 
 	gc "gopkg.in/check.v1"
 
-	"gopkg.in/macaroon-bakery.v2-unstable/internal/httputil"
+	"gopkg.in/macaroon-bakery.v2/internal/httputil"
 )
 
 type relativeURLSuite struct{}
