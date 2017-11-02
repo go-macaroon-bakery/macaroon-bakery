@@ -6,7 +6,7 @@ import (
 	"path"
 	"unicode/utf8"
 
-	"github.com/juju/httprequest"
+	"gopkg.in/juju/httprequest.v2"
 	"github.com/julienschmidt/httprouter"
 	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"

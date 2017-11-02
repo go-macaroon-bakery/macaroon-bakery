@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"sync"
 
-	"github.com/juju/httprequest"
+	"gopkg.in/juju/httprequest.v2"
 	jujutesting "github.com/juju/testing"
 	jc "github.com/juju/testing/checkers"
 	gc "gopkg.in/check.v1"

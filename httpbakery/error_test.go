@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 
-	"github.com/juju/httprequest"
+	"gopkg.in/juju/httprequest.v2"
 	jc "github.com/juju/testing/checkers"
 	"github.com/juju/testing/httptesting"
 	gc "gopkg.in/check.v1"

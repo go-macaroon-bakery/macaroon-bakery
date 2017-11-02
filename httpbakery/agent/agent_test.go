@@ -3,7 +3,7 @@ package agent_test
 import (
 	"net/http"
 
-	"github.com/juju/httprequest"
+	"gopkg.in/juju/httprequest.v2"
 	"github.com/juju/testing"
 	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
