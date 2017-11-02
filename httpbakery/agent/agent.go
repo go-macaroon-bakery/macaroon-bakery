@@ -12,7 +12,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/juju/httprequest"
+	"gopkg.in/juju/httprequest.v2-unstable"
 	"github.com/juju/loggo"
 	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
