@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"time"
 
-	"github.com/juju/httprequest"
+	"gopkg.in/juju/httprequest.v2"
 	jujutesting "github.com/juju/testing"
 	jc "github.com/juju/testing/checkers"
 	"golang.org/x/net/context"
