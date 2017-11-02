@@ -6,7 +6,7 @@ import (
 	"net/url"
 	"os"
 
-	"github.com/juju/httprequest"
+	"gopkg.in/juju/httprequest.v2-unstable"
 	"github.com/juju/webbrowser"
 	"golang.org/x/net/context"
 	"golang.org/x/net/context/ctxhttp"

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/juju/httprequest"
+	"gopkg.in/juju/httprequest.v2-unstable"
 	jujutesting "github.com/juju/testing"
 	"github.com/julienschmidt/httprouter"
 	"golang.org/x/net/context"

@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/juju/httprequest"
+	"gopkg.in/juju/httprequest.v2-unstable"
 	jujutesting "github.com/juju/testing"
 	jc "github.com/juju/testing/checkers"
 	"golang.org/x/net/context"

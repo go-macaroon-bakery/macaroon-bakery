@@ -8,7 +8,7 @@ import (
 	"net/http/httptest"
 	"sync"
 
-	"github.com/juju/httprequest"
+	"gopkg.in/juju/httprequest.v2-unstable"
 	"github.com/juju/loggo"
 	"github.com/julienschmidt/httprouter"
 	"golang.org/x/net/context"

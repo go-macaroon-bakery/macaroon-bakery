@@ -3,7 +3,7 @@ package form_test
 import (
 	"net/http"
 
-	"github.com/juju/httprequest"
+	"gopkg.in/juju/httprequest.v2-unstable"
 	jujutesting "github.com/juju/testing"
 	"github.com/juju/testing/httptesting"
 	"golang.org/x/net/context"

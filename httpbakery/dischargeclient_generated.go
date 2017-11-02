@@ -4,7 +4,7 @@
 package httpbakery
 
 import (
-	"github.com/juju/httprequest"
+	"gopkg.in/juju/httprequest.v2-unstable"
 	"golang.org/x/net/context"
 )
 
