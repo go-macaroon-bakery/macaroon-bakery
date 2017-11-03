@@ -7,12 +7,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/juju/httprequest"
 	jujutesting "github.com/juju/testing"
 	"github.com/julienschmidt/httprouter"
 	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
+	"gopkg.in/httprequest.v1"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"
 	"gopkg.in/macaroon-bakery.v2/bakery/checkers"

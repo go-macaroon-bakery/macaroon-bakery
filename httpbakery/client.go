@@ -9,12 +9,12 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/juju/httprequest"
 	"github.com/juju/loggo"
 	"golang.org/x/net/context"
 	"golang.org/x/net/context/ctxhttp"
 	"golang.org/x/net/publicsuffix"
 	"gopkg.in/errgo.v1"
+	"gopkg.in/httprequest.v1"
 	"gopkg.in/macaroon.v2"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"
@@ -444,8 +444,8 @@ func appendURLElem(u, elem string) string {
 	return u + "/" + elem
 }
 
-// AcquireDischarge implements DischargeAcquirer by requesting a discharge
-// macaroon from the caveat location as an HTTP URL.
+// AcquireDischarge acquires a discharge macaroon from the caveat location as an HTTP URL.
+// It fits the getDischarge argument type required by bakery.DischargeAll.
 func (c *Client) AcquireDischarge(ctx context.Context, cav macaroon.Caveat, payload []byte) (*bakery.Macaroon, error) {
 	m, err := c.acquireDischarge(ctx, cav, payload, nil)
 	if err == nil {
