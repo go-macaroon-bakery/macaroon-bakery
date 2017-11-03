@@ -3,12 +3,12 @@ package form_test
 import (
 	"net/http"
 
-	"github.com/juju/httprequest"
 	jujutesting "github.com/juju/testing"
 	"github.com/juju/testing/httptesting"
 	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
+	"gopkg.in/httprequest.v1"
 	"gopkg.in/juju/environschema.v1"
 	esform "gopkg.in/juju/environschema.v1/form"
 

@@ -3,11 +3,11 @@ package agent_test
 import (
 	"net/http"
 
-	"github.com/juju/httprequest"
 	"github.com/juju/testing"
 	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
+	"gopkg.in/httprequest.v1"
 	"gopkg.in/macaroon.v2"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"

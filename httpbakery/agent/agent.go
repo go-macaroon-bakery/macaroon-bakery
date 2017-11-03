@@ -12,10 +12,10 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/juju/httprequest"
 	"github.com/juju/loggo"
 	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
+	"gopkg.in/httprequest.v1"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"
 	"gopkg.in/macaroon-bakery.v2/httpbakery"
@@ -171,8 +171,7 @@ type LegacyAgentResponse struct {
 	AgentLogin bool `json:"agent-login"`
 }
 
-// LegacyInteract implements httpbakery.LegactInteractor.LegacyInteract by fetching a
-//
+// LegacyInteract implements httpbakery.LegactInteractor.LegacyInteract.
 func (i interactor) LegacyInteract(ctx context.Context, client *httpbakery.Client, location string, visitURL *url.URL) error {
 	c := &httprequest.Client{
 		Doer: client,

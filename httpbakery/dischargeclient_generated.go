@@ -4,8 +4,8 @@
 package httpbakery
 
 import (
-	"github.com/juju/httprequest"
 	"golang.org/x/net/context"
+	"gopkg.in/httprequest.v1"
 )
 
 type dischargeClient struct {
