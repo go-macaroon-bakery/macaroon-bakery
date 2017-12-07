@@ -8,7 +8,6 @@ package agent
 
 import (
 	"errors"
-	"net/http"
 	"net/url"
 	"strings"
 
@@ -165,10 +164,23 @@ func (i interactor) findAgent(location string) (*Agent, error) {
 	return nil, errgo.WithCausef(nil, httpbakery.ErrInteractionMethodNotFound, "cannot find username for discharge location %q", location)
 }
 
+type agentLoginRequest struct {
+	httprequest.Route `httprequest:"POST"`
+	Body              LegacyAgentLoginBody `httprequest:",body"`
+}
+
+// LegacyAgentLoginBody is used to encode the JSON body
+// sent when making a legacy agent protocol
+// POST request to the visit URL.
+type LegacyAgentLoginBody struct {
+	Username  string            `json:"username"`
+	PublicKey *bakery.PublicKey `json:"public_key"`
+}
+
 // LegacyAgentResponse contains the response to a
 // legacy agent login attempt.
 type LegacyAgentResponse struct {
-	AgentLogin bool `json:"agent-login"`
+	AgentLogin bool `json:"agent_login"`
 }
 
 // LegacyInteract implements httpbakery.LegactInteractor.LegacyInteract.
@@ -180,14 +192,14 @@ func (i interactor) LegacyInteract(ctx context.Context, client *httpbakery.Clien
 	if err != nil {
 		return errgo.Mask(err)
 	}
-	req, err := http.NewRequest("GET", "", nil)
-	if err != nil {
-		return errgo.Notef(err, "cannot make request")
-	}
-	req.URL = visitURL
-	addCookie(req, agent.Username, &client.Key.Public)
 	var resp LegacyAgentResponse
-	if err := c.Do(ctx, req, &resp); err != nil {
+	err = c.CallURL(ctx, visitURL.String(), &agentLoginRequest{
+		Body: LegacyAgentLoginBody{
+			Username:  agent.Username,
+			PublicKey: &client.Key.Public,
+		},
+	}, &resp)
+	if err != nil {
 		return errgo.Mask(err)
 	}
 	if !resp.AgentLogin {

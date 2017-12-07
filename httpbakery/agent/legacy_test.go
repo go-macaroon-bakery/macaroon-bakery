@@ -26,6 +26,7 @@ type legacyAgentSuite struct {
 }
 
 type visitFunc func(w http.ResponseWriter, req *http.Request, dischargeId string) error
+type agentPostFunc func(httprequest.Params, agentPostRequest) error
 
 var _ = gc.Suite(&legacyAgentSuite{})
 
@@ -51,45 +52,43 @@ func (s *legacyAgentSuite) TearDownTest(c *gc.C) {
 var legacyAgentLoginErrorTests = []struct {
 	about string
 
-	visitHandler visitFunc
-	expectError  string
+	visitHandler     visitFunc
+	agentPostHandler agentPostFunc
+	expectError      string
 }{{
 	about: "error response",
-	visitHandler: func(w http.ResponseWriter, req *http.Request, dischargeId string) error {
+	agentPostHandler: func(httprequest.Params, agentPostRequest) error {
 		return errgo.Newf("test error")
 	},
-	expectError: `cannot get discharge from ".*": cannot start interactive session: Get http(s)?://.*: test error`,
+	expectError: `cannot get discharge from ".*": cannot start interactive session: Post http(s)?://.*: test error`,
 }, {
 	about: "unexpected response",
-	visitHandler: func(w http.ResponseWriter, req *http.Request, dischargeId string) error {
-		w.Write([]byte("OK"))
+	agentPostHandler: func(p httprequest.Params, _ agentPostRequest) error {
+		p.Response.Write([]byte("OK"))
 		return nil
 	},
-	expectError: `cannot get discharge from ".*": cannot start interactive session: Get http(s)?://.*: unexpected content type text/plain; want application/json; content: OK`,
+	expectError: `cannot get discharge from ".*": cannot start interactive session: Post http(s)?://.*: unexpected content type text/plain; want application/json; content: OK`,
 }, {
 	about: "unexpected error response",
-	visitHandler: func(w http.ResponseWriter, req *http.Request, dischargeId string) error {
-		httprequest.WriteJSON(w, http.StatusBadRequest, httpbakery.Error{})
+	agentPostHandler: func(p httprequest.Params, _ agentPostRequest) error {
+		httprequest.WriteJSON(p.Response, http.StatusBadRequest, httpbakery.Error{})
 		return nil
 	},
-	expectError: `cannot get discharge from ".*": cannot start interactive session: Get http(s)?://.*: no error message found`,
+	expectError: `cannot get discharge from ".*": cannot start interactive session: Post http(s)?://.*: no error message found`,
 }, {
 	about: "login false value",
-	visitHandler: func(w http.ResponseWriter, req *http.Request, dischargeId string) error {
-		httprequest.WriteJSON(w, http.StatusOK, agent.LegacyAgentResponse{})
+	agentPostHandler: func(p httprequest.Params, _ agentPostRequest) error {
+		httprequest.WriteJSON(p.Response, http.StatusOK, agent.LegacyAgentResponse{})
 		return nil
 	},
 	expectError: `cannot get discharge from ".*": cannot start interactive session: agent login failed`,
 }}
 
 func (s *legacyAgentSuite) TestAgentLoginError(c *gc.C) {
-	var visit visitFunc
-	s.discharger.AddHTTPHandlers(LegacyAgentHandlers(LegacyAgentHandler{
-		Visit: func(p httprequest.Params, dischargeId string) error {
-			if handleLoginMethods(p) {
-				return nil
-			}
-			return visit(p.Response, p.Request, dischargeId)
+	var agentPost agentPostFunc
+	s.discharger.AddHTTPHandlers(newLegacyAgentHandlers(legacyAgentHandler{
+		agentPost: func(p httprequest.Params, r agentPostRequest) error {
+			return agentPost(p, r)
 		},
 	}))
 	rendezvous := bakerytest.NewRendezvous()
@@ -108,7 +107,7 @@ func (s *legacyAgentSuite) TestAgentLoginError(c *gc.C) {
 
 	for i, test := range legacyAgentLoginErrorTests {
 		c.Logf("%d. %s", i, test.about)
-		visit = test.visitHandler
+		agentPost = test.agentPostHandler
 
 		client := httpbakery.NewClient()
 		err := agent.SetUpAuth(client, &agent.AuthInfo{
@@ -134,14 +133,11 @@ func (s *legacyAgentSuite) TestAgentLoginError(c *gc.C) {
 
 func (s *legacyAgentSuite) TestSetUpAuth(c *gc.C) {
 	rendezvous := bakerytest.NewRendezvous()
-	s.discharger.AddHTTPHandlers(LegacyAgentHandlers(LegacyAgentHandler{
-		Visit: func(p httprequest.Params, dischargeId string) error {
-			if handleLoginMethods(p) {
-				return nil
-			}
-			return s.visit(p, dischargeId, rendezvous)
+	s.discharger.AddHTTPHandlers(newLegacyAgentHandlers(legacyAgentHandler{
+		agentPost: func(p httprequest.Params, r agentPostRequest) error {
+			return s.agentPost(p, r, rendezvous)
 		},
-		Wait: func(p httprequest.Params, dischargeId string) (*bakery.Macaroon, error) {
+		wait: func(p httprequest.Params, dischargeId string) (*bakery.Macaroon, error) {
 			caveats, err := rendezvous.Await(dischargeId, 5*time.Second)
 			if err != nil {
 				return nil, errgo.Mask(err)
@@ -188,14 +184,11 @@ func (s *legacyAgentSuite) TestSetUpAuth(c *gc.C) {
 
 func (s *legacyAgentSuite) TestNoMatchingSite(c *gc.C) {
 	rendezvous := bakerytest.NewRendezvous()
-	s.discharger.AddHTTPHandlers(LegacyAgentHandlers(LegacyAgentHandler{
-		Visit: func(p httprequest.Params, dischargeId string) error {
-			if handleLoginMethods(p) {
-				return nil
-			}
-			return s.visit(p, dischargeId, rendezvous)
+	s.discharger.AddHTTPHandlers(newLegacyAgentHandlers(legacyAgentHandler{
+		agentPost: func(p httprequest.Params, r agentPostRequest) error {
+			return s.agentPost(p, r, rendezvous)
 		},
-		Wait: func(p httprequest.Params, dischargeId string) (*bakery.Macaroon, error) {
+		wait: func(p httprequest.Params, dischargeId string) (*bakery.Macaroon, error) {
 			_, err := rendezvous.Await(dischargeId, 5*time.Second)
 			if err != nil {
 				return nil, errgo.Mask(err)
@@ -257,28 +250,14 @@ func (c idmClient) DeclaredIdentity(ctx context.Context, declared map[string]str
 	return identchecker.SimpleIdentity(declared["username"]), nil
 }
 
-// handleLoginMethods handles a legacy visit request
-// to ask for the set of login methods.
-// It reports whether it has handled the request.
-func handleLoginMethods(p httprequest.Params) bool {
-	if p.Request.Header.Get("Accept") != "application/json" {
-		return false
-	}
-	httprequest.WriteJSON(p.Response, http.StatusOK, map[string]string{
-		"agent": p.Request.URL.String(),
-	})
-	return true
-}
-
-func (s *legacyAgentSuite) visit(p httprequest.Params, dischargeId string, rendezvous *bakerytest.Rendezvous) error {
+func (s *legacyAgentSuite) agentPost(p httprequest.Params, r agentPostRequest, rendezvous *bakerytest.Rendezvous) error {
 	ctx := context.TODO()
-	username, userPublicKey, err := agent.LoginCookie(p.Request)
-	if err != nil {
-		return errgo.Notef(err, "cannot read agent login")
+	if r.Body.Username == "" || r.Body.PublicKey == nil {
+		return errgo.Newf("username or public key not found")
 	}
 	authInfo, authErr := s.agentBakery.Checker.Auth(httpbakery.RequestMacaroons(p.Request)...).Allow(ctx, identchecker.LoginOp)
 	if authErr == nil && authInfo.Identity != nil {
-		rendezvous.DischargeComplete(dischargeId, []checkers.Caveat{
+		rendezvous.DischargeComplete(r.DischargeId, []checkers.Caveat{
 			checkers.DeclaredCaveat("username", authInfo.Identity.Id()),
 		})
 		httprequest.WriteJSON(p.Response, http.StatusOK, agent.LegacyAgentResponse{true})
@@ -286,8 +265,8 @@ func (s *legacyAgentSuite) visit(p httprequest.Params, dischargeId string, rende
 	}
 	version := httpbakery.RequestVersion(p.Request)
 	m, err := s.agentBakery.Oven.NewMacaroon(ctx, version, []checkers.Caveat{
-		bakery.LocalThirdPartyCaveat(userPublicKey, version),
-		checkers.DeclaredCaveat("username", username),
+		bakery.LocalThirdPartyCaveat(r.Body.PublicKey, version),
+		checkers.DeclaredCaveat("username", r.Body.Username),
 	}, identchecker.LoginOp)
 	if err != nil {
 		return errgo.Notef(err, "cannot create macaroon")
@@ -298,37 +277,60 @@ func (s *legacyAgentSuite) visit(p httprequest.Params, dischargeId string, rende
 	})
 }
 
-// LegacyAgentHandler represents a handler for legacy
+// legacyAgentHandler represents a handler for legacy
 // agent interactions. Each member corresponds to an HTTP endpoint,
-type LegacyAgentHandler struct {
-	Visit func(p httprequest.Params, dischargeId string) error
-	Wait  func(p httprequest.Params, dischargeId string) (*bakery.Macaroon, error)
+type legacyAgentHandler struct {
+	agentPost agentPostFunc
+	wait      func(p httprequest.Params, dischargeId string) (*bakery.Macaroon, error)
 }
 
 var reqServer = httprequest.Server{
 	ErrorMapper: httpbakery.ErrorToResponse,
 }
 
-func LegacyAgentHandlers(h LegacyAgentHandler) []httprequest.Handler {
+func newLegacyAgentHandlers(h legacyAgentHandler) []httprequest.Handler {
 	return reqServer.Handlers(func(p httprequest.Params) (legacyAgentHandlers, context.Context, error) {
 		return legacyAgentHandlers{h}, p.Context, nil
 	})
 }
 
 type legacyAgentHandlers struct {
-	h LegacyAgentHandler
+	h legacyAgentHandler
 }
 
-type visitRequest struct {
+type visitGetRequest struct {
 	httprequest.Route `httprequest:"GET /visit"`
 	DischargeId       string `httprequest:"dischargeid,form"`
 }
 
-func (h legacyAgentHandlers) Visit(p httprequest.Params, r *visitRequest) error {
-	if h.h.Visit == nil {
-		return errgo.Newf("visit not implemented")
+func (h legacyAgentHandlers) VisitGet(p httprequest.Params, r *visitGetRequest) error {
+	return handleLoginMethods(p, r.DischargeId)
+}
+
+// handleLoginMethods handles a legacy visit request
+// to ask for the set of login methods.
+// It reports whether it has handled the request.
+func handleLoginMethods(p httprequest.Params, dischargeId string) error {
+	if p.Request.Header.Get("Accept") != "application/json" {
+		return errgo.Newf("got normal visit request", http.StatusInternalServerError)
 	}
-	return h.h.Visit(p, r.DischargeId)
+	httprequest.WriteJSON(p.Response, http.StatusOK, map[string]string{
+		"agent": "/agent?discharge-id=" + dischargeId,
+	})
+	return nil
+}
+
+type agentPostRequest struct {
+	httprequest.Route `httprequest:"POST /agent"`
+	DischargeId       string                     `httprequest:"discharge-id,form"`
+	Body              agent.LegacyAgentLoginBody `httprequest:",body"`
+}
+
+func (h legacyAgentHandlers) AgentPost(p httprequest.Params, r *agentPostRequest) error {
+	if h.h.agentPost == nil {
+		return errgo.Newf("agent POST not implemented")
+	}
+	return h.h.agentPost(p, *r)
 }
 
 type waitRequest struct {
@@ -337,10 +339,10 @@ type waitRequest struct {
 }
 
 func (h legacyAgentHandlers) Wait(p httprequest.Params, r *waitRequest) (*httpbakery.WaitResponse, error) {
-	if h.h.Wait == nil {
+	if h.h.wait == nil {
 		return nil, errgo.Newf("wait not implemented")
 	}
-	m, err := h.h.Wait(p, r.DischargeId)
+	m, err := h.h.wait(p, r.DischargeId)
 	if err != nil {
 		return nil, errgo.Mask(err, errgo.Any)
 	}
