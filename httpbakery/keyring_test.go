@@ -161,8 +161,7 @@ func (s *KeyringSuite) TestThirdPartyInfoForLocationReturnsStatusInternalServerE
 	defer ts.Close()
 	client := httpbakery.NewHTTPClient()
 	_, err := httpbakery.ThirdPartyInfoForLocation(testContext, client, ts.URL)
-	c.Assert(err, gc.ErrorMatches,
-		fmt.Sprintf(`Get %s/discharge/info: cannot unmarshal error response \(status 500 Internal Server Error\): unexpected content type text/plain; want application/json; content: `, ts.URL))
+	c.Assert(err, gc.ErrorMatches, `Get .*/discharge/info: cannot unmarshal error response \(status 500 Internal Server Error\): unexpected content type .*`)
 }
 
 func (s *KeyringSuite) TestThirdPartyInfoForLocationFallbackToOldVersion(c *gc.C) {
