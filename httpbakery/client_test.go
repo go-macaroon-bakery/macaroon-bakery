@@ -420,6 +420,9 @@ func (s *ClientSuite) TestTooManyDischargesRequired(c *gc.C) {
 func (s *ClientSuite) serverRequiringMultipleDischarges(n int, discharger *bakerytest.Discharger) *httptest.Server {
 	b := newBakery("loc", discharger, nil)
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if hasDuplicateCookies(req) {
+			panic(errgo.Newf("duplicate cookie names in request; cookies %s", req.Header["Cookie"]))
+		}
 		if _, err := b.Checker.Auth(httpbakery.RequestMacaroons(req)...).Allow(context.TODO(), testOp); err == nil {
 			w.Write([]byte("ok"))
 			return
@@ -441,11 +444,23 @@ func (s *ClientSuite) serverRequiringMultipleDischarges(n int, discharger *baker
 			panic(fmt.Errorf("cannot make new macaroon: %v", err))
 		}
 		err = httpbakery.NewDischargeRequiredError(httpbakery.DischargeRequiredErrorParams{
-			OriginalError: errgo.New("foo"),
-			Macaroon:      m,
+			OriginalError:    errgo.New("foo"),
+			Macaroon:         m,
+			CookieNameSuffix: fmt.Sprintf("auth%d", n),
 		})
 		httpbakery.WriteError(testContext, w, err)
 	}))
+}
+
+func hasDuplicateCookies(req *http.Request) bool {
+	names := make(map[string]bool)
+	for _, cookie := range req.Cookies() {
+		if names[cookie.Name] {
+			return true
+		}
+		names[cookie.Name] = true
+	}
+	return false
 }
 
 func (s *ClientSuite) TestVersion0Generates407Status(c *gc.C) {

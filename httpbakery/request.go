@@ -28,8 +28,9 @@ import (
 func newRetryableRequest(req *http.Request) (*retryableRequest, bool) {
 	if req.Body == nil {
 		return &retryableRequest{
-			ref: 1,
-			req: req,
+			ref:        1,
+			req:        req,
+			origCookie: req.Header.Get("Cookie"),
 		}, true
 	}
 	body := seekerFromBody(req.Body)
@@ -37,24 +38,32 @@ func newRetryableRequest(req *http.Request) (*retryableRequest, bool) {
 		return nil, false
 	}
 	rreq := &retryableRequest{
-		ref:      1,
-		req:      req,
-		origBody: req.Body,
-		body:     body,
+		ref:        1,
+		req:        req,
+		origBody:   req.Body,
+		body:       body,
+		origCookie: req.Header.Get("Cookie"),
 	}
 	req.Body = nil
 	return rreq, true
 }
 
 type retryableRequest struct {
-	ref      int32
-	origBody io.ReadCloser
-	body     io.ReadSeeker
-	req      *http.Request
+	ref        int32
+	origBody   io.ReadCloser
+	origCookie string
+	body       io.ReadSeeker
+	req        *http.Request
 }
 
 // try should be called just before invoking http.Client.Do.
 func (req *retryableRequest) try() error {
+	// Make sure that the original cookie header is
+	// still in place so that we only end up with the
+	// cookies that are actually added by the
+	// HTTP cookie logic, and not the ones that were
+	// added in previous requests too.
+	req.req.Header.Set("Cookie", req.origCookie)
 	if req.body == nil {
 		return nil
 	}

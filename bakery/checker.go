@@ -174,7 +174,7 @@ func (a *AuthChecker) initOnceFunc(ctx context.Context) error {
 			a.initErrors = append(a.initErrors, errgo.Mask(err))
 			continue
 		}
-		logger.Debugf("checking macaroon %d; ops %q, conditions %q", i, ops, conditions)
+		logger.Debugf("macaroon %d has valid sig; ops %q, conditions %q", i, ops, conditions)
 		// It's a valid macaroon (in principle - we haven't checked first party caveats).
 		a.conditions[i] = conditions
 		for _, op := range ops {
