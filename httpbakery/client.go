@@ -8,6 +8,7 @@ import (
 	"net/http/cookiejar"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/juju/loggo"
 	"golang.org/x/net/context"
@@ -391,6 +392,11 @@ func parseURLPath(path string) (*url.URL, error) {
 	return u, nil
 }
 
+// PermanentExpiryDuration holds the length of time a cookie
+// holding a macaroon with no time-before caveat will be
+// stored.
+const PermanentExpiryDuration = 100 * 365 * 24 * time.Hour
+
 // NewCookie takes a slice of macaroons and returns them
 // encoded as a cookie. The slice should contain a single primary
 // macaroon in its first element, and any discharges after that.
@@ -410,7 +416,18 @@ func NewCookie(ns *checkers.Namespace, ms macaroon.Slice) (*http.Cookie, error) 
 		Name:  fmt.Sprintf("macaroon-%x", ms[0].Signature()),
 		Value: base64.StdEncoding.EncodeToString(data),
 	}
-	cookie.Expires, _ = checkers.MacaroonsExpiryTime(ns, ms)
+	expires, found := checkers.MacaroonsExpiryTime(ns, ms)
+	if !found {
+		// The macaroon doesn't expire - use a very long expiry
+		// time for the cookie.
+		expires = time.Now().Add(PermanentExpiryDuration)
+	} else if expires.Sub(time.Now()) < time.Minute {
+		// The macaroon might have expired already, or it's
+		// got a short duration, so treat it as a session cookie
+		// by setting Expires to the zero time.
+		expires = time.Time{}
+	}
+	cookie.Expires = expires
 	// TODO(rog) other fields.
 	return cookie, nil
 }
