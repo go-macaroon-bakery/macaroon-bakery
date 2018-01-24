@@ -7,8 +7,11 @@
 package agent
 
 import (
+	"encoding/json"
 	"errors"
+	"io/ioutil"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/juju/loggo"
@@ -38,6 +41,35 @@ type Agent struct {
 	URL string `json:"url" yaml:"url"`
 	// Username holds the username to use for the agent.
 	Username string `json:"username" yaml:"username"`
+}
+
+var ErrNoAuthInfo = errgo.New("no bakery agent info found in environment")
+
+// AuthInfoFromEnvironment returns an AuthInfo derived
+// from environment variables.
+//
+// It recognizes the following variable:
+// BAKERY_AGENT_FILE - path to a file containing agent authentication
+//    info in JSON format (as marshaled by the AuthInfo type).
+//
+// If BAKERY_AGENT_FILE is not set, ErrNoAuthInfo will be returned.
+func AuthInfoFromEnvironment() (*AuthInfo, error) {
+	agentFile := os.Getenv("BAKERY_AGENT_FILE")
+	if agentFile == "" {
+		return nil, errgo.WithCausef(nil, ErrNoAuthInfo, "")
+	}
+	var ai AuthInfo
+	data, err := ioutil.ReadFile(agentFile)
+	if err != nil {
+		return nil, errgo.Mask(err)
+	}
+	if err := json.Unmarshal(data, &ai); err != nil {
+		return nil, errgo.Notef(err, "cannot unmarshal agent information from %q: %v", agentFile)
+	}
+	if ai.Key == nil {
+		return nil, errgo.Newf("no private key found in %q", agentFile)
+	}
+	return &ai, nil
 }
 
 // SetUpAuth sets up agent authentication on the given client.
