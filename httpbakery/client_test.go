@@ -1220,17 +1220,42 @@ func (s *ClientSuite) TestHandleErrorDifferentError(c *gc.C) {
 	c.Assert(err, gc.Equals, berr)
 }
 
-func (s *ClientSuite) TestNewCookieExpires(c *gc.C) {
-	t := time.Now().Add(time.Minute)
+func (s *ClientSuite) TestNewCookieExpiresLongExpiryTime(c *gc.C) {
+	t := time.Now().Add(30 * time.Minute)
 	b := newBakery("loc", nil, nil)
 	m, err := b.Oven.NewMacaroon(testContext, bakery.LatestVersion, []checkers.Caveat{
 		checkers.TimeBeforeCaveat(t),
 	}, testOp)
-
 	c.Assert(err, gc.IsNil)
 	cookie, err := httpbakery.NewCookie(nil, macaroon.Slice{m.M()})
 	c.Assert(err, gc.IsNil)
-	c.Assert(cookie.Expires.Equal(t), gc.Equals, true, gc.Commentf("obtained: %s, expected: %s", cookie.Expires, t))
+	c.Assert(cookie.Expires.Equal(t), gc.Equals, true, gc.Commentf("got %s want %s", cookie.Expires, t))
+}
+
+func (s *ClientSuite) TestNewCookieExpiresAlreadyExpired(c *gc.C) {
+	t := time.Now().Add(-time.Minute)
+	b := newBakery("loc", nil, nil)
+	m, err := b.Oven.NewMacaroon(testContext, bakery.LatestVersion, []checkers.Caveat{
+		checkers.TimeBeforeCaveat(t),
+	}, testOp)
+	c.Assert(err, gc.IsNil)
+	cookie, err := httpbakery.NewCookie(nil, macaroon.Slice{m.M()})
+	c.Assert(err, gc.IsNil)
+	c.Assert(cookie.Expires, jc.Satisfies, time.Time.IsZero)
+}
+
+func (s *ClientSuite) TestNewCookieExpiresNoTimeBeforeCaveat(c *gc.C) {
+	t0 := time.Now()
+	b := newBakery("loc", nil, nil)
+	m, err := b.Oven.NewMacaroon(testContext, bakery.LatestVersion, nil, testOp)
+	c.Assert(err, gc.IsNil)
+	cookie, err := httpbakery.NewCookie(nil, macaroon.Slice{m.M()})
+	c.Assert(err, gc.IsNil)
+	minExpires := t0.Add(httpbakery.PermanentExpiryDuration)
+	maxExpires := time.Now().Add(httpbakery.PermanentExpiryDuration)
+	if cookie.Expires.Before(minExpires) || cookie.Expires.After(maxExpires) {
+		c.Fatalf("unexpected expiry time; got %v want %v", cookie.Expires, minExpires)
+	}
 }
 
 func mustParseURL(s string) *url.URL {
