@@ -5,9 +5,11 @@ import (
 	"database/sql"
 	"fmt"
 	"text/template"
+	"time"
 
 	errgo "gopkg.in/errgo.v1"
 	"gopkg.in/macaroon-bakery.v2/bakery"
+	"gopkg.in/macaroon-bakery.v2/bakery/dbrootkeystore"
 )
 
 type stmtId int
@@ -101,22 +103,22 @@ SELECT id, created, expires, rootkey FROM {{.Table}} WHERE id=$1
 `)
 }
 
-func (s *RootKeys) findId(id []byte) (rootKey, error) {
+func (s *RootKeys) getKey(id []byte) (dbrootkeystore.RootKey, error) {
 	if err := s.initDB(); err != nil {
-		return rootKey{}, errgo.Mask(err)
+		return dbrootkeystore.RootKey{}, errgo.Mask(err)
 	}
-	var key rootKey
+	var key dbrootkeystore.RootKey
 	err := s.stmts[findIdStmt].QueryRow(id).Scan(
-		&key.id,
-		&key.created,
-		&key.expires,
-		&key.rootKey,
+		&key.Id,
+		&key.Created,
+		&key.Expires,
+		&key.RootKey,
 	)
 	switch {
 	case err == sql.ErrNoRows:
-		return rootKey{}, bakery.ErrNotFound
+		return dbrootkeystore.RootKey{}, bakery.ErrNotFound
 	case err != nil:
-		return rootKey{}, errgo.Mask(err)
+		return dbrootkeystore.RootKey{}, errgo.Mask(err)
 	}
 	return key, nil
 }
@@ -132,29 +134,25 @@ ORDER BY created DESC
 `)
 }
 
-func (s *RootKeys) findBestRootKey(policy Policy) (rootKey, error) {
+func (s *RootKeys) findLatestKey(createdAfter, expiresAfter, expiresBefore time.Time) (dbrootkeystore.RootKey, error) {
 	if err := s.initDB(); err != nil {
-		return rootKey{}, errgo.Mask(err)
+		return dbrootkeystore.RootKey{}, errgo.Mask(err)
 	}
-	var key rootKey
-	now := timeNow()
-	createdAfter := now.Add(-policy.GenerateInterval)
-	expiresAfter := now.Add(policy.ExpiryDuration)
-	expiresBefore := now.Add(policy.ExpiryDuration + policy.GenerateInterval)
+	var key dbrootkeystore.RootKey
 	err := s.stmts[findBestRootKeyStmt].QueryRow(
 		createdAfter,
 		expiresAfter,
 		expiresBefore,
 	).Scan(
-		&key.id,
-		&key.created,
-		&key.expires,
-		&key.rootKey,
+		&key.Id,
+		&key.Created,
+		&key.Expires,
+		&key.RootKey,
 	)
 	if err == sql.ErrNoRows || err == nil {
 		return key, nil
 	}
-	return rootKey{}, errgo.Mask(err)
+	return dbrootkeystore.RootKey{}, errgo.Mask(err)
 }
 
 func (s *RootKeys) prepareInsertKey(p *templateParams) error {
@@ -163,11 +161,11 @@ INSERT into {{.Table}} (id, rootkey, created, expires) VALUES ($1, $2, $3, $4)
 `)
 }
 
-func (s *RootKeys) insertKey(key rootKey) error {
+func (s *RootKeys) insertKey(key dbrootkeystore.RootKey) error {
 	if err := s.initDB(); err != nil {
 		return errgo.Mask(err)
 	}
-	_, err := s.stmts[insertKeyStmt].Exec(key.id, key.rootKey, key.created, key.expires)
+	_, err := s.stmts[insertKeyStmt].Exec(key.Id, key.RootKey, key.Created, key.Expires)
 	return errgo.Mask(err)
 }
 
