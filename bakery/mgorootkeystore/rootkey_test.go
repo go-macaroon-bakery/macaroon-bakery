@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/juju/mgo"
 	"github.com/juju/testing"
 	jc "github.com/juju/testing/checkers"
 	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
-	"gopkg.in/mgo.v2"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"
 	"gopkg.in/macaroon-bakery.v2/bakery/mgorootkeystore"
