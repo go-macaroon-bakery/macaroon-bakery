@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/juju/loggo"
+	"github.com/juju/mgo"
+	"github.com/juju/mgo/bson"
 	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
-	"gopkg.in/mgo.v2"
-	"gopkg.in/mgo.v2/bson"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"
 )
