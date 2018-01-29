@@ -11,6 +11,7 @@ import (
 	"gopkg.in/mgo.v2"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"
+	"gopkg.in/macaroon-bakery.v2/bakery/dbrootkeystore"
 	"gopkg.in/macaroon-bakery.v2/bakery/mgorootkeystore"
 )
 
@@ -26,7 +27,7 @@ var isValidWithPolicyTests = []struct {
 	about  string
 	policy mgorootkeystore.Policy
 	now    time.Time
-	key    mgorootkeystore.RootKey
+	key    dbrootkeystore.RootKey
 	expect bool
 }{{
 	about: "success",
@@ -35,7 +36,7 @@ var isValidWithPolicyTests = []struct {
 		ExpiryDuration:   3 * time.Minute,
 	},
 	now: epoch.Add(20 * time.Minute),
-	key: mgorootkeystore.RootKey{
+	key: dbrootkeystore.RootKey{
 		Created: epoch.Add(19 * time.Minute),
 		Expires: epoch.Add(24 * time.Minute),
 		Id:      []byte("id"),
@@ -49,7 +50,7 @@ var isValidWithPolicyTests = []struct {
 		ExpiryDuration:   3 * time.Minute,
 	},
 	now:    epoch.Add(20 * time.Minute),
-	key:    mgorootkeystore.RootKey{},
+	key:    dbrootkeystore.RootKey{},
 	expect: false,
 }, {
 	about: "created too early",
@@ -58,7 +59,7 @@ var isValidWithPolicyTests = []struct {
 		ExpiryDuration:   3 * time.Minute,
 	},
 	now: epoch.Add(20 * time.Minute),
-	key: mgorootkeystore.RootKey{
+	key: dbrootkeystore.RootKey{
 		Created: epoch.Add(18*time.Minute - time.Millisecond),
 		Expires: epoch.Add(24 * time.Minute),
 		Id:      []byte("id"),
@@ -72,7 +73,7 @@ var isValidWithPolicyTests = []struct {
 		ExpiryDuration:   3 * time.Minute,
 	},
 	now: epoch.Add(20 * time.Minute),
-	key: mgorootkeystore.RootKey{
+	key: dbrootkeystore.RootKey{
 		Created: epoch.Add(19 * time.Minute),
 		Expires: epoch.Add(21 * time.Minute),
 		Id:      []byte("id"),
@@ -86,7 +87,7 @@ var isValidWithPolicyTests = []struct {
 		ExpiryDuration:   3 * time.Minute,
 	},
 	now: epoch.Add(20 * time.Minute),
-	key: mgorootkeystore.RootKey{
+	key: dbrootkeystore.RootKey{
 		Created: epoch.Add(19 * time.Minute),
 		Expires: epoch.Add(25*time.Minute + time.Millisecond),
 		Id:      []byte("id"),
@@ -97,13 +98,10 @@ var isValidWithPolicyTests = []struct {
 
 func (s *RootKeyStoreSuite) TestIsValidWithPolicy(c *gc.C) {
 	var now time.Time
-	s.PatchValue(mgorootkeystore.TimeNow, func() time.Time {
-		return now
-	})
+	s.PatchValue(mgorootkeystore.Clock, clockVal(&now))
 	for i, test := range isValidWithPolicyTests {
 		c.Logf("test %d: %v", i, test.about)
-		now = test.now
-		c.Assert(mgorootkeystore.IsValidWithPolicy(test.key, test.policy), gc.Equals, test.expect)
+		c.Assert(test.key.IsValidWithPolicy(dbrootkeystore.Policy(test.policy), test.now), gc.Equals, test.expect)
 	}
 }
 
@@ -111,9 +109,7 @@ func (s *RootKeyStoreSuite) TestRootKeyUsesKeysValidWithPolicy(c *gc.C) {
 	// We re-use the TestIsValidWithPolicy tests so that we
 	// know that the mongo logic uses the same behaviour.
 	var now time.Time
-	s.PatchValue(mgorootkeystore.TimeNow, func() time.Time {
-		return now
-	})
+	s.PatchValue(mgorootkeystore.Clock, clockVal(&now))
 	for i, test := range isValidWithPolicyTests {
 		c.Logf("test %d: %v", i, test.about)
 		if test.key.RootKey == nil {
@@ -145,9 +141,7 @@ func (s *RootKeyStoreSuite) TestRootKeyUsesKeysValidWithPolicy(c *gc.C) {
 
 func (s *RootKeyStoreSuite) TestRootKey(c *gc.C) {
 	now := epoch
-	s.PatchValue(mgorootkeystore.TimeNow, func() time.Time {
-		return now
-	})
+	s.PatchValue(mgorootkeystore.Clock, clockVal(&now))
 
 	store := mgorootkeystore.NewRootKeys(10).NewStore(s.coll(), mgorootkeystore.Policy{
 		GenerateInterval: 2 * time.Minute,
@@ -194,9 +188,7 @@ func (s *RootKeyStoreSuite) TestRootKey(c *gc.C) {
 
 func (s *RootKeyStoreSuite) TestRootKeyDefaultGenerateInterval(c *gc.C) {
 	now := epoch
-	s.PatchValue(mgorootkeystore.TimeNow, func() time.Time {
-		return now
-	})
+	s.PatchValue(mgorootkeystore.Clock, clockVal(&now))
 	store := mgorootkeystore.NewRootKeys(10).NewStore(s.coll(), mgorootkeystore.Policy{
 		ExpiryDuration: 5 * time.Minute,
 	})
@@ -219,13 +211,13 @@ func (s *RootKeyStoreSuite) TestRootKeyDefaultGenerateInterval(c *gc.C) {
 var preferredRootKeyTests = []struct {
 	about    string
 	now      time.Time
-	keys     []mgorootkeystore.RootKey
+	keys     []dbrootkeystore.RootKey
 	policy   mgorootkeystore.Policy
 	expectId []byte
 }{{
 	about: "latest creation time is preferred",
 	now:   epoch.Add(5 * time.Minute),
-	keys: []mgorootkeystore.RootKey{{
+	keys: []dbrootkeystore.RootKey{{
 		Created: epoch.Add(4 * time.Minute),
 		Expires: epoch.Add(15 * time.Minute),
 		Id:      []byte("id0"),
@@ -249,7 +241,7 @@ var preferredRootKeyTests = []struct {
 }, {
 	about: "ineligible keys are exluded",
 	now:   epoch.Add(5 * time.Minute),
-	keys: []mgorootkeystore.RootKey{{
+	keys: []dbrootkeystore.RootKey{{
 		Created: epoch.Add(4 * time.Minute),
 		Expires: epoch.Add(15 * time.Minute),
 		Id:      []byte("id0"),
@@ -274,9 +266,7 @@ var preferredRootKeyTests = []struct {
 
 func (s *RootKeyStoreSuite) TestPreferredRootKeyFromDatabase(c *gc.C) {
 	var now time.Time
-	s.PatchValue(mgorootkeystore.TimeNow, func() time.Time {
-		return now
-	})
+	s.PatchValue(mgorootkeystore.Clock, clockVal(&now))
 	for i, test := range preferredRootKeyTests {
 		c.Logf("%d: %v", i, test.about)
 		_, err := s.coll().RemoveAll(nil)
@@ -295,9 +285,7 @@ func (s *RootKeyStoreSuite) TestPreferredRootKeyFromDatabase(c *gc.C) {
 
 func (s *RootKeyStoreSuite) TestPreferredRootKeyFromCache(c *gc.C) {
 	var now time.Time
-	s.PatchValue(mgorootkeystore.TimeNow, func() time.Time {
-		return now
-	})
+	s.PatchValue(mgorootkeystore.Clock, clockVal(&now))
 	for i, test := range preferredRootKeyTests {
 		c.Logf("%d: %v", i, test.about)
 		for _, key := range test.keys {
@@ -326,9 +314,7 @@ func (s *RootKeyStoreSuite) TestPreferredRootKeyFromCache(c *gc.C) {
 
 func (s *RootKeyStoreSuite) TestGet(c *gc.C) {
 	now := epoch
-	s.PatchValue(mgorootkeystore.TimeNow, func() time.Time {
-		return now
-	})
+	s.PatchValue(mgorootkeystore.Clock, clockVal(&now))
 
 	store := mgorootkeystore.NewRootKeys(5).NewStore(s.coll(), mgorootkeystore.Policy{
 		GenerateInterval: 1 * time.Minute,
@@ -411,9 +397,7 @@ func (s *RootKeyStoreSuite) TestGetCachesMisses(c *gc.C) {
 
 func (s *RootKeyStoreSuite) TestGetExpiredItemFromCache(c *gc.C) {
 	now := epoch
-	s.PatchValue(mgorootkeystore.TimeNow, func() time.Time {
-		return now
-	})
+	s.PatchValue(mgorootkeystore.Clock, clockVal(&now))
 	store := mgorootkeystore.NewRootKeys(10).NewStore(s.coll(), mgorootkeystore.Policy{
 		ExpiryDuration: 5 * time.Minute,
 	})
@@ -500,4 +484,16 @@ func (s *RootKeyStoreSuite) TestLegacy(c *gc.C) {
 
 func (s *RootKeyStoreSuite) coll() *mgo.Collection {
 	return s.Session.DB("test").C("items")
+}
+
+func clockVal(t *time.Time) dbrootkeystore.Clock {
+	return clockFunc(func() time.Time {
+		return *t
+	})
+}
+
+type clockFunc func() time.Time
+
+func (f clockFunc) Now() time.Time {
+	return f()
 }
