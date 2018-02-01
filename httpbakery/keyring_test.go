@@ -140,7 +140,7 @@ func (s *KeyringSuite) TestThirdPartyInfoForLocationWrongURL(c *gc.C) {
 	_, err := httpbakery.ThirdPartyInfoForLocation(testContext, client, "http://localhost:0")
 	c.Logf("%v", errgo.Details(err))
 	c.Assert(err, gc.ErrorMatches,
-		`(Get|GET) http://localhost:0/discharge/info: dial tcp 127.0.0.1:0: .*connection refused`)
+		`(Get|GET) http://localhost:0/discharge/info: dial tcp (127.0.0.1|\[::1\]):0: .*connection refused`)
 }
 
 func (s *KeyringSuite) TestThirdPartyInfoForLocationReturnsInvalidJSON(c *gc.C) {
