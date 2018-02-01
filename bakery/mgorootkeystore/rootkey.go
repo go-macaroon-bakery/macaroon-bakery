@@ -5,7 +5,6 @@ package mgorootkeystore
 import (
 	"time"
 
-	"github.com/juju/loggo"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
@@ -28,8 +27,6 @@ var (
 
 // Policy holds a store policy for root keys.
 type Policy dbrootkeystore.Policy
-
-var logger = loggo.GetLogger("bakery.mgorootkeystore")
 
 // maxPolicyCache holds the maximum number of store policies that can
 // hold cached keys in a given RootKeys instance.

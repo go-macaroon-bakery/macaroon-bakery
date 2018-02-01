@@ -4,7 +4,6 @@ package form
 import (
 	"net/url"
 
-	"github.com/juju/loggo"
 	"golang.org/x/net/context"
 	"golang.org/x/net/publicsuffix"
 	"gopkg.in/errgo.v1"
@@ -14,8 +13,6 @@ import (
 
 	"gopkg.in/macaroon-bakery.v2/httpbakery"
 )
-
-var logger = loggo.GetLogger("httpbakery.form")
 
 /*
 PROTOCOL

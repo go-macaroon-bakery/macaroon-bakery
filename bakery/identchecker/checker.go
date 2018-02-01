@@ -6,7 +6,6 @@ package identchecker
 import (
 	"sync"
 
-	"github.com/juju/loggo"
 	"golang.org/x/net/context"
 	errgo "gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2"
@@ -14,8 +13,6 @@ import (
 	"gopkg.in/macaroon-bakery.v2/bakery"
 	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
 )
-
-var logger = loggo.GetLogger("bakery.identchecker")
 
 // CheckerParams holds parameters for NewChecker.
 // The only mandatory parameter is MacaroonVerifier.
@@ -48,6 +45,10 @@ type CheckerParams struct {
 	// always have been obtained from a call to
 	// IdentityClient.DeclaredIdentity.
 	Authorizer Authorizer
+
+	// Logger is used to log checker operations. If it is nil,
+	// DefaultLogger("bakery.identchecker") will be used.
+	Logger bakery.Logger
 }
 
 // NewChecker returns a new Checker using the given parameters.
@@ -57,6 +58,9 @@ func NewChecker(p CheckerParams) *Checker {
 	}
 	if p.Authorizer == nil {
 		p.Authorizer = ClosedAuthorizer
+	}
+	if p.Logger == nil {
+		p.Logger = bakery.DefaultLogger("bakery.identchecker")
 	}
 	c := &Checker{
 		p: p,
@@ -144,7 +148,7 @@ type AuthChecker struct {
 // proceed.
 func (c *AuthChecker) Allow(ctx context.Context, ops ...bakery.Op) (*AuthInfo, error) {
 	loginInfo, loginErr := c.authChecker.Allow(ctx, LoginOp)
-	logger.Infof("allow loginop: %#v; err %#v", loginInfo, loginErr)
+	c.checker.p.Logger.Infof(ctx, "allow loginop: %#v; err %#v", loginInfo, loginErr)
 	var identity Identity
 	var identityCaveats []checkers.Caveat
 	if loginErr == nil {

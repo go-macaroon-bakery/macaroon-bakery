@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/juju/loggo"
 	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/macaroon.v2"
@@ -17,8 +16,6 @@ import (
 // testContext holds the testing background context - its associated time when checking
 // time-before caveats will always be the value of epoch.
 var testContext = checkers.ContextWithClock(context.Background(), stoppedClock{epoch})
-
-var logger = loggo.GetLogger("bakery.bakery_test")
 
 var basicOp = bakery.Op{"basic", "basic"}
 

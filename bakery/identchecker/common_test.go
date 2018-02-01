@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/juju/loggo"
 	"golang.org/x/net/context"
 	"gopkg.in/macaroon.v2"
 
@@ -15,8 +14,6 @@ import (
 // testContext holds the testing background context - its associated time when checking
 // time-before caveats will always be the value of epoch.
 var testContext = checkers.ContextWithClock(context.Background(), stoppedClock{epoch})
-
-var logger = loggo.GetLogger("bakery.bakery_test")
 
 var (
 	epoch = time.Date(1900, 11, 17, 19, 00, 13, 0, time.UTC)
