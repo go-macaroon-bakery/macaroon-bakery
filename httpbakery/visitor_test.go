@@ -8,6 +8,7 @@ import (
 
 	jujutesting "github.com/juju/testing"
 	jc "github.com/juju/testing/checkers"
+	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 
 	"gopkg.in/macaroon-bakery.v2/httpbakery"
@@ -26,7 +27,7 @@ func (*InteractorSuite) TestLegacyGetInteractionMethodsGetFailure(c *gc.C) {
 	}))
 	defer srv.Close()
 
-	methods := httpbakery.LegacyGetInteractionMethods(testContext, http.DefaultClient, mustParseURL(srv.URL))
+	methods := httpbakery.LegacyGetInteractionMethods(testContext, nopLogger{}, http.DefaultClient, mustParseURL(srv.URL))
 	// On error, it falls back to just the single default interactive method.
 	c.Assert(methods, jc.DeepEquals, map[string]*url.URL{
 		"interactive": mustParseURL(srv.URL),
@@ -40,7 +41,7 @@ func (*InteractorSuite) TestLegacyGetInteractionMethodsSuccess(c *gc.C) {
 	}))
 	defer srv.Close()
 
-	methods := httpbakery.LegacyGetInteractionMethods(testContext, http.DefaultClient, mustParseURL(srv.URL))
+	methods := httpbakery.LegacyGetInteractionMethods(testContext, nopLogger{}, http.DefaultClient, mustParseURL(srv.URL))
 	c.Assert(methods, jc.DeepEquals, map[string]*url.URL{
 		"interactive": mustParseURL(srv.URL),
 		"method":      mustParseURL("http://somewhere/something"),
@@ -54,10 +55,15 @@ func (*InteractorSuite) TestLegacyGetInteractionMethodsInvalidURL(c *gc.C) {
 	}))
 	defer srv.Close()
 
-	methods := httpbakery.LegacyGetInteractionMethods(testContext, http.DefaultClient, mustParseURL(srv.URL))
+	methods := httpbakery.LegacyGetInteractionMethods(testContext, nopLogger{}, http.DefaultClient, mustParseURL(srv.URL))
 
 	// On error, it falls back to just the single default interactive method.
 	c.Assert(methods, jc.DeepEquals, map[string]*url.URL{
 		"interactive": mustParseURL(srv.URL),
 	})
 }
+
+type nopLogger struct{}
+
+func (nopLogger) Debugf(context.Context, string, ...interface{}) {}
+func (nopLogger) Infof(context.Context, string, ...interface{})  {}

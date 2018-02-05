@@ -775,7 +775,6 @@ func (c *client) requestMacaroons(svc *service) []macaroon.Slice {
 	sort.Strings(names)
 	ms := make([]macaroon.Slice, len(names))
 	for i, name := range names {
-		logger.Infof("macaroon %d: %v", i, name)
 		ms[i] = mmap[name]
 	}
 	return ms

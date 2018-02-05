@@ -7,7 +7,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/juju/loggo"
 	"gopkg.in/errgo.v1"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"
@@ -29,8 +28,6 @@ var (
 
 // Policy holds a store policy for root keys.
 type Policy dbrootkeystore.Policy
-
-var logger = loggo.GetLogger("bakery.postgresrootkeystore")
 
 // maxPolicyCache holds the maximum number of store policies that can
 // hold cached keys in a given RootKeys instance.

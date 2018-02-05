@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"sync"
 
-	"github.com/juju/loggo"
 	"github.com/julienschmidt/httprouter"
 	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
@@ -18,8 +17,6 @@ import (
 	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
 	"gopkg.in/macaroon-bakery.v2/httpbakery"
 )
-
-var logger = loggo.GetLogger("bakerytest")
 
 // Discharger represents a third party caveat discharger server.
 type Discharger struct {
