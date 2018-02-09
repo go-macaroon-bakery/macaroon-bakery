@@ -58,6 +58,10 @@ type BakeryParams struct {
 
 	// Location holds the location to use when creating new macaroons.
 	Location string
+
+	// Logger is used to log checker operations. If it is nil,
+	// DefaultLogger("bakery.identchecker") will be used.
+	Logger bakery.Logger
 }
 
 // NewBakery returns a new Bakery instance which combines an Oven with a
@@ -86,6 +90,7 @@ func NewBakery(p BakeryParams) *Bakery {
 		MacaroonVerifier: oven,
 		IdentityClient:   p.IdentityClient,
 		Authorizer:       p.Authorizer,
+		Logger:           p.Logger,
 	})
 	return &Bakery{
 		Oven:    oven,
