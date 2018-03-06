@@ -266,7 +266,7 @@ func (c *Client) do1(ctx context.Context, req *http.Request, getError func(resp 
 	if c.Client.Jar == nil {
 		return nil, errgo.New("no cookie jar supplied in HTTP client")
 	}
-	rreq, ok := newRetryableRequest(req)
+	rreq, ok := newRetryableRequest(c.Client, req)
 	if !ok {
 		return nil, fmt.Errorf("request body is not seekable")
 	}
@@ -294,11 +294,8 @@ func (c *Client) do1(ctx context.Context, req *http.Request, getError func(resp 
 	}
 }
 
-func (c *Client) do2(ctx context.Context, req *retryableRequest, getError func(resp *http.Response) error) (*http.Response, error) {
-	if err := req.try(); err != nil {
-		return nil, errgo.Mask(err)
-	}
-	httpResp, err := ctxhttp.Do(ctx, c.Client, req.req)
+func (c *Client) do2(ctx context.Context, rreq *retryableRequest, getError func(resp *http.Response) error) (*http.Response, error) {
+	httpResp, err := rreq.do(ctx)
 	if err != nil {
 		return nil, errgo.Mask(err, errgo.Any)
 	}
