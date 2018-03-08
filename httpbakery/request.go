@@ -80,10 +80,9 @@ func (rreq *retryableRequest) do(ctx context.Context) (*http.Response, error) {
 func (rreq *retryableRequest) prepare() (*http.Request, error) {
 	req := new(http.Request)
 	*req = *rreq.req
-	// Make sure that the original cookie header is
-	// still in place so that we only end up with the
-	// cookies that are actually added by the
-	// HTTP cookie logic, and not the ones that were
+	// Make sure that the original cookie header is still in place
+	// so that we only end up with the cookies that are actually
+	// added by the HTTP cookie logic, and not the ones that were
 	// added in previous requests too.
 	req.Header.Set("Cookie", rreq.origCookie)
 	if rreq.body == nil {

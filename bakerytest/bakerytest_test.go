@@ -146,6 +146,14 @@ func (s *suite) TestConcurrentDischargers(c *gc.C) {
 	c.Assert(http.DefaultTransport.(*http.Transport).TLSClientConfig.InsecureSkipVerify, gc.Equals, false)
 }
 
+func (s *suite) TestWithGlobalAllowInsecure(c *gc.C) {
+	httpbakery.AllowInsecureThirdPartyLocator = true
+	defer func() {
+		httpbakery.AllowInsecureThirdPartyLocator = false
+	}()
+	s.TestDischargerSimple(c)
+}
+
 func (s *suite) TestInteractiveDischarger(c *gc.C) {
 	d := bakerytest.NewDischarger(nil)
 	defer d.Close()

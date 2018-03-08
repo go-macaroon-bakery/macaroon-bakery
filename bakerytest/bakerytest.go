@@ -46,6 +46,10 @@ type Discharger struct {
 // locator, returning locator information for itself only.
 //
 // The returned discharger should be closed after use.
+//
+// This should not be used concurrently unless httpbakery.AllowInsecureThirdPartyLocator
+// is set, because otherwise it needs to run a TLS server and modify http.DefaultTransport
+// to allow insecure connections.
 func NewDischarger(locator bakery.ThirdPartyLocator) *Discharger {
 	key, err := bakery.GenerateKey()
 	if err != nil {
@@ -56,16 +60,21 @@ func NewDischarger(locator bakery.ThirdPartyLocator) *Discharger {
 		Key:     key,
 		Locator: locator,
 	}
-	d.server = httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		d.Mux.ServeHTTP(w, req)
-	}))
+	})
+	if httpbakery.AllowInsecureThirdPartyLocator {
+		d.server = httptest.NewServer(handler)
+	} else {
+		d.server = httptest.NewTLSServer(handler)
+		startSkipVerify()
+	}
 	bd := httpbakery.NewDischarger(httpbakery.DischargerParams{
 		Key:     key,
 		Locator: locator,
 		Checker: d,
 	})
 	d.AddHTTPHandlers(bd.Handlers())
-	startSkipVerify()
 	return d
 }
 
