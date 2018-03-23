@@ -17,21 +17,49 @@ import (
 )
 
 // ThirdPartyCaveatChecker is used to check third party caveats.
+// This interface is deprecated and included only for backward
+// compatibility; ThirdPartyCaveatCheckerP should be used instead.
 type ThirdPartyCaveatChecker interface {
+	// CheckThirdPartyCaveat is like ThirdPartyCaveatCheckerP.CheckThirdPartyCaveat
+	// except that it uses separate arguments instead of a struct arg.
+	CheckThirdPartyCaveat(ctx context.Context, info *bakery.ThirdPartyCaveatInfo, req *http.Request, token *DischargeToken) ([]checkers.Caveat, error)
+}
+
+// ThirdPartyCaveatCheckerP is used to check third party caveats.
+// The "P" stands for "Params" - this was added after ThirdPartyCaveatChecker
+// which can't be removed without breaking backwards compatibility.
+type ThirdPartyCaveatCheckerP interface {
 	// CheckThirdPartyCaveat is used to check whether a client
 	// making the given request should be allowed a discharge for
-	// the given caveat. On success, the caveat will be discharged,
+	// the p.Info.Condition. On success, the caveat will be discharged,
 	// with any returned caveats also added to the discharge
 	// macaroon.
 	//
-	// The given token, if non-nil, is a token obtained from
+	// The p.Token field, if non-nil, is a token obtained from
 	// Interactor.Interact as the result of a discharge interaction
 	// after an interaction required error.
 	//
 	// Note than when used in the context of a discharge handler
 	// created by Discharger, any returned errors will be marshaled
 	// as documented in DischargeHandler.ErrorMapper.
-	CheckThirdPartyCaveat(ctx context.Context, info *bakery.ThirdPartyCaveatInfo, req *http.Request, token *DischargeToken) ([]checkers.Caveat, error)
+	CheckThirdPartyCaveat(ctx context.Context, p ThirdPartyCaveatCheckerParams) ([]checkers.Caveat, error)
+}
+
+// ThirdPartyCaveatCheckerParams holds the parameters passed to
+// CheckThirdPartyCaveatP.
+type ThirdPartyCaveatCheckerParams struct {
+	// Caveat holds information about the caveat being discharged.
+	Caveat *bakery.ThirdPartyCaveatInfo
+
+	// Token holds the discharge token provided by the client, if any.
+	Token *DischargeToken
+
+	// Req holds the HTTP discharge request.
+	Request *http.Request
+
+	// Response holds the HTTP response writer. Implementations
+	// must not call its WriteHeader or Write methods.
+	Response http.ResponseWriter
 }
 
 // ThirdPartyCaveatCheckerFunc implements ThirdPartyCaveatChecker
@@ -40,6 +68,14 @@ type ThirdPartyCaveatCheckerFunc func(ctx context.Context, req *http.Request, in
 
 func (f ThirdPartyCaveatCheckerFunc) CheckThirdPartyCaveat(ctx context.Context, info *bakery.ThirdPartyCaveatInfo, req *http.Request, token *DischargeToken) ([]checkers.Caveat, error) {
 	return f(ctx, req, info, token)
+}
+
+// ThirdPartyCaveatCheckerPFunc implements ThirdPartyCaveatCheckerP
+// by calling a function.
+type ThirdPartyCaveatCheckerPFunc func(ctx context.Context, p ThirdPartyCaveatCheckerParams) ([]checkers.Caveat, error)
+
+func (f ThirdPartyCaveatCheckerPFunc) CheckThirdPartyCaveat(ctx context.Context, p ThirdPartyCaveatCheckerParams) ([]checkers.Caveat, error) {
+	return f(ctx, p)
 }
 
 // newDischargeClient returns a discharge client that addresses the
@@ -62,7 +98,12 @@ func newDischargeClient(location string, client httprequest.Doer) *dischargeClie
 
 // Discharger holds parameters for creating a new Discharger.
 type DischargerParams struct {
+	// CheckerP is used to actually check the caveats.
+	// This will be used in preference to Checker.
+	CheckerP ThirdPartyCaveatCheckerP
+
 	// Checker is used to actually check the caveats.
+	// This should be considered deprecated and will be ignored if CheckerP is set.
 	Checker ThirdPartyCaveatChecker
 
 	// Key holds the key pair of the discharger.
@@ -122,6 +163,11 @@ func NewDischarger(p DischargerParams) *Discharger {
 	}
 	if p.Locator == nil {
 		p.Locator = emptyLocator{}
+	}
+	if p.CheckerP == nil {
+		p.CheckerP = ThirdPartyCaveatCheckerPFunc(func(ctx context.Context, cp ThirdPartyCaveatCheckerParams) ([]checkers.Caveat, error) {
+			return p.Checker.CheckThirdPartyCaveat(ctx, cp.Caveat, cp.Request, cp.Token)
+		})
 	}
 	return &Discharger{
 		p: p,
@@ -224,7 +270,12 @@ func (h dischargeHandler) Discharge(p httprequest.Params, r *dischargeRequest) (
 		Key:    h.discharger.p.Key,
 		Checker: bakery.ThirdPartyCaveatCheckerFunc(
 			func(ctx context.Context, cav *bakery.ThirdPartyCaveatInfo) ([]checkers.Caveat, error) {
-				return h.discharger.p.Checker.CheckThirdPartyCaveat(ctx, cav, p.Request, token)
+				return h.discharger.p.CheckerP.CheckThirdPartyCaveat(ctx, ThirdPartyCaveatCheckerParams{
+					Caveat:   cav,
+					Request:  p.Request,
+					Response: p.Response,
+					Token:    token,
+				})
 			},
 		),
 		Locator: h.discharger.p.Locator,

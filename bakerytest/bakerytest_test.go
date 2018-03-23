@@ -65,7 +65,7 @@ func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 		return nil, nil
 	}
 	d1 := bakerytest.NewDischarger(nil)
-	d1.Checker = bakerytest.ConditionParser(d1checker)
+	d1.CheckerP = bakerytest.ConditionParser(d1checker)
 	defer d1.Close()
 	d2checker := func(cond, arg string) ([]checkers.Caveat, error) {
 		return []checkers.Caveat{{
@@ -74,7 +74,7 @@ func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 		}}, nil
 	}
 	d2 := bakerytest.NewDischarger(d1)
-	d2.Checker = bakerytest.ConditionParser(d2checker)
+	d2.CheckerP = bakerytest.ConditionParser(d2checker)
 	defer d2.Close()
 	locator := bakery.NewThirdPartyStore()
 	locator.AddInfo(d1.Location(), bakery.ThirdPartyInfo{

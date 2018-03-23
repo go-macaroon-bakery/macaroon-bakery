@@ -162,8 +162,8 @@ type testIdentityServer struct {
 }
 
 func newTestIdentityServer() *testIdentityServer {
-	checker := func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
-		if string(cav.Condition) != "is-authenticated-user" {
+	checker := func(ctx context.Context, p httpbakery.ThirdPartyCaveatCheckerParams) ([]checkers.Caveat, error) {
+		if string(p.Caveat.Condition) != "is-authenticated-user" {
 			return nil, errgo.New("unexpected caveat")
 		}
 		return []checkers.Caveat{
@@ -171,7 +171,7 @@ func newTestIdentityServer() *testIdentityServer {
 		}, nil
 	}
 	discharger := bakerytest.NewDischarger(nil)
-	discharger.Checker = httpbakery.ThirdPartyCaveatCheckerFunc(checker)
+	discharger.CheckerP = httpbakery.ThirdPartyCaveatCheckerPFunc(checker)
 	return &testIdentityServer{
 		Discharger: discharger,
 	}
