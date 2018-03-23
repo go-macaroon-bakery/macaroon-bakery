@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"net/http"
 
 	gc "gopkg.in/check.v1"
@@ -24,7 +25,7 @@ var loginCookieTests = []struct {
 }{{
 	about: "success",
 	addCookie: func(req *http.Request, key *bakery.PublicKey) {
-		agent.AddCookie(req, "bob", key)
+		addCookie(req, "bob", key)
 	},
 	expectUser: "bob",
 }, {
@@ -53,13 +54,13 @@ var loginCookieTests = []struct {
 }, {
 	about: "no username",
 	addCookie: func(req *http.Request, key *bakery.PublicKey) {
-		agent.AddCookie(req, "", key)
+		addCookie(req, "", key)
 	},
 	expectError: "agent login has no user name",
 }, {
 	about: "no public key",
 	addCookie: func(req *http.Request, key *bakery.PublicKey) {
-		agent.AddCookie(req, "bob", nil)
+		addCookie(req, "bob", nil)
 	},
 	expectError: "agent login has no public key",
 }}
@@ -86,4 +87,24 @@ func (s *cookieSuite) TestLoginCookie(c *gc.C) {
 		c.Assert(gotUsername, gc.Equals, test.expectUser)
 		c.Assert(gotKey, gc.DeepEquals, &key.Public)
 	}
+}
+
+// addCookie adds an agent-login cookie with the specified parameters to
+// the given request.
+func addCookie(req *http.Request, username string, key *bakery.PublicKey) {
+	al := agent.AgentLogin{
+		Username:  username,
+		PublicKey: key,
+	}
+	data, err := json.Marshal(al)
+	if err != nil {
+		// This should be impossible as the agentLogin structure
+		// has to be marshalable. It is certainly a bug if it
+		// isn't.
+		panic(errgo.Notef(err, "cannot marshal %s cookie", agent.CookieName))
+	}
+	req.AddCookie(&http.Cookie{
+		Name:  agent.CookieName,
+		Value: base64.StdEncoding.EncodeToString(data),
+	})
 }

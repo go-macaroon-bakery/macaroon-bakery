@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"net/http"
 
@@ -19,26 +18,6 @@ type agentLogin struct {
 	PublicKey *bakery.PublicKey `json:"public_key"`
 }
 
-// addCookie adds an agent-login cookie with the specified parameters to
-// the given request.
-func addCookie(req *http.Request, username string, key *bakery.PublicKey) {
-	al := agentLogin{
-		Username:  username,
-		PublicKey: key,
-	}
-	data, err := json.Marshal(al)
-	if err != nil {
-		// This should be impossible as the agentLogin structure
-		// has to be marshalable. It is certainly a bug if it
-		// isn't.
-		panic(errgo.Notef(err, "cannot marshal %s cookie", cookieName))
-	}
-	req.AddCookie(&http.Cookie{
-		Name:  cookieName,
-		Value: base64.StdEncoding.EncodeToString(data),
-	})
-}
-
 // ErrNoAgentLoginCookie is the error returned when the expected
 // agent login cookie has not been found.
 var ErrNoAgentLoginCookie = errgo.New("no agent-login cookie found")
@@ -46,6 +25,9 @@ var ErrNoAgentLoginCookie = errgo.New("no agent-login cookie found")
 // LoginCookie returns details of the agent login cookie
 // from the given request. If no agent-login cookie is found,
 // it returns an ErrNoAgentLoginCookie error.
+//
+// This function is only applicable to the legacy agent
+// protocol and will be deprecated in the future.
 func LoginCookie(req *http.Request) (username string, key *bakery.PublicKey, err error) {
 	c, err := req.Cookie(cookieName)
 	if err != nil {
