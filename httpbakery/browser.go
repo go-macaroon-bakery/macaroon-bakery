@@ -143,14 +143,21 @@ func (wi WebBrowserInteractor) Interact(ctx context.Context, client *Client, loc
 	if err != nil {
 		return nil, errgo.Notef(err, "cannot make relative wait URL")
 	}
+	if err := wi.openWebBrowser(visitURL); err != nil {
+		return nil, errgo.Mask(err)
+	}
+	return waitForToken(ctx, client, waitTokenURL)
+}
+
+func (wi WebBrowserInteractor) openWebBrowser(u *url.URL) error {
 	open := wi.OpenWebBrowser
 	if open == nil {
 		open = OpenWebBrowser
 	}
-	if err := open(visitURL); err != nil {
-		return nil, errgo.Mask(err)
+	if err := open(u); err != nil {
+		return errgo.Mask(err)
 	}
-	return waitForToken(ctx, client, waitTokenURL)
+	return nil
 }
 
 // waitForToken returns a token from a the waitToken URL
@@ -182,5 +189,8 @@ func waitForToken(ctx context.Context, client *Client, waitTokenURL *url.URL) (*
 
 // LegacyInteract implements LegacyInteractor by opening a web browser page.
 func (wi WebBrowserInteractor) LegacyInteract(ctx context.Context, client *Client, location string, visitURL *url.URL) error {
-	return OpenWebBrowser(visitURL)
+	if err := wi.openWebBrowser(visitURL); err != nil {
+		return errgo.Mask(err)
+	}
+	return nil
 }

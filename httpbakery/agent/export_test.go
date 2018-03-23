@@ -1,3 +1,5 @@
 package agent
 
-var AddCookie = addCookie
+type AgentLogin agentLogin
+
+const CookieName = cookieName
