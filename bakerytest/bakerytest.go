@@ -34,9 +34,12 @@ type Discharger struct {
 	// returned by a third party caveat checker.
 	Locator bakery.ThirdPartyLocator
 
-	// Checker is called to check third party caveats
-	// when they're discharged. When it's nil, caveats
-	// will be discharged unconditionally.
+	// CheckerP is called to check third party caveats when they're
+	// discharged. It defaults to NopThirdPartyCaveatCheckerP.
+	CheckerP httpbakery.ThirdPartyCaveatCheckerP
+
+	// Checker is the deprecated version of CheckerP, and will be
+	// ignored if CheckerP is non-nil.
 	Checker httpbakery.ThirdPartyCaveatChecker
 }
 
@@ -70,9 +73,9 @@ func NewDischarger(locator bakery.ThirdPartyLocator) *Discharger {
 		startSkipVerify()
 	}
 	bd := httpbakery.NewDischarger(httpbakery.DischargerParams{
-		Key:     key,
-		Locator: locator,
-		Checker: d,
+		Key:      key,
+		Locator:  locator,
+		CheckerP: d,
 	})
 	d.AddHTTPHandlers(bd.Handlers())
 	return d
@@ -139,25 +142,34 @@ func (d *Discharger) DischargeMacaroon(
 
 var ErrTokenNotRecognized = errgo.New("discharge token not recognized")
 
-// CheckThirdPartyCaveat implements httpbakery.ThirdPartyCaveatChecker.
-// If d.Checker is nil, it will always discharge the caveat;
-// otherwise it calls d.Checker.CheckThirdPartyCaveat
-// to do the check, and retains the error cause in any
-// returned error.
-func (d *Discharger) CheckThirdPartyCaveat(ctx context.Context, cav *bakery.ThirdPartyCaveatInfo, req *http.Request, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
+// CheckThirdPartyCaveat implements httpbakery.ThirdPartyCaveatCheckerP
+// by calling d.CheckerP, or d.Checker if that's nil.
+func (d *Discharger) CheckThirdPartyCaveat(ctx context.Context, p httpbakery.ThirdPartyCaveatCheckerParams) ([]checkers.Caveat, error) {
+	if d.CheckerP != nil {
+		return d.CheckerP.CheckThirdPartyCaveat(ctx, p)
+	}
 	if d.Checker == nil {
 		return nil, nil
 	}
-	caveats, err := d.Checker.CheckThirdPartyCaveat(ctx, cav, req, token)
-	if err != nil {
-		return nil, errgo.Mask(err, errgo.Any)
-	}
-	return caveats, nil
+	return d.Checker.CheckThirdPartyCaveat(ctx, p.Caveat, p.Request, p.Token)
 }
 
-// ConditionParser adapts the given function into an httpbakery.ThirdPartyCaveatChecker.
+// ConditionParser adapts the given function into an httpbakery.ThirdPartyCaveatCheckerP.
 // It parses the caveat's condition and calls the function with the result.
-func ConditionParser(check func(cond, arg string) ([]checkers.Caveat, error)) httpbakery.ThirdPartyCaveatChecker {
+func ConditionParser(check func(cond, arg string) ([]checkers.Caveat, error)) httpbakery.ThirdPartyCaveatCheckerP {
+	f := func(ctx context.Context, p httpbakery.ThirdPartyCaveatCheckerParams) ([]checkers.Caveat, error) {
+		cond, arg, err := checkers.ParseCaveat(string(p.Caveat.Condition))
+		if err != nil {
+			return nil, err
+		}
+		return check(cond, arg)
+	}
+	return httpbakery.ThirdPartyCaveatCheckerPFunc(f)
+}
+
+// ConditionParserP adapts the given function into an httpbakery.ThirdPartyCaveatChecker.
+// It parses the caveat's condition and calls the function with the result.
+func ConditionParserP(check func(cond, arg string) ([]checkers.Caveat, error)) httpbakery.ThirdPartyCaveatChecker {
 	f := func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
 		cond, arg, err := checkers.ParseCaveat(string(cav.Condition))
 		if err != nil {

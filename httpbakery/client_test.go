@@ -216,13 +216,13 @@ func (s *ClientSuite) TestDischargeServerWithStringCaveatId(c *gc.C) {
 
 func assertDischargeServerDischargesConditionForVersion(c *gc.C, cond string, version bakery.Version) {
 	called := 0
-	checker := func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
+	checker := func(ctx context.Context, p httpbakery.ThirdPartyCaveatCheckerParams) ([]checkers.Caveat, error) {
 		called++
-		c.Check(string(cav.Condition), gc.Equals, cond)
+		c.Check(string(p.Caveat.Condition), gc.Equals, cond)
 		return nil, nil
 	}
 	discharger := bakerytest.NewDischarger(nil)
-	discharger.Checker = httpbakery.ThirdPartyCaveatCheckerFunc(checker)
+	discharger.CheckerP = httpbakery.ThirdPartyCaveatCheckerPFunc(checker)
 
 	bKey, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
@@ -310,9 +310,9 @@ func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
 	// service so that each one can know the location
 	// to discharge at.
 	db1 := newBakery("loc", locator, nil)
-	key2, h2 := newHTTPDischarger(db1, httpbakery.ThirdPartyCaveatCheckerFunc(func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
+	key2, h2 := newHTTPDischarger(db1, httpbakery.ThirdPartyCaveatCheckerPFunc(func(ctx context.Context, p httpbakery.ThirdPartyCaveatCheckerParams) ([]checkers.Caveat, error) {
 		called[2]++
-		if string(cav.Condition) != "is-ok" {
+		if string(p.Caveat.Condition) != "is-ok" {
 			return nil, fmt.Errorf("unrecognized caveat at srv2")
 		}
 		return nil, nil
@@ -325,16 +325,16 @@ func (s *ClientSuite) TestDischargeServerWithMacaraqOnDischarge(c *gc.C) {
 	})
 
 	db2 := newBakery("loc", locator, nil)
-	key1, h1 := newHTTPDischarger(db2, httpbakery.ThirdPartyCaveatCheckerFunc(func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
+	key1, h1 := newHTTPDischarger(db2, httpbakery.ThirdPartyCaveatCheckerPFunc(func(ctx context.Context, p httpbakery.ThirdPartyCaveatCheckerParams) ([]checkers.Caveat, error) {
 		called[1]++
-		if _, err := db2.Checker.Auth(httpbakery.RequestMacaroons(req)...).Allow(testContext, testOp); err != nil {
+		if _, err := db2.Checker.Auth(httpbakery.RequestMacaroons(p.Request)...).Allow(testContext, testOp); err != nil {
 			c.Logf("returning discharge required error")
 			return nil, newDischargeRequiredError(serverHandlerParams{
 				bakery:       db2,
 				authLocation: srv2.URL,
-			}, err, req)
+			}, err, p.Request)
 		}
-		if string(cav.Condition) != "is-ok" {
+		if string(p.Caveat.Condition) != "is-ok" {
 			return nil, fmt.Errorf("unrecognized caveat at srv1")
 		}
 		return nil, nil
@@ -371,13 +371,13 @@ func (s *ClientSuite) TestTwoDischargesRequired(c *gc.C) {
 	// layer of security.
 
 	dischargeCount := 0
-	checker := func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
-		c.Check(string(cav.Condition), gc.Equals, "is-ok")
+	checker := func(ctx context.Context, p httpbakery.ThirdPartyCaveatCheckerParams) ([]checkers.Caveat, error) {
+		c.Check(string(p.Caveat.Condition), gc.Equals, "is-ok")
 		dischargeCount++
 		return nil, nil
 	}
 	discharger := bakerytest.NewDischarger(nil)
-	discharger.Checker = httpbakery.ThirdPartyCaveatCheckerFunc(checker)
+	discharger.CheckerP = httpbakery.ThirdPartyCaveatCheckerPFunc(checker)
 
 	srv := s.serverRequiringMultipleDischarges(httpbakery.MaxDischargeRetries, discharger)
 	defer srv.Close()
@@ -397,11 +397,11 @@ func (s *ClientSuite) TestTwoDischargesRequired(c *gc.C) {
 }
 
 func (s *ClientSuite) TestTooManyDischargesRequired(c *gc.C) {
-	checker := func(ctx context.Context, req *http.Request, cav *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
+	checker := func(context.Context, httpbakery.ThirdPartyCaveatCheckerParams) ([]checkers.Caveat, error) {
 		return nil, nil
 	}
 	discharger := bakerytest.NewDischarger(nil)
-	discharger.Checker = httpbakery.ThirdPartyCaveatCheckerFunc(checker)
+	discharger.CheckerP = httpbakery.ThirdPartyCaveatCheckerPFunc(checker)
 
 	srv := s.serverRequiringMultipleDischarges(httpbakery.MaxDischargeRetries+1, discharger)
 	defer srv.Close()
@@ -498,12 +498,12 @@ func (s *ClientSuite) TestVersion1Generates401Status(c *gc.C) {
 	c.Assert(resp.Header.Get("WWW-Authenticate"), gc.Equals, "Macaroon")
 }
 
-func newHTTPDischarger(b *bakery.Bakery, checker httpbakery.ThirdPartyCaveatChecker) (bakery.PublicKey, http.Handler) {
+func newHTTPDischarger(b *bakery.Bakery, checker httpbakery.ThirdPartyCaveatCheckerP) (bakery.PublicKey, http.Handler) {
 	mux := http.NewServeMux()
 
 	d := httpbakery.NewDischarger(httpbakery.DischargerParams{
-		Checker: checker,
-		Key:     b.Oven.Key(),
+		CheckerP: checker,
+		Key:      b.Oven.Key(),
 	})
 	d.AddMuxHandlers(mux, "/")
 	return b.Oven.Key().Public, mux
@@ -674,7 +674,7 @@ func (s *ClientSuite) TestMacaroonCookiePath(c *gc.C) {
 
 func (s *ClientSuite) TestThirdPartyDischargeRefused(c *gc.C) {
 	d := bakerytest.NewDischarger(nil)
-	d.Checker = bakerytest.ConditionParser(func(cond, arg string) ([]checkers.Caveat, error) {
+	d.CheckerP = bakerytest.ConditionParser(func(cond, arg string) ([]checkers.Caveat, error) {
 		return nil, errgo.New("boo! cond " + cond)
 	})
 	defer d.Close()
@@ -704,7 +704,7 @@ func (s *ClientSuite) TestThirdPartyDischargeRefused(c *gc.C) {
 func (s *ClientSuite) TestDischargeWithInteractionRequiredError(c *gc.C) {
 	d := bakerytest.NewDischarger(nil)
 	defer d.Close()
-	d.Checker = bakerytest.ConditionParser(func(cond, arg string) ([]checkers.Caveat, error) {
+	d.CheckerP = bakerytest.ConditionParser(func(cond, arg string) ([]checkers.Caveat, error) {
 		return nil, &httpbakery.Error{
 			Code:    httpbakery.ErrInteractionRequired,
 			Message: "interaction required",
@@ -874,18 +874,18 @@ func (s *ClientSuite) TestInteractionRequiredMethods(c *gc.C) {
 	checkedWithoutToken := 0
 	interactionKind := ""
 	var serverInteractionMethods map[string]interface{}
-	d.Checker = httpbakery.ThirdPartyCaveatCheckerFunc(func(ctx context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
-		if token != nil {
+	d.CheckerP = httpbakery.ThirdPartyCaveatCheckerPFunc(func(ctx context.Context, p httpbakery.ThirdPartyCaveatCheckerParams) ([]checkers.Caveat, error) {
+		if p.Token != nil {
 			checkedWithToken++
-			if token.Kind != "test" {
+			if p.Token.Kind != "test" {
 				c.Errorf("invalid token value")
 				return nil, errgo.Newf("unexpected token value")
 			}
-			interactionKind = string(token.Value)
+			interactionKind = string(p.Token.Value)
 			return nil, nil
 		}
 		checkedWithoutToken++
-		err := httpbakery.NewInteractionRequiredError(nil, req)
+		err := httpbakery.NewInteractionRequiredError(nil, p.Request)
 		for key, val := range serverInteractionMethods {
 			err.SetInteraction(key, val)
 		}
@@ -974,7 +974,7 @@ func (s *ClientSuite) TestDischargeWithVisitURLError(c *gc.C) {
 	defer visitSrv.Close()
 
 	d := bakerytest.NewDischarger(nil)
-	d.Checker = bakerytest.ConditionParser(func(cond, arg string) ([]checkers.Caveat, error) {
+	d.CheckerP = bakerytest.ConditionParser(func(cond, arg string) ([]checkers.Caveat, error) {
 		return nil, &httpbakery.Error{
 			Code:    httpbakery.ErrInteractionRequired,
 			Message: "interaction required",
