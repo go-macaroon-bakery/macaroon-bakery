@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/nacl/box"
 	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
@@ -29,6 +30,13 @@ type PublicKey struct {
 // PrivateKey is a 256-bit Ed25519 private key.
 type PrivateKey struct {
 	Key
+}
+
+// Public derives the public key from a private key.
+func (k PrivateKey) Public() PublicKey {
+	var pub PublicKey
+	curve25519.ScalarBaseMult((*[32]byte)(&pub.Key), (*[32]byte)(&k.Key))
+	return pub
 }
 
 // Key is a 256-bit Ed25519 key.
