@@ -1,9 +1,13 @@
 package agent_test
 
 import (
+	"encoding/json"
+	"io/ioutil"
 	"net/http"
+	"os"
 
 	"github.com/juju/testing"
+	jc "github.com/juju/testing/checkers"
 	"golang.org/x/net/context"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
@@ -115,6 +119,43 @@ func (s *agentSuite) TestSetUpAuth(c *gc.C) {
 	c.Assert(err, gc.Equals, nil)
 	_, err = s.serverBakery.Checker.Auth(ms).Allow(context.Background(), someOp)
 	c.Assert(err, gc.Equals, nil)
+}
+
+func (s *agentSuite) TestAuthInfoFromEnvironment(c *gc.C) {
+	defer os.Setenv("BAKERY_AGENT_FILE", "")
+
+	f, err := ioutil.TempFile("", "")
+	c.Assert(err, gc.Equals, nil)
+	defer os.Remove(f.Name())
+	defer f.Close()
+
+	authInfo := &agent.AuthInfo{
+		Key: bakery.MustGenerateKey(),
+		Agents: []agent.Agent{{
+			URL:      "https://0.1.2.3/x",
+			Username: "bob",
+		}, {
+			URL:      "https://0.2.3.4",
+			Username: "charlie",
+		}},
+	}
+	data, err := json.Marshal(authInfo)
+	_, err = f.Write(data)
+	c.Assert(err, gc.Equals, nil)
+	f.Close()
+
+	os.Setenv("BAKERY_AGENT_FILE", f.Name())
+
+	authInfo1, err := agent.AuthInfoFromEnvironment()
+	c.Assert(err, gc.Equals, nil)
+	c.Assert(authInfo1, jc.DeepEquals, authInfo)
+}
+
+func (s *agentSuite) TestAuthInfoFromEnvironmentNotSet(c *gc.C) {
+	os.Setenv("BAKERY_AGENT_FILE", "")
+	authInfo, err := agent.AuthInfoFromEnvironment()
+	c.Assert(errgo.Cause(err), gc.Equals, agent.ErrNoAuthInfo)
+	c.Assert(authInfo, gc.IsNil)
 }
 
 func AgentHandlers(h AgentHandler) []httprequest.Handler {
