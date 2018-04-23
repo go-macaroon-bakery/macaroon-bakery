@@ -135,6 +135,11 @@ public: 7ZcOvDAW9opAIPzJ7FdSbz2i2qL8bFZapDlmNLpMzpU=
 	c.Assert(err, gc.ErrorMatches, `missing private key`)
 }
 
+func (*KeysSuite) TestDerivePublicFromPrivate(c *gc.C) {
+	k := mustGenerateKey()
+	c.Assert(k.Private.Public(), gc.Equals, k.Public)
+}
+
 func newTestKey(n byte) bakery.Key {
 	var k bakery.Key
 	for i := range k {
