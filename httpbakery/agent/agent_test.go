@@ -2,10 +2,15 @@ package agent_test
 
 import (
 	"encoding/base64"
+	"encoding/json"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 
+	jujutesting "github.com/juju/testing"
+	jc "github.com/juju/testing/checkers"
 	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
 
@@ -16,6 +21,8 @@ import (
 )
 
 type agentSuite struct {
+	jujutesting.LoggingSuite
+
 	bakery       *bakery.Service
 	dischargeKey *bakery.PublicKey
 	discharger   *Discharger
@@ -24,7 +31,8 @@ type agentSuite struct {
 
 var _ = gc.Suite(&agentSuite{})
 
-func (s *agentSuite) SetUpSuite(c *gc.C) {
+func (s *agentSuite) SetUpTest(c *gc.C) {
+	s.LoggingSuite.SetUpTest(c)
 	key, err := bakery.GenerateKey()
 	c.Assert(err, gc.IsNil)
 	s.dischargeKey = &key.Public
@@ -44,8 +52,9 @@ func (s *agentSuite) SetUpSuite(c *gc.C) {
 	})
 }
 
-func (s *agentSuite) TearDownSuite(c *gc.C) {
+func (s *agentSuite) TearDownTest(c *gc.C) {
 	s.server.Close()
+	s.LoggingSuite.TearDownTest(c)
 }
 
 var agentLoginTests = []struct {
@@ -57,7 +66,7 @@ var agentLoginTests = []struct {
 }, {
 	about: "error response",
 	loginHandler: func(d *Discharger, w http.ResponseWriter, _ *http.Request) {
-		d.WriteJSON(w, http.StatusBadRequest, httpbakery.Error{
+		writeJSON(w, http.StatusBadRequest, httpbakery.Error{
 			Code:    "bad request",
 			Message: "test error",
 		})
@@ -72,13 +81,13 @@ var agentLoginTests = []struct {
 }, {
 	about: "unexpected error response",
 	loginHandler: func(d *Discharger, w http.ResponseWriter, _ *http.Request) {
-		d.WriteJSON(w, http.StatusBadRequest, httpbakery.Error{})
+		writeJSON(w, http.StatusBadRequest, httpbakery.Error{})
 	},
 	expectError: `cannot get discharge from ".*": cannot start interactive session: unexpected response to non-interactive web page visit .* \(content type application/json\)`,
 }, {
 	about: "incorrect JSON",
 	loginHandler: func(d *Discharger, w http.ResponseWriter, _ *http.Request) {
-		d.WriteJSON(w, http.StatusOK, httpbakery.Error{
+		writeJSON(w, http.StatusOK, httpbakery.Error{
 			Code:    "bad request",
 			Message: "test error",
 		})
@@ -228,6 +237,76 @@ func (s *agentSuite) TestLoginCookie(c *gc.C) {
 		c.Assert(foundUser, gc.Equals, test.expectUser)
 		c.Assert(foundKey, gc.DeepEquals, test.expectKey)
 	}
+}
+
+func (s *agentSuite) TestVisitor(c *gc.C) {
+	s.discharger.LoginHandler = nil
+	client := httpbakery.NewClient()
+	var err error
+	client.Key, err = bakery.GenerateKey()
+	c.Assert(err, gc.IsNil)
+
+	client.WebPageVisitor = httpbakery.NewMultiVisitor(agent.NewVisitor(&agent.AuthInfo{
+		Key: client.Key,
+		Agents: []agent.Agent{{
+			URL:      s.discharger.URL,
+			Username: "test-user",
+		}},
+	}))
+	m, err := s.bakery.NewMacaroon([]checkers.Caveat{{
+		Location:  s.discharger.URL,
+		Condition: "test condition",
+	}})
+
+	c.Assert(err, gc.IsNil)
+	ms, err := client.DischargeAll(m)
+	c.Assert(err, gc.IsNil)
+	err = s.bakery.Check(ms, bakery.FirstPartyCheckerFunc(
+		func(caveat string) error {
+			return nil
+		},
+	))
+	c.Assert(err, gc.IsNil)
+}
+
+func (s *agentSuite) TestAuthInfoFromEnvironment(c *gc.C) {
+	defer os.Setenv("BAKERY_AGENT_FILE", "")
+
+	f, err := ioutil.TempFile("", "")
+	c.Assert(err, gc.Equals, nil)
+	defer os.Remove(f.Name())
+	defer f.Close()
+
+	key, err := bakery.GenerateKey()
+	c.Assert(err, gc.Equals, nil)
+
+	authInfo := &agent.AuthInfo{
+		Key: key,
+		Agents: []agent.Agent{{
+			URL:      "https://0.1.2.3/x",
+			Username: "bob",
+		}, {
+			URL:      "https://0.2.3.4",
+			Username: "charlie",
+		}},
+	}
+	data, err := json.Marshal(authInfo)
+	_, err = f.Write(data)
+	c.Assert(err, gc.Equals, nil)
+	f.Close()
+
+	os.Setenv("BAKERY_AGENT_FILE", f.Name())
+
+	authInfo1, err := agent.AuthInfoFromEnvironment()
+	c.Assert(err, gc.Equals, nil)
+	c.Assert(authInfo1, jc.DeepEquals, authInfo)
+}
+
+func (s *agentSuite) TestAuthInfoFromEnvironmentNotSet(c *gc.C) {
+	os.Setenv("BAKERY_AGENT_FILE", "")
+	authInfo, err := agent.AuthInfoFromEnvironment()
+	c.Assert(errgo.Cause(err), gc.Equals, agent.ErrNoAuthInfo)
+	c.Assert(authInfo, gc.IsNil)
 }
 
 func ExampleVisitWebPage() {

@@ -67,6 +67,9 @@ const cookieName = "agent-login"
 // agentLogin defines the structure of an agent login cookie. It is also
 // returned in a successful agent login attempt to help indicate that an
 // agent login has occurred.
+//
+// This type is also used for the body of the POST requet
+// when using Visitor.
 type agentLogin struct {
 	Username  string            `json:"username"`
 	PublicKey *bakery.PublicKey `json:"public_key"`
