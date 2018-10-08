@@ -59,17 +59,22 @@ func (kr *ThirdPartyLocator) AllowInsecure() {
 // by first looking in the backing cache and, if that fails,
 // making an HTTP request to find the information associated
 // with the given discharge location.
+//
+// It refuses to fetch information from non-HTTPS URLs.
 func (kr *ThirdPartyLocator) ThirdPartyInfo(ctx context.Context, loc string) (bakery.ThirdPartyInfo, error) {
+	// If the cache has an entry in, we can use it regardless of URL scheme.
+	// This allows entries for notionally insecure URLs to be added by other means (for
+	// example via a config file).
+	info, err := kr.cache.ThirdPartyInfo(ctx, loc)
+	if err == nil {
+		return info, nil
+	}
 	u, err := url.Parse(loc)
 	if err != nil {
 		return bakery.ThirdPartyInfo{}, errgo.Notef(err, "invalid discharge URL %q", loc)
 	}
 	if u.Scheme != "https" && !kr.allowInsecure && !AllowInsecureThirdPartyLocator {
 		return bakery.ThirdPartyInfo{}, errgo.Newf("untrusted discharge URL %q", loc)
-	}
-	info, err := kr.cache.ThirdPartyInfo(ctx, loc)
-	if err == nil {
-		return info, nil
 	}
 	info, err = ThirdPartyInfoForLocation(ctx, kr.client, loc)
 	if err != nil {
