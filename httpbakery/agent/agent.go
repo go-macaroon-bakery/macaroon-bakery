@@ -61,7 +61,7 @@ func AuthInfoFromEnvironment() (*AuthInfo, error) {
 		return nil, errgo.Mask(err)
 	}
 	if err := json.Unmarshal(data, &ai); err != nil {
-		return nil, errgo.Notef(err, "cannot unmarshal agent information from %q: %v", agentFile)
+		return nil, errgo.Notef(err, "cannot unmarshal agent information from %q: %v", agentFile, err)
 	}
 	if ai.Key == nil {
 		return nil, errgo.Newf("no private key found in %q", agentFile)

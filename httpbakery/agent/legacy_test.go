@@ -312,7 +312,7 @@ func (h legacyAgentHandlers) VisitGet(p httprequest.Params, r *visitGetRequest) 
 // It reports whether it has handled the request.
 func handleLoginMethods(p httprequest.Params, dischargeId string) error {
 	if p.Request.Header.Get("Accept") != "application/json" {
-		return errgo.Newf("got normal visit request", http.StatusInternalServerError)
+		return errgo.Newf("got normal visit request")
 	}
 	httprequest.WriteJSON(p.Response, http.StatusOK, map[string]string{
 		"agent": "/agent?discharge-id=" + dischargeId,
