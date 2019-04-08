@@ -18,6 +18,23 @@ type Namespace struct {
 	uriToPrefix map[string]string
 }
 
+// Equal reports whether ns2 encodes the same namespace
+// as the receiver.
+func (ns1 *Namespace) Equal(ns2 *Namespace) bool {
+	if ns1 == ns2 || ns1 == nil || ns2 == nil {
+		return ns1 == ns2
+	}
+	if len(ns1.uriToPrefix) != len(ns2.uriToPrefix) {
+		return false
+	}
+	for k, v := range ns1.uriToPrefix {
+		if ns2.uriToPrefix[k] != v {
+			return false
+		}
+	}
+	return true
+}
+
 // NewNamespace returns a new namespace with the
 // given initial contents. It will panic if any of the
 // URI keys or their associated prefix are invalid
