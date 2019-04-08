@@ -6,6 +6,7 @@ require (
 	github.com/juju/clock v0.0.0-20180524022203-d293bb356ca4 // indirect
 	github.com/juju/errors v0.0.0-20170703010042-c7d06af17c68 // indirect
 	github.com/juju/loggo v0.0.0-20170605014607-8232ab8918d9
+	github.com/juju/mgotest v1.0.1
 	github.com/juju/postgrestest v1.0.1
 	github.com/juju/retry v0.0.0-20180821225755-9058e192b216 // indirect
 	github.com/juju/testing v0.0.0-20180820040200-b0b89ba330f2
