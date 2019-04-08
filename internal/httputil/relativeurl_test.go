@@ -7,15 +7,12 @@ package httputil_test
 
 import (
 	"net/url"
+	"testing"
 
-	gc "gopkg.in/check.v1"
+	qt "github.com/frankban/quicktest"
 
 	"gopkg.in/macaroon-bakery.v2/internal/httputil"
 )
-
-type relativeURLSuite struct{}
-
-var _ = gc.Suite(&relativeURLSuite{})
 
 var relativeURLTests = []struct {
 	base        string
@@ -128,7 +125,8 @@ var relativeURLTests = []struct {
 	expect: "../../",
 }}
 
-func (*relativeURLSuite) TestRelativeURL(c *gc.C) {
+func TestRelativeURL(t *testing.T) {
+	c := qt.New(t)
 	for i, test := range relativeURLTests {
 		c.Logf("test %d: %q %q", i, test.base, test.target)
 		// Sanity check the test itself.
@@ -136,16 +134,16 @@ func (*relativeURLSuite) TestRelativeURL(c *gc.C) {
 			baseURL := &url.URL{Path: test.base}
 			expectURL := &url.URL{Path: test.expect}
 			targetURL := baseURL.ResolveReference(expectURL)
-			c.Check(targetURL.Path, gc.Equals, test.target, gc.Commentf("resolve reference failure (%q + %q != %q)", test.base, test.expect, test.target))
+			c.Check(targetURL.Path, qt.Equals, test.target, qt.Commentf("resolve reference failure (%q + %q != %q)", test.base, test.expect, test.target))
 		}
 
 		result, err := httputil.RelativeURLPath(test.base, test.target)
 		if test.expectError != "" {
-			c.Assert(err, gc.ErrorMatches, test.expectError)
-			c.Assert(result, gc.Equals, "")
+			c.Assert(err, qt.ErrorMatches, test.expectError)
+			c.Assert(result, qt.Equals, "")
 		} else {
-			c.Assert(err, gc.IsNil)
-			c.Check(result, gc.Equals, test.expect)
+			c.Assert(err, qt.IsNil)
+			c.Check(result, qt.Equals, test.expect)
 		}
 	}
 }

@@ -1,10 +1,10 @@
 package identchecker_test
 
 import (
-	jujutesting "github.com/juju/testing"
-	jc "github.com/juju/testing/checkers"
+	"testing"
+
+	qt "github.com/frankban/quicktest"
 	"golang.org/x/net/context"
-	gc "gopkg.in/check.v1"
 	errgo "gopkg.in/errgo.v1"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"
@@ -12,16 +12,11 @@ import (
 	"gopkg.in/macaroon-bakery.v2/bakery/identchecker"
 )
 
-type authorizerSuite struct {
-	jujutesting.LoggingSuite
-}
-
-var _ = gc.Suite(&authorizerSuite{})
-
-func (*authorizerSuite) TestAuthorizerFunc(c *gc.C) {
+func TestAuthorizerFunc(t *testing.T) {
+	c := qt.New(t)
 	f := func(ctx context.Context, id identchecker.Identity, op bakery.Op) (bool, []checkers.Caveat, error) {
-		c.Assert(ctx, gc.Equals, testContext)
-		c.Assert(id, gc.Equals, identchecker.SimpleIdentity("bob"))
+		c.Assert(ctx, qt.Equals, testContext)
+		c.Assert(id, qt.Equals, identchecker.SimpleIdentity("bob"))
 		switch op.Entity {
 		case "a":
 			return false, nil, nil
@@ -42,9 +37,9 @@ func (*authorizerSuite) TestAuthorizerFunc(c *gc.C) {
 		return false, nil, nil
 	}
 	allowed, caveats, err := identchecker.AuthorizerFunc(f).Authorize(testContext, identchecker.SimpleIdentity("bob"), []bakery.Op{{"a", "x"}, {"b", "x"}, {"c", "x"}, {"d", "x"}})
-	c.Assert(err, gc.IsNil)
-	c.Assert(allowed, jc.DeepEquals, []bool{false, true, true, true})
-	c.Assert(caveats, jc.DeepEquals, []checkers.Caveat{{
+	c.Assert(err, qt.IsNil)
+	c.Assert(allowed, qt.DeepEquals, []bool{false, true, true, true})
+	c.Assert(caveats, qt.DeepEquals, []checkers.Caveat{{
 		Location:  "somewhere",
 		Condition: "c",
 	}, {
@@ -153,19 +148,20 @@ var aclAuthorizerTests = []struct {
 	expectError: "some error",
 }}
 
-func (*authorizerSuite) TestACLAuthorizer(c *gc.C) {
+func TestACLAuthorizer(t *testing.T) {
+	c := qt.New(t)
 	for i, test := range aclAuthorizerTests {
 		c.Logf("test %d: %v", i, test.about)
 		allowed, caveats, err := test.auth.Authorize(context.Background(), test.identity, test.ops)
 		if test.expectError != "" {
-			c.Assert(err, gc.ErrorMatches, test.expectError)
-			c.Assert(allowed, gc.IsNil)
-			c.Assert(caveats, gc.IsNil)
+			c.Assert(err, qt.ErrorMatches, test.expectError)
+			c.Assert(allowed, qt.IsNil)
+			c.Assert(caveats, qt.IsNil)
 			continue
 		}
-		c.Assert(err, gc.IsNil)
-		c.Assert(caveats, gc.IsNil)
-		c.Assert(allowed, jc.DeepEquals, test.expectAllowed)
+		c.Assert(err, qt.IsNil)
+		c.Assert(caveats, qt.IsNil)
+		c.Assert(allowed, qt.DeepEquals, test.expectAllowed)
 	}
 }
 

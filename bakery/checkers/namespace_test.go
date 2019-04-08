@@ -1,15 +1,12 @@
 package checkers_test
 
 import (
-	jc "github.com/juju/testing/checkers"
-	gc "gopkg.in/check.v1"
+	"testing"
+
+	qt "github.com/frankban/quicktest"
 
 	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
 )
-
-type NamespaceSuite struct{}
-
-var _ = gc.Suite(&NamespaceSuite{})
 
 var resolveTests = []struct {
 	about        string
@@ -38,32 +35,34 @@ var resolveTests = []struct {
 	uri:   "testns",
 }}
 
-func (*NamespaceSuite) TestResolve(c *gc.C) {
+func TestResolve(t *testing.T) {
+	c := qt.New(t)
 	for i, test := range resolveTests {
 		c.Logf("test %d: %s", i, test.about)
 		prefix, ok := test.ns.Resolve(test.uri)
-		c.Check(ok, gc.Equals, test.expectOK)
-		c.Check(prefix, gc.Equals, test.expectPrefix)
+		c.Check(ok, qt.Equals, test.expectOK)
+		c.Check(prefix, qt.Equals, test.expectPrefix)
 	}
 }
 
-func (*NamespaceSuite) TestRegister(c *gc.C) {
+func TestRegister(t *testing.T) {
+	c := qt.New(t)
 	ns := checkers.NewNamespace(nil)
 	ns.Register("testns", "t")
 	prefix, ok := ns.Resolve("testns")
-	c.Assert(prefix, gc.Equals, "t")
-	c.Assert(ok, gc.Equals, true)
+	c.Assert(prefix, qt.Equals, "t")
+	c.Assert(ok, qt.Equals, true)
 
 	ns.Register("other", "o")
 	prefix, ok = ns.Resolve("other")
-	c.Assert(prefix, gc.Equals, "o")
-	c.Assert(ok, gc.Equals, true)
+	c.Assert(prefix, qt.Equals, "o")
+	c.Assert(ok, qt.Equals, true)
 
 	// If we re-register the same URL, it does nothing.
 	ns.Register("other", "p")
 	prefix, ok = ns.Resolve("other")
-	c.Assert(prefix, gc.Equals, "o")
-	c.Assert(ok, gc.Equals, true)
+	c.Assert(prefix, qt.Equals, "o")
+	c.Assert(ok, qt.Equals, true)
 }
 
 var namespaceEqualTests = []struct{
@@ -98,25 +97,28 @@ var namespaceEqualTests = []struct{
 	expect: false,
 }}
 
-func (*NamespaceSuite) TestEqual(c *gc.C) {
+func TestEqual(t *testing.T) {
+	c := qt.New(t)
 	for i, test := range namespaceEqualTests {
 		c.Logf("test %d: %s", i, test.about)
-		c.Assert(test.ns1.Equal(test.ns2), gc.Equals, test.expect)
+		c.Assert(test.ns1.Equal(test.ns2), qt.Equals, test.expect)
 	}
 }
 
-func (*NamespaceSuite) TestRegisterBadURI(c *gc.C) {
+func TestRegisterBadURI(t *testing.T) {
+	c := qt.New(t)
 	ns := checkers.NewNamespace(nil)
 	c.Assert(func() {
 		ns.Register("", "x")
-	}, gc.PanicMatches, `cannot register invalid URI "" \(prefix "x"\)`)
+	}, qt.PanicMatches, `cannot register invalid URI "" \(prefix "x"\)`)
 }
 
-func (*NamespaceSuite) TestRegisterBadPrefix(c *gc.C) {
+func TestRegisterBadPrefix(t *testing.T) {
+	c := qt.New(t)
 	ns := checkers.NewNamespace(nil)
 	c.Assert(func() {
 		ns.Register("std", "x:1")
-	}, gc.PanicMatches, `cannot register invalid prefix "x:1" for URI "std"`)
+	}, qt.PanicMatches, `cannot register invalid prefix "x:1" for URI "std"`)
 }
 
 var resolveCaveatTests = []struct {
@@ -167,11 +169,12 @@ var resolveCaveatTests = []struct {
 	},
 }}
 
-func (*NamespaceSuite) TestResolveCaveatWithNamespace(c *gc.C) {
+func TestResolveCaveatWithNamespace(t *testing.T) {
+	c := qt.New(t)
 	for i, test := range resolveCaveatTests {
 		c.Logf("test %d: %s", i, test.about)
 		ns := checkers.NewNamespace(test.ns)
-		c.Assert(ns.ResolveCaveat(test.caveat), jc.DeepEquals, test.expect)
+		c.Assert(ns.ResolveCaveat(test.caveat), qt.DeepEquals, test.expect)
 	}
 }
 
@@ -205,20 +208,21 @@ var namespaceMarshalTests = []struct {
 	expect: "a:one a1:two",
 }}
 
-func (*NamespaceSuite) TestMarshal(c *gc.C) {
+func TestMarshal(t *testing.T) {
+	c := qt.New(t)
 	for i, test := range namespaceMarshalTests {
 		c.Logf("test %d: %v", i, test.about)
 		ns := checkers.NewNamespace(test.ns)
 		data, err := ns.MarshalText()
-		c.Assert(err, gc.Equals, nil)
-		c.Assert(string(data), gc.Equals, test.expect)
-		c.Assert(ns.String(), gc.Equals, test.expect)
+		c.Assert(err, qt.Equals, nil)
+		c.Assert(string(data), qt.Equals, test.expect)
+		c.Assert(ns.String(), qt.Equals, test.expect)
 
 		// Check that it can be unmarshaled to the same thing:
 		var ns1 checkers.Namespace
 		err = ns1.UnmarshalText(data)
-		c.Assert(err, gc.Equals, nil)
-		c.Assert(&ns1, jc.DeepEquals, ns)
+		c.Assert(err, qt.Equals, nil)
+		c.Assert(&ns1, qt.DeepEquals, ns)
 	}
 }
 
@@ -258,25 +262,27 @@ var namespaceUnmarshalTests = []struct {
 	expectError: `duplicate URI "std" in namespace "std: std:p"`,
 }}
 
-func (*NamespaceSuite) TestUnmarshal(c *gc.C) {
+func TestUnmarshal(t *testing.T) {
+	c := qt.New(t)
 	for i, test := range namespaceUnmarshalTests {
 		c.Logf("test %d: %v", i, test.about)
 		var ns checkers.Namespace
 		err := ns.UnmarshalText([]byte(test.text))
 		if test.expectError != "" {
-			c.Assert(err, gc.ErrorMatches, test.expectError)
+			c.Assert(err, qt.ErrorMatches, test.expectError)
 		} else {
-			c.Assert(err, gc.Equals, nil)
-			c.Assert(&ns, jc.DeepEquals, checkers.NewNamespace(test.expect))
+			c.Assert(err, qt.Equals, nil)
+			c.Assert(&ns, qt.DeepEquals, checkers.NewNamespace(test.expect))
 		}
 	}
 }
 
-func (*NamespaceSuite) TestMarshalNil(c *gc.C) {
+func TestMarshalNil(t *testing.T) {
+	c := qt.New(t)
 	var ns *checkers.Namespace
 	data, err := ns.MarshalText()
-	c.Assert(err, gc.Equals, nil)
-	c.Assert(data, gc.HasLen, 0)
+	c.Assert(err, qt.Equals, nil)
+	c.Assert(data, qt.HasLen, 0)
 }
 
 var validTests = []struct {
@@ -322,8 +328,9 @@ var validTests = []struct {
 	expect: true,
 }}
 
-func (*NamespaceSuite) TestValid(c *gc.C) {
+func TestValid(t *testing.T) {
+	c := qt.New(t)
 	for i, test := range validTests {
-		c.Check(test.test(test.s), gc.Equals, test.expect, gc.Commentf("test %d: %s", i, test.about))
+		c.Check(test.test(test.s), qt.Equals, test.expect, qt.Commentf("test %d: %s", i, test.about))
 	}
 }
