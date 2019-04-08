@@ -9,14 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/juju/loggo"
 	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"
 )
-
-var logger = loggo.GetLogger("bakery.dbrootkeystore")
 
 // maxPolicyCache holds the maximum number of store policies that can
 // hold cached keys in a given RootKeys instance.
@@ -194,7 +191,6 @@ func (s *RootKeys) get0(id []byte, b Backing) (key RootKey, inCache bool, err er
 		}
 		return k, false, nil
 	}
-	logger.Infof("cache miss for %q", id)
 	k, err := b.GetKey(id)
 	return k, false, err
 }
@@ -250,7 +246,6 @@ func (s *store) RootKey(context.Context) ([]byte, []byte, error) {
 	if key := s.rootKeyFromCache(); key.IsValid() {
 		return key.RootKey, key.Id, nil
 	}
-	logger.Debugf("root key cache miss")
 	// Try to find a root key from the collection.
 	// It doesn't matter much if two concurrent mongo
 	// clients are doing this at the same time because
@@ -269,7 +264,6 @@ func (s *store) RootKey(context.Context) ([]byte, []byte, error) {
 		if err != nil {
 			return nil, nil, errgo.Notef(err, "cannot generate key")
 		}
-		logger.Infof("new root key id %q; created %v; expires %v", key.Id, key.Created, key.Expires)
 		if err := s.backing.InsertKey(key); err != nil {
 			return nil, nil, errgo.Notef(err, "cannot create root key")
 		}

@@ -2,178 +2,180 @@ package bakery
 
 import (
 	"bytes"
+	"testing"
 
-	jc "github.com/juju/testing/checkers"
+	qt "github.com/frankban/quicktest"
 	"golang.org/x/crypto/nacl/box"
-	gc "gopkg.in/check.v1"
 
 	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
 )
 
-type codecSuite struct {
-	firstPartyKey *KeyPair
-	thirdPartyKey *KeyPair
-}
+var (
+	testFirstPartyKey = MustGenerateKey()
+	testThirdPartyKey = MustGenerateKey()
+)
 
-var _ = gc.Suite(&codecSuite{})
-
-func (s *codecSuite) SetUpTest(c *gc.C) {
-	var err error
-	s.firstPartyKey, err = GenerateKey()
-	c.Assert(err, gc.IsNil)
-	s.thirdPartyKey, err = GenerateKey()
-	c.Assert(err, gc.IsNil)
-}
-
-func (s *codecSuite) TestV1RoundTrip(c *gc.C) {
+func TestV1RoundTrip(t *testing.T) {
+	c := qt.New(t)
 	cid, err := encodeCaveatV1(
-		"is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
+		"is-authenticated-user", []byte("a random string"), &testThirdPartyKey.Public, testFirstPartyKey)
 
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
-	res, err := decodeCaveat(s.thirdPartyKey, cid)
-	c.Assert(err, gc.IsNil)
-	c.Assert(res, jc.DeepEquals, &ThirdPartyCaveatInfo{
-		FirstPartyPublicKey: s.firstPartyKey.Public,
+	res, err := decodeCaveat(testThirdPartyKey, cid)
+	c.Assert(err, qt.IsNil)
+	c.Assert(res, qt.DeepEquals, &ThirdPartyCaveatInfo{
+		FirstPartyPublicKey: testFirstPartyKey.Public,
 		RootKey:             []byte("a random string"),
 		Condition:           []byte("is-authenticated-user"),
 		Caveat:              cid,
-		ThirdPartyKeyPair:   *s.thirdPartyKey,
+		ThirdPartyKeyPair:   *testThirdPartyKey,
 		Version:             Version1,
 		Namespace:           legacyNamespace(),
 	})
 }
 
-func (s *codecSuite) TestV2RoundTrip(c *gc.C) {
-	cid, err := encodeCaveatV2("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
+func TestV2RoundTrip(t *testing.T) {
+	c := qt.New(t)
+	cid, err := encodeCaveatV2("is-authenticated-user", []byte("a random string"), &testThirdPartyKey.Public, testFirstPartyKey)
 
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
-	res, err := decodeCaveat(s.thirdPartyKey, cid)
-	c.Assert(err, gc.IsNil)
-	c.Assert(res, jc.DeepEquals, &ThirdPartyCaveatInfo{
-		FirstPartyPublicKey: s.firstPartyKey.Public,
+	res, err := decodeCaveat(testThirdPartyKey, cid)
+	c.Assert(err, qt.IsNil)
+	c.Assert(res, qt.DeepEquals, &ThirdPartyCaveatInfo{
+		FirstPartyPublicKey: testFirstPartyKey.Public,
 		RootKey:             []byte("a random string"),
 		Condition:           []byte("is-authenticated-user"),
 		Caveat:              cid,
-		ThirdPartyKeyPair:   *s.thirdPartyKey,
+		ThirdPartyKeyPair:   *testThirdPartyKey,
 		Version:             Version2,
 		Namespace:           legacyNamespace(),
 	})
 }
 
-func (s *codecSuite) TestV3RoundTrip(c *gc.C) {
+func TestV3RoundTrip(t *testing.T) {
+	c := qt.New(t)
 	ns := checkers.NewNamespace(nil)
 	ns.Register("testns", "x")
-	cid, err := encodeCaveatV3("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey, ns)
+	cid, err := encodeCaveatV3("is-authenticated-user", []byte("a random string"), &testThirdPartyKey.Public, testFirstPartyKey, ns)
 
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	c.Logf("cid %x", cid)
 
-	res, err := decodeCaveat(s.thirdPartyKey, cid)
-	c.Assert(err, gc.IsNil)
-	c.Assert(res, jc.DeepEquals, &ThirdPartyCaveatInfo{
-		FirstPartyPublicKey: s.firstPartyKey.Public,
+	res, err := decodeCaveat(testThirdPartyKey, cid)
+	c.Assert(err, qt.IsNil)
+	c.Assert(res, qt.DeepEquals, &ThirdPartyCaveatInfo{
+		FirstPartyPublicKey: testFirstPartyKey.Public,
 		RootKey:             []byte("a random string"),
 		Condition:           []byte("is-authenticated-user"),
 		Caveat:              cid,
-		ThirdPartyKeyPair:   *s.thirdPartyKey,
+		ThirdPartyKeyPair:   *testThirdPartyKey,
 		Version:             Version3,
 		Namespace:           ns,
 	})
 }
 
-func (s *codecSuite) TestEmptyCaveatId(c *gc.C) {
-	_, err := decodeCaveat(s.thirdPartyKey, []byte{})
-	c.Assert(err, gc.ErrorMatches, "empty third party caveat")
+func TestEmptyCaveatId(t *testing.T) {
+	c := qt.New(t)
+	_, err := decodeCaveat(testThirdPartyKey, []byte{})
+	c.Assert(err, qt.ErrorMatches, "empty third party caveat")
 }
 
-func (s *codecSuite) TestCaveatIdBadVersion(c *gc.C) {
-	_, err := decodeCaveat(s.thirdPartyKey, []byte{1})
-	c.Assert(err, gc.ErrorMatches, "caveat has unsupported version 1")
+func TestCaveatIdBadVersion(t *testing.T) {
+	c := qt.New(t)
+	_, err := decodeCaveat(testThirdPartyKey, []byte{1})
+	c.Assert(err, qt.ErrorMatches, "caveat has unsupported version 1")
 }
 
-func (s *codecSuite) TestV2TooShort(c *gc.C) {
-	_, err := decodeCaveat(s.thirdPartyKey, []byte{2})
-	c.Assert(err, gc.ErrorMatches, "caveat id too short")
+func TestV2TooShort(t *testing.T) {
+	c := qt.New(t)
+	_, err := decodeCaveat(testThirdPartyKey, []byte{2})
+	c.Assert(err, qt.ErrorMatches, "caveat id too short")
 }
 
-func (s *codecSuite) TestV2BadKey(c *gc.C) {
-	cid, err := encodeCaveatV2("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
+func TestV2BadKey(t *testing.T) {
+	c := qt.New(t)
+	cid, err := encodeCaveatV2("is-authenticated-user", []byte("a random string"), &testThirdPartyKey.Public, testFirstPartyKey)
 
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	cid[1] ^= 1
 
-	_, err = decodeCaveat(s.thirdPartyKey, cid)
-	c.Assert(err, gc.ErrorMatches, "public key mismatch")
+	_, err = decodeCaveat(testThirdPartyKey, cid)
+	c.Assert(err, qt.ErrorMatches, "public key mismatch")
 }
 
-func (s *codecSuite) TestV2DecryptionError(c *gc.C) {
-	cid, err := encodeCaveatV2("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
+func TestV2DecryptionError(t *testing.T) {
+	c := qt.New(t)
+	cid, err := encodeCaveatV2("is-authenticated-user", []byte("a random string"), &testThirdPartyKey.Public, testFirstPartyKey)
 
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	cid[5] ^= 1
 
-	_, err = decodeCaveat(s.thirdPartyKey, cid)
-	c.Assert(err, gc.ErrorMatches, "cannot decrypt caveat id")
+	_, err = decodeCaveat(testThirdPartyKey, cid)
+	c.Assert(err, qt.ErrorMatches, "cannot decrypt caveat id")
 }
 
-func (s *codecSuite) TestV2EmptySecretPart(c *gc.C) {
-	cid, err := encodeCaveatV2("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
+func TestV2EmptySecretPart(t *testing.T) {
+	c := qt.New(t)
+	cid, err := encodeCaveatV2("is-authenticated-user", []byte("a random string"), &testThirdPartyKey.Public, testFirstPartyKey)
 
-	c.Assert(err, gc.IsNil)
-	cid = s.replaceV2SecretPart(cid, []byte{})
+	c.Assert(err, qt.IsNil)
+	cid = replaceV2SecretPart(cid, []byte{})
 
-	_, err = decodeCaveat(s.thirdPartyKey, cid)
-	c.Assert(err, gc.ErrorMatches, "invalid secret part: secret part too short")
+	_, err = decodeCaveat(testThirdPartyKey, cid)
+	c.Assert(err, qt.ErrorMatches, "invalid secret part: secret part too short")
 }
 
-func (s *codecSuite) TestV2BadSecretPartVersion(c *gc.C) {
-	cid, err := encodeCaveatV2("is-authenticated-user", []byte("a random string"), &s.thirdPartyKey.Public, s.firstPartyKey)
-	c.Assert(err, gc.IsNil)
-	cid = s.replaceV2SecretPart(cid, []byte{1})
+func TestV2BadSecretPartVersion(t *testing.T) {
+	c := qt.New(t)
+	cid, err := encodeCaveatV2("is-authenticated-user", []byte("a random string"), &testThirdPartyKey.Public, testFirstPartyKey)
+	c.Assert(err, qt.IsNil)
+	cid = replaceV2SecretPart(cid, []byte{1})
 
-	_, err = decodeCaveat(s.thirdPartyKey, cid)
-	c.Assert(err, gc.ErrorMatches, "invalid secret part: unexpected secret part version, got 1 want 2")
+	_, err = decodeCaveat(testThirdPartyKey, cid)
+	c.Assert(err, qt.ErrorMatches, "invalid secret part: unexpected secret part version, got 1 want 2")
 }
 
-func (s *codecSuite) TestV2EmptyRootKey(c *gc.C) {
-	cid, err := encodeCaveatV2("is-authenticated-user", []byte{}, &s.thirdPartyKey.Public, s.firstPartyKey)
-	c.Assert(err, gc.IsNil)
+func TestV2EmptyRootKey(t *testing.T) {
+	c := qt.New(t)
+	cid, err := encodeCaveatV2("is-authenticated-user", []byte{}, &testThirdPartyKey.Public, testFirstPartyKey)
+	c.Assert(err, qt.IsNil)
 
-	res, err := decodeCaveat(s.thirdPartyKey, cid)
-	c.Assert(err, gc.IsNil)
-	c.Assert(res, jc.DeepEquals, &ThirdPartyCaveatInfo{
-		FirstPartyPublicKey: s.firstPartyKey.Public,
+	res, err := decodeCaveat(testThirdPartyKey, cid)
+	c.Assert(err, qt.IsNil)
+	c.Assert(res, qt.DeepEquals, &ThirdPartyCaveatInfo{
+		FirstPartyPublicKey: testFirstPartyKey.Public,
 		RootKey:             []byte{},
 		Condition:           []byte("is-authenticated-user"),
 		Caveat:              cid,
-		ThirdPartyKeyPair:   *s.thirdPartyKey,
+		ThirdPartyKeyPair:   *testThirdPartyKey,
 		Version:             Version2,
 		Namespace:           legacyNamespace(),
 	})
 }
 
-func (s *codecSuite) TestV2LongRootKey(c *gc.C) {
-	cid, err := encodeCaveatV2("is-authenticated-user", bytes.Repeat([]byte{0}, 65536), &s.thirdPartyKey.Public, s.firstPartyKey)
-	c.Assert(err, gc.IsNil)
+func TestV2LongRootKey(t *testing.T) {
+	c := qt.New(t)
+	cid, err := encodeCaveatV2("is-authenticated-user", bytes.Repeat([]byte{0}, 65536), &testThirdPartyKey.Public, testFirstPartyKey)
+	c.Assert(err, qt.IsNil)
 
-	res, err := decodeCaveat(s.thirdPartyKey, cid)
-	c.Assert(err, gc.IsNil)
-	c.Assert(res, jc.DeepEquals, &ThirdPartyCaveatInfo{
-		FirstPartyPublicKey: s.firstPartyKey.Public,
+	res, err := decodeCaveat(testThirdPartyKey, cid)
+	c.Assert(err, qt.IsNil)
+	c.Assert(res, qt.DeepEquals, &ThirdPartyCaveatInfo{
+		FirstPartyPublicKey: testFirstPartyKey.Public,
 		RootKey:             bytes.Repeat([]byte{0}, 65536),
 		Condition:           []byte("is-authenticated-user"),
 		Caveat:              cid,
-		ThirdPartyKeyPair:   *s.thirdPartyKey,
+		ThirdPartyKeyPair:   *testThirdPartyKey,
 		Version:             Version2,
 		Namespace:           legacyNamespace(),
 	})
 }
 
-func (s *codecSuite) replaceV2SecretPart(cid, replacement []byte) []byte {
+func replaceV2SecretPart(cid, replacement []byte) []byte {
 	cid = cid[:1+publicKeyPrefixLen+KeyLen+NonceLen]
 	var nonce [NonceLen]byte
 	copy(nonce[:], cid[1+publicKeyPrefixLen+KeyLen:])
-	return box.Seal(cid, replacement, &nonce, s.firstPartyKey.Public.boxKey(), s.thirdPartyKey.Private.boxKey())
+	return box.Seal(cid, replacement, &nonce, testFirstPartyKey.Public.boxKey(), testThirdPartyKey.Private.boxKey())
 }

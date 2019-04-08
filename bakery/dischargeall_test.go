@@ -2,10 +2,10 @@ package bakery_test
 
 import (
 	"fmt"
+	"testing"
 
-	"github.com/juju/testing"
+	qt "github.com/frankban/quicktest"
 	"golang.org/x/net/context"
-	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2"
 
@@ -13,33 +13,29 @@ import (
 	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
 )
 
-type DischargeSuite struct {
-	testing.IsolationSuite
-}
-
-var _ = gc.Suite(&DischargeSuite{})
-
 func alwaysOK(string) error {
 	return nil
 }
 
-func (*DischargeSuite) TestDischargeAllNoDischarges(c *gc.C) {
+func TestDischargeAllNoDischarges(t *testing.T) {
+	c := qt.New(t)
 	rootKey := []byte("root key")
 	m, err := bakery.NewMacaroon(rootKey, []byte("id0"), "loc0", bakery.LatestVersion, testChecker.Namespace())
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	ms, err := bakery.DischargeAll(testContext, m, noDischarge(c))
-	c.Assert(err, gc.IsNil)
-	c.Assert(ms, gc.HasLen, 1)
-	c.Assert(ms[0].Signature(), gc.DeepEquals, m.M().Signature())
+	c.Assert(err, qt.IsNil)
+	c.Assert(ms, qt.HasLen, 1)
+	c.Assert(ms[0].Signature(), qt.DeepEquals, m.M().Signature())
 
 	err = m.M().Verify(rootKey, alwaysOK, nil)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 }
 
-func (*DischargeSuite) TestDischargeAllManyDischarges(c *gc.C) {
+func TestDischargeAllManyDischarges(t *testing.T) {
+	c := qt.New(t)
 	rootKey := []byte("root key")
 	m0, err := bakery.NewMacaroon(rootKey, []byte("id0"), "loc0", bakery.LatestVersion, nil)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	totalRequired := 40
 	id := 1
 	addCaveats := func(m *bakery.Macaroon) {
@@ -49,28 +45,29 @@ func (*DischargeSuite) TestDischargeAllManyDischarges(c *gc.C) {
 			}
 			cid := fmt.Sprint("id", id)
 			err := m.M().AddThirdPartyCaveat([]byte("root key "+cid), []byte(cid), "somewhere")
-			c.Assert(err, gc.IsNil)
+			c.Assert(err, qt.IsNil)
 			id++
 			totalRequired--
 		}
 	}
 	addCaveats(m0)
 	getDischarge := func(_ context.Context, cav macaroon.Caveat, payload []byte) (*bakery.Macaroon, error) {
-		c.Check(payload, gc.IsNil)
+		c.Check(payload, qt.IsNil)
 		m, err := bakery.NewMacaroon([]byte("root key "+string(cav.Id)), cav.Id, "", bakery.LatestVersion, nil)
-		c.Assert(err, gc.IsNil)
+		c.Assert(err, qt.IsNil)
 		addCaveats(m)
 		return m, nil
 	}
 	ms, err := bakery.DischargeAll(testContext, m0, getDischarge)
-	c.Assert(err, gc.IsNil)
-	c.Assert(ms, gc.HasLen, 41)
+	c.Assert(err, qt.IsNil)
+	c.Assert(ms, qt.HasLen, 41)
 
 	err = ms[0].Verify(rootKey, alwaysOK, ms[1:])
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 }
 
-func (*DischargeSuite) TestDischargeAllManyDischargesWithRealThirdPartyCaveats(c *gc.C) {
+func TestDischargeAllManyDischargesWithRealThirdPartyCaveats(t *testing.T) {
+	c := qt.New(t)
 	// This is the same flow as TestDischargeAllManyDischarges except that we're
 	// using actual third party caveats as added by Macaroon.AddCaveat and
 	// we use a larger number of caveats so that caveat ids will need to get larger.
@@ -105,12 +102,12 @@ func (*DischargeSuite) TestDischargeAllManyDischargesWithRealThirdPartyCaveats(c
 
 	rootKey := []byte("root key")
 	m0, err := bakery.NewMacaroon(rootKey, []byte("id0"), "ts-loc", bakery.LatestVersion, nil)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	err = m0.AddCaveat(testContext, checkers.Caveat{
 		Location:  addBakery(),
 		Condition: "something",
 	}, ts.Oven.Key(), locator)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	// We've added a caveat (the first) so one less caveat is required.
 	stillRequired--
 	getDischarge := func(ctx context.Context, cav macaroon.Caveat, payload []byte) (*bakery.Macaroon, error) {
@@ -123,45 +120,47 @@ func (*DischargeSuite) TestDischargeAllManyDischargesWithRealThirdPartyCaveats(c
 		})
 	}
 	ms, err := bakery.DischargeAll(testContext, m0, getDischarge)
-	c.Assert(err, gc.IsNil)
-	c.Assert(ms, gc.HasLen, totalDischargesRequired+1)
+	c.Assert(err, qt.IsNil)
+	c.Assert(ms, qt.HasLen, totalDischargesRequired+1)
 
 	err = ms[0].Verify(rootKey, alwaysOK, ms[1:])
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 }
 
-func (*DischargeSuite) TestDischargeAllLocalDischarge(c *gc.C) {
+func TestDischargeAllLocalDischarge(t *testing.T) {
+	c := qt.New(t)
 	oc := newBakery("ts", nil)
 
 	clientKey, err := bakery.GenerateKey()
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	m, err := oc.Oven.NewMacaroon(testContext, bakery.LatestVersion, []checkers.Caveat{
 		bakery.LocalThirdPartyCaveat(&clientKey.Public, bakery.LatestVersion),
 	}, basicOp)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	ms, err := bakery.DischargeAllWithKey(testContext, m, noDischarge(c), clientKey)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	_, err = oc.Checker.Auth(ms).Allow(testContext, basicOp)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 }
 
-func (*DischargeSuite) TestDischargeAllLocalDischargeVersion1(c *gc.C) {
+func TestDischargeAllLocalDischargeVersion1(t *testing.T) {
+	c := qt.New(t)
 	oc := newBakery("ts", nil)
 
 	clientKey, err := bakery.GenerateKey()
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	m, err := oc.Oven.NewMacaroon(testContext, bakery.Version1, []checkers.Caveat{
 		bakery.LocalThirdPartyCaveat(&clientKey.Public, bakery.Version1),
 	}, basicOp)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	ms, err := bakery.DischargeAllWithKey(testContext, m, noDischarge(c), clientKey)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	_, err = oc.Checker.Auth(ms).Allow(testContext, basicOp)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 }

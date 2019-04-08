@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	qt "github.com/frankban/quicktest"
 	"golang.org/x/net/context"
-	gc "gopkg.in/check.v1"
 	"gopkg.in/macaroon.v2"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"
@@ -52,7 +52,7 @@ func newBakery(location string, locator *bakery.ThirdPartyStore) *bakery.Bakery 
 	return bakery.New(p)
 }
 
-func noDischarge(c *gc.C) func(context.Context, macaroon.Caveat, []byte) (*bakery.Macaroon, error) {
+func noDischarge(c *qt.C) func(context.Context, macaroon.Caveat, []byte) (*bakery.Macaroon, error) {
 	return func(context.Context, macaroon.Caveat, []byte) (*bakery.Macaroon, error) {
 		c.Errorf("getDischarge called unexpectedly")
 		return nil, fmt.Errorf("nothing")

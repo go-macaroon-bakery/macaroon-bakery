@@ -3,141 +3,153 @@ package bakery_test
 import (
 	"encoding/base64"
 	"encoding/json"
+	"testing"
 
-	jc "github.com/juju/testing/checkers"
-	gc "gopkg.in/check.v1"
+	qt "github.com/frankban/quicktest"
 	"gopkg.in/yaml.v2"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"
 )
 
-type KeysSuite struct{}
-
-var _ = gc.Suite(&KeysSuite{})
-
 var testKey = newTestKey(0)
 
-func (*KeysSuite) TestMarshalBinary(c *gc.C) {
+func TestMarshalBinary(t *testing.T) {
+	c := qt.New(t)
 	data, err := testKey.MarshalBinary()
-	c.Assert(err, gc.IsNil)
-	c.Assert(data, jc.DeepEquals, []byte(testKey[:]))
+	c.Assert(err, qt.IsNil)
+	c.Assert(data, qt.DeepEquals, []byte(testKey[:]))
 
 	var key1 bakery.Key
 	err = key1.UnmarshalBinary(data)
-	c.Assert(err, gc.IsNil)
-	c.Assert(key1, gc.DeepEquals, testKey)
+	c.Assert(err, qt.IsNil)
+	c.Assert(key1, qt.DeepEquals, testKey)
 }
 
-func (*KeysSuite) TestMarshalText(c *gc.C) {
+func TestMarshalText(t *testing.T) {
+	c := qt.New(t)
 	data, err := testKey.MarshalText()
-	c.Assert(err, gc.IsNil)
-	c.Assert(string(data), gc.Equals, base64.StdEncoding.EncodeToString([]byte(testKey[:])))
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(data), qt.Equals, base64.StdEncoding.EncodeToString([]byte(testKey[:])))
 
 	var key1 bakery.Key
 	err = key1.UnmarshalText(data)
-	c.Assert(err, gc.IsNil)
-	c.Assert(key1, gc.Equals, testKey)
+	c.Assert(err, qt.IsNil)
+	c.Assert(key1, qt.Equals, testKey)
 }
 
-func (*KeysSuite) TestUnmarshalTextWrongKeyLength(c *gc.C) {
+func TestUnmarshalTextWrongKeyLength(t *testing.T) {
+	c := qt.New(t)
 	var key bakery.Key
 	err := key.UnmarshalText([]byte("aGVsbG8K"))
-	c.Assert(err, gc.ErrorMatches, `wrong length for key, got 6 want 32`)
+	c.Assert(err, qt.ErrorMatches, `wrong length for key, got 6 want 32`)
 }
 
-func (*KeysSuite) TestKeyPairMarshalJSON(c *gc.C) {
+func TestKeyPairMarshalJSON(t *testing.T) {
+	c := qt.New(t)
 	kp := bakery.KeyPair{
 		Public:  bakery.PublicKey{testKey},
 		Private: bakery.PrivateKey{testKey},
 	}
 	kp.Private.Key[0] = 99
 	data, err := json.Marshal(kp)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	var x map[string]interface{}
 	err = json.Unmarshal(data, &x)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	// Check that the fields have marshaled as strings.
-	c.Assert(x["private"], gc.FitsTypeOf, "")
-	c.Assert(x["public"], gc.FitsTypeOf, "")
+	_, ok := x["private"].(string)
+	c.Assert(ok, qt.Equals, true)
+	_, ok = x["public"].(string)
+	c.Assert(ok, qt.Equals, true)
 
 	var kp1 bakery.KeyPair
 	err = json.Unmarshal(data, &kp1)
-	c.Assert(err, gc.IsNil)
-	c.Assert(kp1, jc.DeepEquals, kp)
+	c.Assert(err, qt.IsNil)
+	c.Assert(kp1, qt.DeepEquals, kp)
 }
 
-func (*KeysSuite) TestKeyPairMarshalYAML(c *gc.C) {
+func TestKeyPairMarshalYAML(t *testing.T) {
+	c := qt.New(t)
 	kp := bakery.KeyPair{
 		Public:  bakery.PublicKey{testKey},
 		Private: bakery.PrivateKey{testKey},
 	}
 	kp.Private.Key[0] = 99
 	data, err := yaml.Marshal(kp)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	var x map[string]interface{}
 	err = yaml.Unmarshal(data, &x)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	// Check that the fields have marshaled as strings.
-	c.Assert(x["private"], gc.FitsTypeOf, "")
-	c.Assert(x["public"], gc.FitsTypeOf, "")
+	_, ok := x["private"].(string)
+	c.Assert(ok, qt.Equals, true)
+	_, ok = x["public"].(string)
+	c.Assert(ok, qt.Equals, true)
 
 	var kp1 bakery.KeyPair
 	err = yaml.Unmarshal(data, &kp1)
-	c.Assert(err, gc.IsNil)
-	c.Assert(kp1, jc.DeepEquals, kp)
+	c.Assert(err, qt.IsNil)
+	c.Assert(kp1, qt.DeepEquals, kp)
 }
 
-func (*KeysSuite) TestKeyPairUnmarshalJSONMissingPublicKey(c *gc.C) {
+func TestKeyPairUnmarshalJSONMissingPublicKey(t *testing.T) {
+	c := qt.New(t)
 	data := `{"private": "7ZcOvDAW9opAIPzJ7FdSbz2i2qL8bFZapDlmNLpMzpU="}`
 	var k bakery.KeyPair
 	err := json.Unmarshal([]byte(data), &k)
-	c.Assert(err, gc.ErrorMatches, `missing public key`)
+	c.Assert(err, qt.ErrorMatches, `missing public key`)
 }
 
-func (*KeysSuite) TestKeyPairUnmarshalJSONMissingPrivateKey(c *gc.C) {
+func TestKeyPairUnmarshalJSONMissingPrivateKey(t *testing.T) {
+	c := qt.New(t)
 	data := `{"public": "7ZcOvDAW9opAIPzJ7FdSbz2i2qL8bFZapDlmNLpMzpU="}`
 	var k bakery.KeyPair
 	err := json.Unmarshal([]byte(data), &k)
-	c.Assert(err, gc.ErrorMatches, `missing private key`)
+	c.Assert(err, qt.ErrorMatches, `missing private key`)
 }
 
-func (*KeysSuite) TestKeyPairUnmarshalJSONEmptyKeys(c *gc.C) {
+func TestKeyPairUnmarshalJSONEmptyKeys(t *testing.T) {
+	c := qt.New(t)
 	data := `{"private": "", "public": ""}`
 	var k bakery.KeyPair
 	err := json.Unmarshal([]byte(data), &k)
-	c.Assert(err, gc.ErrorMatches, `wrong length for key, got 0 want 32`)
+	c.Assert(err, qt.ErrorMatches, `wrong length for key, got 0 want 32`)
 }
 
-func (*KeysSuite) TestKeyPairUnmarshalJSONNoKeys(c *gc.C) {
+func TestKeyPairUnmarshalJSONNoKeys(t *testing.T) {
+	c := qt.New(t)
 	data := `{}`
 	var k bakery.KeyPair
 	err := json.Unmarshal([]byte(data), &k)
-	c.Assert(err, gc.ErrorMatches, `missing public key`)
+	c.Assert(err, qt.ErrorMatches, `missing public key`)
 }
 
-func (*KeysSuite) TestKeyPairUnmarshalYAMLMissingPublicKey(c *gc.C) {
+func TestKeyPairUnmarshalYAMLMissingPublicKey(t *testing.T) {
+	c := qt.New(t)
 	data := `
 private: 7ZcOvDAW9opAIPzJ7FdSbz2i2qL8bFZapDlmNLpMzpU=
 `
 	var k bakery.KeyPair
 	err := yaml.Unmarshal([]byte(data), &k)
-	c.Assert(err, gc.ErrorMatches, `missing public key`)
+	c.Assert(err, qt.ErrorMatches, `missing public key`)
 }
 
-func (*KeysSuite) TestKeyPairUnmarshalYAMLMissingPrivateKey(c *gc.C) {
+func TestKeyPairUnmarshalYAMLMissingPrivateKey(t *testing.T) {
+	c := qt.New(t)
 	data := `
 public: 7ZcOvDAW9opAIPzJ7FdSbz2i2qL8bFZapDlmNLpMzpU=
 `
 	var k bakery.KeyPair
 	err := yaml.Unmarshal([]byte(data), &k)
-	c.Assert(err, gc.ErrorMatches, `missing private key`)
+	c.Assert(err, qt.ErrorMatches, `missing private key`)
 }
 
-func (*KeysSuite) TestDerivePublicFromPrivate(c *gc.C) {
+func TestDerivePublicFromPrivate(t *testing.T) {
+	c := qt.New(t)
 	k := mustGenerateKey()
-	c.Assert(k.Private.Public(), gc.Equals, k.Public)
+	c.Assert(k.Private.Public(), qt.Equals, k.Public)
 }
 
 func newTestKey(n byte) bakery.Key {
