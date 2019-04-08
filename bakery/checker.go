@@ -133,7 +133,7 @@ func NewChecker(p CheckerParams) *Checker {
 	}
 	return &Checker{
 		FirstPartyCaveatChecker: p.Checker,
-		p: p,
+		p:                       p,
 	}
 }
 

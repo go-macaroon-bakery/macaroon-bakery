@@ -1,19 +1,13 @@
 package bakery_test
 
 import (
-	jujutesting "github.com/juju/testing"
-	jc "github.com/juju/testing/checkers"
-	gc "gopkg.in/check.v1"
+	"testing"
+
+	qt "github.com/frankban/quicktest"
 	"gopkg.in/macaroon.v2"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"
 )
-
-type ovenSuite struct {
-	jujutesting.LoggingSuite
-}
-
-var _ = gc.Suite(&ovenSuite{})
 
 var canonicalOpsTests = []struct {
 	about  string
@@ -43,47 +37,51 @@ var canonicalOpsTests = []struct {
 	expect: []bakery.Op{{Entity: "read", Action: "one"}, {Entity: "read", Action: "two"}, {Entity: "write", Action: "one"}},
 }}
 
-func (*ovenSuite) TestCanonicalOps(c *gc.C) {
+func TestCanonicalOps(t *testing.T) {
+	c := qt.New(t)
 	for i, test := range canonicalOpsTests {
 		c.Logf("test %d: %v", i, test.about)
 		ops := append([]bakery.Op(nil), test.ops...)
-		c.Assert(bakery.CanonicalOps(ops), jc.DeepEquals, test.expect)
+		c.Assert(bakery.CanonicalOps(ops), qt.DeepEquals, test.expect)
 		// Verify that the original slice isn't changed.
-		c.Assert(ops, jc.DeepEquals, test.ops)
+		c.Assert(ops, qt.DeepEquals, test.ops)
 	}
 }
 
-func (*ovenSuite) TestMultipleOps(c *gc.C) {
+func TestMultipleOps(t *testing.T) {
+	c := qt.New(t)
 	oven := bakery.NewOven(bakery.OvenParams{})
 	ops := []bakery.Op{{"one", "read"}, {"one", "write"}, {"two", "read"}}
 	m, err := oven.NewMacaroon(testContext, bakery.LatestVersion, nil, ops...)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	gotOps, conds, err := oven.VerifyMacaroon(testContext, macaroon.Slice{m.M()})
-	c.Assert(err, gc.IsNil)
-	c.Assert(conds, gc.HasLen, 0)
-	c.Assert(bakery.CanonicalOps(gotOps), jc.DeepEquals, ops)
+	c.Assert(err, qt.IsNil)
+	c.Assert(conds, qt.HasLen, 0)
+	c.Assert(bakery.CanonicalOps(gotOps), qt.DeepEquals, ops)
 }
 
-func (*ovenSuite) TestMultipleOpsInId(c *gc.C) {
+func TestMultipleOpsInId(t *testing.T) {
+	c := qt.New(t)
 	oven := bakery.NewOven(bakery.OvenParams{})
 
 	ops := []bakery.Op{{"one", "read"}, {"one", "write"}, {"two", "read"}}
 	m, err := oven.NewMacaroon(testContext, bakery.LatestVersion, nil, ops...)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	gotOps, conds, err := oven.VerifyMacaroon(testContext, macaroon.Slice{m.M()})
-	c.Assert(err, gc.IsNil)
-	c.Assert(conds, gc.HasLen, 0)
-	c.Assert(bakery.CanonicalOps(gotOps), jc.DeepEquals, ops)
+	c.Assert(err, qt.IsNil)
+	c.Assert(conds, qt.HasLen, 0)
+	c.Assert(bakery.CanonicalOps(gotOps), qt.DeepEquals, ops)
 }
 
-func (*ovenSuite) TestMultipleOpsInIdWithVersion1(c *gc.C) {
+func TestMultipleOpsInIdWithVersion1(t *testing.T) {
+	c := qt.New(t)
 	oven := bakery.NewOven(bakery.OvenParams{})
 
 	ops := []bakery.Op{{"one", "read"}, {"one", "write"}, {"two", "read"}}
 	m, err := oven.NewMacaroon(testContext, bakery.Version1, nil, ops...)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	gotOps, conds, err := oven.VerifyMacaroon(testContext, macaroon.Slice{m.M()})
-	c.Assert(err, gc.IsNil)
-	c.Assert(conds, gc.HasLen, 0)
-	c.Assert(bakery.CanonicalOps(gotOps), jc.DeepEquals, ops)
+	c.Assert(err, qt.IsNil)
+	c.Assert(conds, qt.HasLen, 0)
+	c.Assert(bakery.CanonicalOps(gotOps), qt.DeepEquals, ops)
 }

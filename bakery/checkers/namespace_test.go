@@ -66,35 +66,35 @@ func (*NamespaceSuite) TestRegister(c *gc.C) {
 	c.Assert(ok, gc.Equals, true)
 }
 
-var namespaceEqualTests = []struct{
-	about string
+var namespaceEqualTests = []struct {
+	about    string
 	ns1, ns2 *checkers.Namespace
-	expect bool
+	expect   bool
 }{{
-	about: "both nil",
+	about:  "both nil",
 	expect: true,
 }, {
-	about: "ns1 nil",
-	ns2: checkers.NewNamespace(nil),
+	about:  "ns1 nil",
+	ns2:    checkers.NewNamespace(nil),
 	expect: false,
 }, {
-	about: "ns2 nil",
-	ns1: checkers.NewNamespace(nil),
+	about:  "ns2 nil",
+	ns1:    checkers.NewNamespace(nil),
 	expect: false,
 }, {
-	about: "different lengths",
-	ns1: checkers.NewNamespace(map[string]string{"testns": "t", "otherns": "t"}),
-	ns2: checkers.NewNamespace(map[string]string{"testns": "t"}),
+	about:  "different lengths",
+	ns1:    checkers.NewNamespace(map[string]string{"testns": "t", "otherns": "t"}),
+	ns2:    checkers.NewNamespace(map[string]string{"testns": "t"}),
 	expect: false,
 }, {
-	about: "all same",
-	ns1: checkers.NewNamespace(map[string]string{"testns": "t", "otherns": "t"}),
-	ns2: checkers.NewNamespace(map[string]string{"testns": "t", "otherns": "t"}),
+	about:  "all same",
+	ns1:    checkers.NewNamespace(map[string]string{"testns": "t", "otherns": "t"}),
+	ns2:    checkers.NewNamespace(map[string]string{"testns": "t", "otherns": "t"}),
 	expect: true,
 }, {
-	about: "different contents",
-	ns1: checkers.NewNamespace(map[string]string{"testns": "t", "otherns": "t"}),
-	ns2: checkers.NewNamespace(map[string]string{"testns": "t1", "otherns": "t"}),
+	about:  "different contents",
+	ns1:    checkers.NewNamespace(map[string]string{"testns": "t", "otherns": "t"}),
+	ns2:    checkers.NewNamespace(map[string]string{"testns": "t1", "otherns": "t"}),
 	expect: false,
 }}
 

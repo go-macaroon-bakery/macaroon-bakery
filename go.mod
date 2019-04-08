@@ -1,6 +1,7 @@
 module gopkg.in/macaroon-bakery.v2
 
 require (
+	github.com/frankban/quicktest v1.2.2
 	github.com/golang/protobuf v1.0.0
 	github.com/juju/clock v0.0.0-20180524022203-d293bb356ca4 // indirect
 	github.com/juju/errors v0.0.0-20170703010042-c7d06af17c68 // indirect
