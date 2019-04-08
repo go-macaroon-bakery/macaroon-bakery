@@ -6,11 +6,11 @@ import (
 	"net/url"
 	"sync"
 	"time"
+	"testing"
 
-	jujutesting "github.com/juju/testing"
+	qt "github.com/frankban/quicktest"
 	"github.com/julienschmidt/httprouter"
 	"golang.org/x/net/context"
-	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/httprequest.v1"
 
@@ -20,23 +20,13 @@ import (
 	"gopkg.in/macaroon-bakery.v2/httpbakery"
 )
 
-type suite struct {
-	jujutesting.LoggingSuite
-	client *httpbakery.Client
-}
-
-func (s *suite) SetUpTest(c *gc.C) {
-	s.LoggingSuite.SetUpTest(c)
-	s.client = httpbakery.NewClient()
-}
-
-var _ = gc.Suite(&suite{})
-
 var dischargeOp = bakery.Op{"thirdparty", "x"}
 
-func (s *suite) TestDischargerSimple(c *gc.C) {
+func TestDischargerSimple(t *testing.T) {
+	c := qt.New(t)
 	d := bakerytest.NewDischarger(nil)
 	defer d.Close()
+	client := httpbakery.NewClient()
 
 	b := bakery.New(bakery.BakeryParams{
 		Location: "here",
@@ -48,16 +38,18 @@ func (s *suite) TestDischargerSimple(c *gc.C) {
 		Condition: "something",
 	}}, dischargeOp)
 
-	c.Assert(err, gc.IsNil)
-	ms, err := s.client.DischargeAll(context.Background(), m)
-	c.Assert(err, gc.IsNil)
-	c.Assert(ms, gc.HasLen, 2)
+	c.Assert(err, qt.IsNil)
+	ms, err := client.DischargeAll(context.Background(), m)
+	c.Assert(err, qt.IsNil)
+	c.Assert(ms, qt.HasLen, 2)
 
 	_, err = b.Checker.Auth(ms).Allow(context.Background(), dischargeOp)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 }
 
-func (s *suite) TestDischargerTwoLevels(c *gc.C) {
+func TestDischargerTwoLevels(t *testing.T) {
+	c := qt.New(t)
+	client := httpbakery.NewClient()
 	d1checker := func(cond, arg string) ([]checkers.Caveat, error) {
 		if cond != "xtrue" {
 			return nil, fmt.Errorf("caveat refused")
@@ -95,33 +87,37 @@ func (s *suite) TestDischargerTwoLevels(c *gc.C) {
 		Condition: "true",
 	}}, dischargeOp)
 
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
-	ms, err := s.client.DischargeAll(context.Background(), m)
-	c.Assert(err, gc.IsNil)
-	c.Assert(ms, gc.HasLen, 3)
+	ms, err := client.DischargeAll(context.Background(), m)
+	c.Assert(err, qt.IsNil)
+	c.Assert(ms, qt.HasLen, 3)
 
 	_, err = b.Checker.Auth(ms).Allow(context.Background(), dischargeOp)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	err = b.Oven.AddCaveat(context.Background(), m, checkers.Caveat{
 		Location:  d2.Location(),
 		Condition: "nope",
 	})
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
-	ms, err = s.client.DischargeAll(context.Background(), m)
-	c.Assert(err, gc.ErrorMatches, `cannot get discharge from "https://[^"]*": third party refused discharge: cannot discharge: caveat refused`)
-	c.Assert(ms, gc.HasLen, 0)
+	ms, err = client.DischargeAll(context.Background(), m)
+	c.Assert(err, qt.ErrorMatches, `cannot get discharge from "https://[^"]*": third party refused discharge: cannot discharge: caveat refused`)
+	c.Assert(ms, qt.HasLen, 0)
 }
 
-func (s *suite) TestInsecureSkipVerifyRestoration(c *gc.C) {
+func TestInsecureSkipVerifyRestoration(t *testing.T) {
+	c := qt.New(t)
+	defer func() {
+		http.DefaultTransport.(*http.Transport).TLSClientConfig = nil
+	}()
 	d1 := bakerytest.NewDischarger(nil)
 	d2 := bakerytest.NewDischarger(nil)
 	d2.Close()
-	c.Assert(http.DefaultTransport.(*http.Transport).TLSClientConfig.InsecureSkipVerify, gc.Equals, true)
+	c.Assert(http.DefaultTransport.(*http.Transport).TLSClientConfig.InsecureSkipVerify, qt.Equals, true)
 	d1.Close()
-	c.Assert(http.DefaultTransport.(*http.Transport).TLSClientConfig.InsecureSkipVerify, gc.Equals, false)
+	c.Assert(http.DefaultTransport.(*http.Transport).TLSClientConfig.InsecureSkipVerify, qt.Equals, false)
 
 	// When InsecureSkipVerify is already true, it should not
 	// be restored to false.
@@ -129,10 +125,11 @@ func (s *suite) TestInsecureSkipVerifyRestoration(c *gc.C) {
 	d3 := bakerytest.NewDischarger(nil)
 	d3.Close()
 
-	c.Assert(http.DefaultTransport.(*http.Transport).TLSClientConfig.InsecureSkipVerify, gc.Equals, true)
+	c.Assert(http.DefaultTransport.(*http.Transport).TLSClientConfig.InsecureSkipVerify, qt.Equals, true)
 }
 
-func (s *suite) TestConcurrentDischargers(c *gc.C) {
+func TestConcurrentDischargers(t *testing.T) {
+	c := qt.New(t)
 	var wg sync.WaitGroup
 	for i := 0; i < 5; i++ {
 		wg.Add(1)
@@ -143,18 +140,19 @@ func (s *suite) TestConcurrentDischargers(c *gc.C) {
 		}()
 	}
 	wg.Wait()
-	c.Assert(http.DefaultTransport.(*http.Transport).TLSClientConfig.InsecureSkipVerify, gc.Equals, false)
+	c.Assert(http.DefaultTransport.(*http.Transport).TLSClientConfig.InsecureSkipVerify, qt.Equals, false)
 }
 
-func (s *suite) TestWithGlobalAllowInsecure(c *gc.C) {
+func TestWithGlobalAllowInsecure(t *testing.T) {
 	httpbakery.AllowInsecureThirdPartyLocator = true
 	defer func() {
 		httpbakery.AllowInsecureThirdPartyLocator = false
 	}()
-	s.TestDischargerSimple(c)
+	TestDischargerSimple(t)
 }
 
-func (s *suite) TestInteractiveDischarger(c *gc.C) {
+func TestInteractiveDischarger(t *testing.T) {
+	c := qt.New(t)
 	d := bakerytest.NewDischarger(nil)
 	defer d.Close()
 
@@ -202,25 +200,26 @@ func (s *suite) TestInteractiveDischarger(c *gc.C) {
 		Condition: "something",
 	}}, dischargeOp)
 
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	client := httpbakery.NewClient()
 	client.AddInteractor(newTestInteractor())
 	ms, err := client.DischargeAll(context.Background(), m)
-	c.Assert(err, gc.IsNil)
-	c.Assert(ms, gc.HasLen, 2)
+	c.Assert(err, qt.IsNil)
+	c.Assert(ms, qt.HasLen, 2)
 
 	_, err = b.Checker.Auth(ms).Allow(context.Background(), dischargeOp)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	// First caveat is time-before caveat added by NewMacaroon.
 	// Second is the one added by the discharger above.
-	c.Assert(r.caveats, gc.HasLen, 1)
-	c.Assert(r.caveats[0], gc.Equals, "test pass")
+	c.Assert(r.caveats, qt.HasLen, 1)
+	c.Assert(r.caveats[0], qt.Equals, "test pass")
 
-	c.Check(visited, gc.Equals, true)
-	c.Check(waited, gc.Equals, true)
+	c.Check(visited, qt.Equals, true)
+	c.Check(waited, qt.Equals, true)
 }
 
-func (s *suite) TestLoginDischargerError(c *gc.C) {
+func TestLoginDischargerError(t *testing.T) {
+	c := qt.New(t)
 	d := bakerytest.NewDischarger(nil)
 	defer d.Close()
 
@@ -259,14 +258,15 @@ func (s *suite) TestLoginDischargerError(c *gc.C) {
 		Condition: "something",
 	}}, dischargeOp)
 
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	client := httpbakery.NewClient()
 	client.AddInteractor(newTestInteractor())
 	_, err = client.DischargeAll(context.Background(), m)
-	c.Assert(err, gc.ErrorMatches, `cannot get discharge from ".*": cannot acquire discharge token: test error`)
+	c.Assert(err, qt.ErrorMatches, `cannot get discharge from ".*": cannot acquire discharge token: test error`)
 }
 
-func (s *suite) TestInteractiveDischargerRedirection(c *gc.C) {
+func TestInteractiveDischargerRedirection(t *testing.T) {
+	c := qt.New(t)
 	d := bakerytest.NewDischarger(nil)
 	defer d.Close()
 	rendezvous := bakerytest.NewRendezvous()
@@ -314,18 +314,18 @@ func (s *suite) TestInteractiveDischargerRedirection(c *gc.C) {
 		Condition: "something",
 	}}, dischargeOp)
 
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	client := httpbakery.NewClient()
 	client.AddInteractor(newTestInteractor())
 
 	ms, err := client.DischargeAll(context.Background(), m)
-	c.Assert(err, gc.IsNil)
-	c.Assert(ms, gc.HasLen, 2)
+	c.Assert(err, qt.IsNil)
+	c.Assert(ms, qt.HasLen, 2)
 
 	_, err = b.Checker.Auth(ms).Allow(context.Background(), dischargeOp)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
-	c.Assert(r.caveats, gc.DeepEquals, []string{"condition"})
+	c.Assert(r.caveats, qt.DeepEquals, []string{"condition"})
 }
 
 type recordingChecker struct {

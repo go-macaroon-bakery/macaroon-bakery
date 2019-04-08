@@ -6,11 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"time"
+	"testing"
 
-	jujutesting "github.com/juju/testing"
-	jc "github.com/juju/testing/checkers"
+	qt "github.com/frankban/quicktest"
 	"golang.org/x/net/context"
-	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/httprequest.v1"
 
@@ -21,13 +20,8 @@ import (
 	"gopkg.in/macaroon-bakery.v2/httpbakery"
 )
 
-type OvenSuite struct {
-	jujutesting.LoggingSuite
-}
-
-var _ = gc.Suite(&OvenSuite{})
-
-func (*OvenSuite) TestOvenWithAuthnMacaroon(c *gc.C) {
+func TestOvenWithAuthnMacaroon(t *testing.T) {
+	c := qt.New(t)
 	discharger := newTestIdentityServer()
 	defer discharger.Close()
 
@@ -62,23 +56,26 @@ func (*OvenSuite) TestOvenWithAuthnMacaroon(c *gc.C) {
 	}))
 	defer ts.Close()
 	req, err := http.NewRequest("GET", ts.URL, nil)
-	c.Assert(err, gc.Equals, nil)
+	c.Assert(err, qt.Equals, nil)
 	client := httpbakery.NewClient()
 	t0 := time.Now()
 	resp, err := client.Do(req)
-	c.Assert(err, gc.Equals, nil)
-	c.Check(errorCalled, gc.Equals, 1)
+	c.Assert(err, qt.Equals, nil)
+	c.Check(errorCalled, qt.Equals, 1)
 	body, _ := ioutil.ReadAll(resp.Body)
-	c.Assert(resp.StatusCode, gc.Equals, http.StatusOK, gc.Commentf("body: %q", body))
+	c.Assert(resp.StatusCode, qt.Equals, http.StatusOK, qt.Commentf("body: %q", body))
 	mss := httpbakery.MacaroonsForURL(client.Jar, mustParseURL(discharger.Location()))
-	c.Assert(mss, gc.HasLen, 1)
-	t, ok := checkers.MacaroonsExpiryTime(b.Checker.Namespace(), mss[0])
-	c.Assert(ok, gc.Equals, true)
+	c.Assert(mss, qt.HasLen, 1)
+	t1, ok := checkers.MacaroonsExpiryTime(b.Checker.Namespace(), mss[0])
+	c.Assert(ok, qt.Equals, true)
 	want := t0.Add(expectedExpiry)
-	c.Assert(t, jc.TimeBetween(want, want.Add(time.Second)))
+	if t1.Before(want) || t1.After(want.Add(time.Second)) {
+		c.Fatalf("time out of range; got %v want %v", t1, want)
+	}
 }
 
-func (*OvenSuite) TestOvenWithAuthzMacaroon(c *gc.C) {
+func TestOvenWithAuthzMacaroon(t *testing.T) {
+	c := qt.New(t)
 	discharger := newTestIdentityServer()
 	defer discharger.Close()
 	discharger2 := bakerytest.NewDischarger(nil)
@@ -128,33 +125,37 @@ func (*OvenSuite) TestOvenWithAuthzMacaroon(c *gc.C) {
 	}))
 	defer ts.Close()
 	req, err := http.NewRequest("GET", ts.URL, nil)
-	c.Assert(err, gc.Equals, nil)
+	c.Assert(err, qt.Equals, nil)
 	client := httpbakery.NewClient()
 	t0 := time.Now()
 	resp, err := client.Do(req)
-	c.Assert(err, gc.Equals, nil)
-	c.Check(errorCalled, gc.Equals, 2)
+	c.Assert(err, qt.Equals, nil)
+	c.Check(errorCalled, qt.Equals, 2)
 	body, _ := ioutil.ReadAll(resp.Body)
-	c.Assert(resp.StatusCode, gc.Equals, http.StatusOK, gc.Commentf("body: %q", body))
+	c.Assert(resp.StatusCode, qt.Equals, http.StatusOK, qt.Commentf("body: %q", body))
 
 	cookies := client.Jar.Cookies(mustParseURL(discharger.Location()))
 	for i, cookie := range cookies {
 		c.Logf("cookie %d: %s %q", i, cookie.Name, cookie.Value)
 	}
 	mss := httpbakery.MacaroonsForURL(client.Jar, mustParseURL(discharger.Location()))
-	c.Assert(mss, gc.HasLen, 2)
+	c.Assert(mss, qt.HasLen, 2)
 
 	// The cookie jar returns otherwise-similar cookies in the order
 	// they were added, so the authn macaroon will be first.
-	t, ok := checkers.MacaroonsExpiryTime(b.Checker.Namespace(), mss[0])
-	c.Assert(ok, gc.Equals, true)
+	t1, ok := checkers.MacaroonsExpiryTime(b.Checker.Namespace(), mss[0])
+	c.Assert(ok, qt.Equals, true)
 	want := t0.Add(expectedAuthnExpiry)
-	c.Assert(t, jc.TimeBetween(want, want.Add(time.Second)))
+	if t1.Before(want) || t1.After(want.Add(time.Second)) {
+		c.Fatalf("time out of range; got %v want %v", t1, want)
+	}
 
-	t, ok = checkers.MacaroonsExpiryTime(b.Checker.Namespace(), mss[1])
-	c.Assert(ok, gc.Equals, true)
+	t1, ok = checkers.MacaroonsExpiryTime(b.Checker.Namespace(), mss[1])
+	c.Assert(ok, qt.Equals, true)
 	want = t0.Add(expectedAuthzExpiry)
-	c.Assert(t, jc.TimeBetween(want, want.Add(time.Second)))
+	if t1.Before(want) || t1.After(want.Add(time.Second)) {
+		c.Fatalf("time out of range; got %v want %v", t1, want)
+	}
 }
 
 type testIdentityServer struct {

@@ -3,17 +3,14 @@ package httpbakery_test
 import (
 	"net"
 	"net/http"
+	"testing"
 
-	gc "gopkg.in/check.v1"
+	qt "github.com/frankban/quicktest"
 	"gopkg.in/errgo.v1"
 
 	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
 	"gopkg.in/macaroon-bakery.v2/httpbakery"
 )
-
-type CheckersSuite struct{}
-
-var _ = gc.Suite(&CheckersSuite{})
 
 type checkTest struct {
 	caveat      checkers.Caveat
@@ -153,7 +150,8 @@ var checkerTests = []struct {
 	}},
 }}
 
-func (s *CheckersSuite) TestCheckers(c *gc.C) {
+func TestCheckers(t *testing.T) {
+	c := qt.New(t)
 	checker := httpbakery.NewChecker()
 	for i, test := range checkerTests {
 		c.Logf("test %d: %s", i, test.about)
@@ -163,13 +161,13 @@ func (s *CheckersSuite) TestCheckers(c *gc.C) {
 
 			err := checker.CheckFirstPartyCaveat(ctx, checker.Namespace().ResolveCaveat(check.caveat).Condition)
 			if check.expectError != "" {
-				c.Assert(err, gc.ErrorMatches, check.expectError)
+				c.Assert(err, qt.ErrorMatches, check.expectError)
 				if check.expectCause == nil {
 					check.expectCause = errgo.Any
 				}
-				c.Assert(check.expectCause(errgo.Cause(err)), gc.Equals, true)
+				c.Assert(check.expectCause(errgo.Cause(err)), qt.Equals, true)
 			} else {
-				c.Assert(err, gc.IsNil)
+				c.Assert(err, qt.IsNil)
 			}
 		}
 	}

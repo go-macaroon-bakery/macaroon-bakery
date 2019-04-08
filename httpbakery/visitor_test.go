@@ -5,22 +5,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"testing"
 
-	jujutesting "github.com/juju/testing"
-	jc "github.com/juju/testing/checkers"
+	qt "github.com/frankban/quicktest"
 	"golang.org/x/net/context"
-	gc "gopkg.in/check.v1"
 
 	"gopkg.in/macaroon-bakery.v2/httpbakery"
 )
 
-type InteractorSuite struct {
-	jujutesting.LoggingSuite
-}
-
-var _ = gc.Suite(&InteractorSuite{})
-
-func (*InteractorSuite) TestLegacyGetInteractionMethodsGetFailure(c *gc.C) {
+func TestLegacyGetInteractionMethodsGetFailure(t *testing.T) {
+	c := qt.New(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
 		w.Write([]byte("failure"))
@@ -29,12 +23,13 @@ func (*InteractorSuite) TestLegacyGetInteractionMethodsGetFailure(c *gc.C) {
 
 	methods := httpbakery.LegacyGetInteractionMethods(testContext, nopLogger{}, http.DefaultClient, mustParseURL(srv.URL))
 	// On error, it falls back to just the single default interactive method.
-	c.Assert(methods, jc.DeepEquals, map[string]*url.URL{
+	c.Assert(methods, qt.DeepEquals, map[string]*url.URL{
 		"interactive": mustParseURL(srv.URL),
 	})
 }
 
-func (*InteractorSuite) TestLegacyGetInteractionMethodsSuccess(c *gc.C) {
+func TestLegacyGetInteractionMethodsSuccess(t *testing.T) {
+	c := qt.New(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"method": "http://somewhere/something"}`)
@@ -42,13 +37,14 @@ func (*InteractorSuite) TestLegacyGetInteractionMethodsSuccess(c *gc.C) {
 	defer srv.Close()
 
 	methods := httpbakery.LegacyGetInteractionMethods(testContext, nopLogger{}, http.DefaultClient, mustParseURL(srv.URL))
-	c.Assert(methods, jc.DeepEquals, map[string]*url.URL{
+	c.Assert(methods, qt.DeepEquals, map[string]*url.URL{
 		"interactive": mustParseURL(srv.URL),
 		"method":      mustParseURL("http://somewhere/something"),
 	})
 }
 
-func (*InteractorSuite) TestLegacyGetInteractionMethodsInvalidURL(c *gc.C) {
+func TestLegacyGetInteractionMethodsInvalidURL(t *testing.T) {
+	c := qt.New(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"method": ":::"}`)
@@ -58,7 +54,7 @@ func (*InteractorSuite) TestLegacyGetInteractionMethodsInvalidURL(c *gc.C) {
 	methods := httpbakery.LegacyGetInteractionMethods(testContext, nopLogger{}, http.DefaultClient, mustParseURL(srv.URL))
 
 	// On error, it falls back to just the single default interactive method.
-	c.Assert(methods, jc.DeepEquals, map[string]*url.URL{
+	c.Assert(methods, qt.DeepEquals, map[string]*url.URL{
 		"interactive": mustParseURL(srv.URL),
 	})
 }
