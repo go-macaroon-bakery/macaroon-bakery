@@ -3,19 +3,15 @@ package checkers_test
 import (
 	"fmt"
 	"time"
+	"testing"
 
-	jc "github.com/juju/testing/checkers"
 	"golang.org/x/net/context"
-	gc "gopkg.in/check.v1"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2"
+	qt "github.com/frankban/quicktest"
 
 	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
 )
-
-type CheckersSuite struct{}
-
-var _ = gc.Suite(&CheckersSuite{})
 
 // A frozen time for the tests.
 var now = time.Date(2006, time.January, 2, 15, 4, 5, int(123*time.Millisecond), time.UTC)
@@ -161,9 +157,9 @@ var errWrongArg = errgo.New("wrong arg")
 
 // argChecker returns a checker function that checks
 // that the caveat condition is checkArg.
-func argChecker(c *gc.C, expectCond, checkArg string) checkers.Func {
+func argChecker(c *qt.C, expectCond, checkArg string) checkers.Func {
 	return func(_ context.Context, cond, arg string) error {
-		c.Assert(cond, gc.Equals, expectCond)
+		c.Assert(cond, qt.Equals, expectCond)
 		if arg != checkArg {
 			return errWrongArg
 		}
@@ -171,7 +167,8 @@ func argChecker(c *gc.C, expectCond, checkArg string) checkers.Func {
 	}
 }
 
-func (s *CheckersSuite) TestCheckers(c *gc.C) {
+func TestCheckers(t *testing.T) {
+	c := qt.New(t)
 	checker := checkers.New(nil)
 	checker.Namespace().Register("testns", "t")
 	checker.Register("a", "testns", argChecker(c, "t:a", "aval"))
@@ -186,13 +183,13 @@ func (s *CheckersSuite) TestCheckers(c *gc.C) {
 			c.Logf("\tcheck %d", j)
 			err := checker.CheckFirstPartyCaveat(ctx, check.caveat)
 			if check.expectError != "" {
-				c.Assert(err, gc.ErrorMatches, check.expectError)
+				c.Assert(err, qt.ErrorMatches, check.expectError)
 				if check.expectCause == nil {
 					check.expectCause = errgo.Any
 				}
-				c.Assert(check.expectCause(errgo.Cause(err)), gc.Equals, true)
+				c.Assert(check.expectCause(errgo.Cause(err)), qt.Equals, true)
 			} else {
-				c.Assert(err, gc.IsNil)
+				c.Assert(err, qt.IsNil)
 			}
 		}
 	}
@@ -326,7 +323,8 @@ func caveatWithNamespace(cav checkers.Caveat, uri string) checkers.Caveat {
 	return cav
 }
 
-func (*CheckersSuite) TestInferDeclared(c *gc.C) {
+func TestInferDeclared(t *testing.T) {
+	c := qt.New(t)
 	for i, test := range inferDeclaredTests {
 		if test.namespace == nil {
 			test.namespace = map[string]string{
@@ -338,7 +336,7 @@ func (*CheckersSuite) TestInferDeclared(c *gc.C) {
 		ms := make(macaroon.Slice, len(test.caveats))
 		for i, caveats := range test.caveats {
 			m, err := macaroon.New(nil, []byte(fmt.Sprint(i)), "", macaroon.LatestVersion)
-			c.Assert(err, gc.IsNil)
+			c.Assert(err, qt.IsNil)
 			for _, cav := range caveats {
 				cav = ns.ResolveCaveat(cav)
 				if cav.Location == "" {
@@ -349,52 +347,58 @@ func (*CheckersSuite) TestInferDeclared(c *gc.C) {
 			}
 			ms[i] = m
 		}
-		c.Assert(checkers.InferDeclared(nil, ms), jc.DeepEquals, test.expect)
+		c.Assert(checkers.InferDeclared(nil, ms), qt.DeepEquals, test.expect)
 	}
 }
 
-func (*CheckersSuite) TestRegisterNilFuncPanics(c *gc.C) {
+func TestRegisterNilFuncPanics(t *testing.T) {
+	c := qt.New(t)
 	checker := checkers.New(nil)
 	c.Assert(func() {
 		checker.Register("x", checkers.StdNamespace, nil)
-	}, gc.PanicMatches, `nil check function registered for namespace ".*" when registering condition "x"`)
+	}, qt.PanicMatches, `nil check function registered for namespace ".*" when registering condition "x"`)
 }
 
-func (*CheckersSuite) TestRegisterNoRegisteredNamespace(c *gc.C) {
+func TestRegisterNoRegisteredNamespace(t *testing.T) {
+	c := qt.New(t)
 	checker := checkers.New(nil)
 	c.Assert(func() {
 		checker.Register("x", "testns", succeed)
-	}, gc.PanicMatches, `no prefix registered for namespace "testns" when registering condition "x"`)
+	}, qt.PanicMatches, `no prefix registered for namespace "testns" when registering condition "x"`)
 }
 
-func (*CheckersSuite) TestRegisterEmptyPrefixConditionWithColon(c *gc.C) {
+func TestRegisterEmptyPrefixConditionWithColon(t *testing.T) {
+	c := qt.New(t)
 	checker := checkers.New(nil)
 	checker.Namespace().Register("testns", "")
 	c.Assert(func() {
 		checker.Register("x:y", "testns", succeed)
-	}, gc.PanicMatches, `caveat condition "x:y" in namespace "testns" contains a colon but its prefix is empty`)
+	}, qt.PanicMatches, `caveat condition "x:y" in namespace "testns" contains a colon but its prefix is empty`)
 }
 
-func (*CheckersSuite) TestRegisterTwiceSameNamespace(c *gc.C) {
+func TestRegisterTwiceSameNamespace(t *testing.T) {
+	c := qt.New(t)
 	checker := checkers.New(nil)
 	checker.Namespace().Register("testns", "t")
 	checker.Register("x", "testns", succeed)
 	c.Assert(func() {
 		checker.Register("x", "testns", succeed)
-	}, gc.PanicMatches, `checker for "t:x" \(namespace "testns"\) already registered in namespace "testns"`)
+	}, qt.PanicMatches, `checker for "t:x" \(namespace "testns"\) already registered in namespace "testns"`)
 }
 
-func (*CheckersSuite) TestRegisterTwiceDifferentNamespace(c *gc.C) {
+func TestRegisterTwiceDifferentNamespace(t *testing.T) {
+	c := qt.New(t)
 	checker := checkers.New(nil)
 	checker.Namespace().Register("testns", "t")
 	checker.Namespace().Register("otherns", "t")
 	checker.Register("x", "testns", succeed)
 	c.Assert(func() {
 		checker.Register("x", "otherns", succeed)
-	}, gc.PanicMatches, `checker for "t:x" \(namespace "otherns"\) already registered in namespace "testns"`)
+	}, qt.PanicMatches, `checker for "t:x" \(namespace "otherns"\) already registered in namespace "testns"`)
 }
 
-func (*CheckersSuite) TestCheckerInfo(c *gc.C) {
+func TestCheckerInfo(t *testing.T) {
+	c := qt.New(t)
 	checker := checkers.NewEmpty(nil)
 	checker.Namespace().Register("one", "t")
 	checker.Namespace().Register("two", "t")
@@ -448,15 +452,15 @@ func (*CheckersSuite) TestCheckerInfo(c *gc.C) {
 	infos := checker.Info()
 	// We can't use DeepEqual on functions so check that the right functions are
 	// there by calling them, then set them to nil.
-	c.Assert(infos, gc.HasLen, len(expect))
+	c.Assert(infos, qt.HasLen, len(expect))
 	for i := range infos {
 		info := &infos[i]
 		calledVal = ""
 		info.Check(nil, "", "")
-		c.Check(calledVal, gc.Equals, expect[i].Name+" "+expect[i].Namespace, gc.Commentf("index %d", i))
+		c.Check(calledVal, qt.Equals, expect[i].Name+" "+expect[i].Namespace, qt.Commentf("index %d", i))
 		info.Check = nil
 	}
-	c.Assert(infos, jc.DeepEquals, expect)
+	c.Assert(infos, qt.DeepEquals, expect)
 }
 
 func succeed(ctx context.Context, cond, arg string) error {

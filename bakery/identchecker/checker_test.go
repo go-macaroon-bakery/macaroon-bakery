@@ -3,11 +3,10 @@ package identchecker_test
 import (
 	"sort"
 	"strings"
+	"testing"
 
-	jujutesting "github.com/juju/testing"
-	jc "github.com/juju/testing/checkers"
+	qt "github.com/frankban/quicktest"
 	"golang.org/x/net/context"
-	gc "gopkg.in/check.v1"
 	errgo "gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2"
 
@@ -17,138 +16,133 @@ import (
 )
 
 type dischargeRecord struct {
-	location string
-	user     string
+	Location string
+	User     string
 }
 
-type checkerSuite struct {
-	jujutesting.LoggingSuite
-	discharges []dischargeRecord
-}
-
-var _ = gc.Suite(&checkerSuite{})
-
-func (s *checkerSuite) SetUpTest(c *gc.C) {
-	s.discharges = nil
-	s.LoggingSuite.SetUpTest(c)
-}
-
-func (s *checkerSuite) TestAuthorizeWithOpenAccessAndNoMacaroons(c *gc.C) {
+func TestAuthorizeWithOpenAccessAndNoMacaroons(t *testing.T) {
+	c := qt.New(t)
 	locator := make(dischargerLocator)
-	ids := s.newIdService("ids", locator)
+	ids := newIdService("ids", locator)
 	auth := opACL{readOp("something"): {identchecker.Everyone}}
 	ts := newService(auth, ids, locator)
 	client := newClient(locator)
 
 	authInfo, err := client.do(testContext, ts, readOp("something"))
-	c.Assert(err, gc.IsNil)
-	c.Assert(s.discharges, gc.HasLen, 0)
-	c.Assert(authInfo, gc.NotNil)
-	c.Assert(authInfo.Identity, gc.Equals, nil)
-	c.Assert(authInfo.Macaroons, gc.HasLen, 0)
+	c.Assert(err, qt.IsNil)
+	c.Assert(ids.discharges, qt.HasLen, 0)
+	c.Assert(authInfo, qt.Not(qt.IsNil))
+	c.Assert(authInfo.Identity, qt.Equals, nil)
+	c.Assert(authInfo.Macaroons, qt.HasLen, 0)
 }
 
-func (s *checkerSuite) TestAuthorizationDenied(c *gc.C) {
+func TestAuthorizationDenied(t *testing.T) {
+	c := qt.New(t)
 	locator := make(dischargerLocator)
-	ids := s.newIdService("ids", locator)
+	ids := newIdService("ids", locator)
 	auth := identchecker.ClosedAuthorizer
 	ts := newService(auth, ids, locator)
 	client := newClient(locator)
 
 	authInfo, err := client.do(asUser("bob"), ts, readOp("something"))
-	c.Assert(err, gc.ErrorMatches, `permission denied`)
-	c.Assert(authInfo, gc.IsNil)
+	c.Assert(err, qt.ErrorMatches, `permission denied`)
+	c.Assert(authInfo, qt.IsNil)
 }
 
-func (s *checkerSuite) TestAuthorizeWithAuthenticationRequired(c *gc.C) {
+func TestAuthorizeWithAuthenticationRequired(t *testing.T) {
+	c := qt.New(t)
 	locator := make(dischargerLocator)
-	ids := s.newIdService("ids", locator)
+	ids := newIdService("ids", locator)
 	auth := opACL{readOp("something"): {"bob"}}
 	ts := newService(auth, ids, locator)
 	client := newClient(locator)
 
 	authInfo, err := client.do(asUser("bob"), ts, readOp("something"))
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
-	c.Assert(s.discharges, jc.DeepEquals, []dischargeRecord{{
-		location: "ids",
-		user:     "bob",
+	c.Assert(ids.discharges, qt.DeepEquals, []dischargeRecord{{
+		Location: "ids",
+		User:     "bob",
 	}})
-	c.Assert(authInfo, gc.NotNil)
-	c.Assert(authInfo.Identity, gc.Equals, identchecker.SimpleIdentity("bob"))
-	c.Assert(authInfo.Macaroons, gc.HasLen, 1)
+	c.Assert(authInfo, qt.Not(qt.IsNil))
+	c.Assert(authInfo.Identity, qt.Equals, identchecker.SimpleIdentity("bob"))
+	c.Assert(authInfo.Macaroons, qt.HasLen, 1)
 }
 
 func asUser(username string) context.Context {
 	return contextWithDischargeUser(testContext, username)
 }
 
-func (s *checkerSuite) TestAuthorizeMultipleOps(c *gc.C) {
+func TestAuthorizeMultipleOps(t *testing.T) {
+	c := qt.New(t)
 	locator := make(dischargerLocator)
-	ids := s.newIdService("ids", locator)
+	ids := newIdService("ids", locator)
 	auth := opACL{readOp("something"): {"bob"}, readOp("otherthing"): {"bob"}}
 	ts := newService(auth, ids, locator)
 	client := newClient(locator)
 
 	_, err := client.do(asUser("bob"), ts, readOp("something"), readOp("otherthing"))
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
-	c.Assert(s.discharges, jc.DeepEquals, []dischargeRecord{{
-		location: "ids",
-		user:     "bob",
+	c.Assert(ids.discharges, qt.DeepEquals, []dischargeRecord{{
+		Location: "ids",
+		User:     "bob",
 	}})
 }
 
-func (s *checkerSuite) TestCapability(c *gc.C) {
+func TestCapability(t *testing.T) {
+	c := qt.New(t)
 	locator := make(dischargerLocator)
-	ids := s.newIdService("ids", locator)
+	ids := newIdService("ids", locator)
 	auth := opACL{readOp("something"): {"bob"}}
 	ts := newService(auth, ids, locator)
 	client := newClient(locator)
 
 	m, err := client.dischargedCapability(asUser("bob"), ts, readOp("something"))
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	// Check that we can exercise the capability directly on the service
 	// with no discharging required.
 	authInfo, err := ts.do(testContext, []macaroon.Slice{m}, readOp("something"))
-	c.Assert(err, gc.IsNil)
-	c.Assert(authInfo, gc.NotNil)
-	c.Assert(authInfo.Identity, gc.Equals, nil)
-	c.Assert(authInfo.Macaroons, gc.HasLen, 1)
-	c.Assert(authInfo.Macaroons[0][0].Id(), jc.DeepEquals, m[0].Id())
+	c.Assert(err, qt.IsNil)
+	c.Assert(authInfo, qt.Not(qt.IsNil))
+	c.Assert(authInfo.Identity, qt.Equals, nil)
+	c.Assert(authInfo.Macaroons, qt.HasLen, 1)
+	c.Assert(authInfo.Macaroons[0][0].Id(), qt.DeepEquals, m[0].Id())
 }
 
-func (s *checkerSuite) TestCapabilityMultipleEntities(c *gc.C) {
+func TestCapabilityMultipleEntities(t *testing.T) {
+	c := qt.New(t)
 	locator := make(dischargerLocator)
-	ids := s.newIdService("ids", locator)
+	ids := newIdService("ids", locator)
 	auth := opACL{readOp("e1"): {"bob"}, readOp("e2"): {"bob"}, readOp("e3"): {"bob"}}
 	ts := newService(auth, ids, locator)
 	client := newClient(locator)
 
 	m, err := client.dischargedCapability(asUser("bob"), ts, readOp("e1"), readOp("e2"), readOp("e3"))
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
-	c.Assert(s.discharges, jc.DeepEquals, []dischargeRecord{{
-		location: "ids",
-		user:     "bob",
+	c.Assert(ids.discharges, qt.DeepEquals, []dischargeRecord{{
+		Location: "ids",
+		User:     "bob",
 	}})
 
 	// Check that we can exercise the capability directly on the service
 	// with no discharging required.
 	_, err = ts.do(testContext, []macaroon.Slice{m}, readOp("e1"), readOp("e2"), readOp("e3"))
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	// Check that we can exercise the capability to act on a subset of the operations.
 	_, err = ts.do(testContext, []macaroon.Slice{m}, readOp("e2"), readOp("e3"))
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	_, err = ts.do(testContext, []macaroon.Slice{m}, readOp("e3"))
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 }
 
-func (s *checkerSuite) TestMultipleCapabilities(c *gc.C) {
+func TestMultipleCapabilities(t *testing.T) {
+	c := qt.New(t)
 	locator := make(dischargerLocator)
-	ids := s.newIdService("ids", locator)
+	ids := newIdService("ids", locator)
 	auth := opACL{readOp("e1"): {"alice"}, readOp("e2"): {"bob"}}
 	ts := newService(auth, ids, locator)
 
@@ -156,31 +150,32 @@ func (s *checkerSuite) TestMultipleCapabilities(c *gc.C) {
 	// that we can combine them together to do both operations
 	// at once.
 	m1, err := newClient(locator).dischargedCapability(asUser("alice"), ts, readOp("e1"))
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	m2, err := newClient(locator).dischargedCapability(asUser("bob"), ts, readOp("e2"))
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
-	c.Assert(s.discharges, jc.DeepEquals, []dischargeRecord{{
-		location: "ids",
-		user:     "alice",
+	c.Assert(ids.discharges, qt.DeepEquals, []dischargeRecord{{
+		Location: "ids",
+		User:     "alice",
 	}, {
-		location: "ids",
-		user:     "bob",
+		Location: "ids",
+		User:     "bob",
 	}})
 
 	authInfo, err := ts.do(testContext, []macaroon.Slice{m1, m2}, readOp("e1"), readOp("e2"))
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
-	c.Assert(authInfo, gc.NotNil)
-	c.Assert(authInfo.Identity, gc.Equals, nil)
-	c.Assert(authInfo.Macaroons, gc.HasLen, 2)
-	c.Assert(authInfo.Macaroons[0][0].Id(), jc.DeepEquals, m1[0].Id())
-	c.Assert(authInfo.Macaroons[1][0].Id(), jc.DeepEquals, m2[0].Id())
+	c.Assert(authInfo, qt.Not(qt.IsNil))
+	c.Assert(authInfo.Identity, qt.Equals, nil)
+	c.Assert(authInfo.Macaroons, qt.HasLen, 2)
+	c.Assert(authInfo.Macaroons[0][0].Id(), qt.DeepEquals, m1[0].Id())
+	c.Assert(authInfo.Macaroons[1][0].Id(), qt.DeepEquals, m2[0].Id())
 }
 
-func (s *checkerSuite) TestCombineCapabilities(c *gc.C) {
+func TestCombineCapabilities(t *testing.T) {
+	c := qt.New(t)
 	locator := make(dischargerLocator)
-	ids := s.newIdService("ids", locator)
+	ids := newIdService("ids", locator)
 	auth := opACL{readOp("e1"): {"alice"}, readOp("e2"): {"bob"}, readOp("e3"): {"bob", "alice"}}
 	ts := newService(auth, ids, locator)
 
@@ -188,38 +183,40 @@ func (s *checkerSuite) TestCombineCapabilities(c *gc.C) {
 	// that we can combine them together into a single capability
 	// capable of both operations.
 	m1, err := newClient(locator).dischargedCapability(asUser("alice"), ts, readOp("e1"), readOp("e3"))
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	m2, err := newClient(locator).dischargedCapability(asUser("bob"), ts, readOp("e2"))
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	m, err := ts.capability(testContext, []macaroon.Slice{m1, m2}, readOp("e1"), readOp("e2"), readOp("e3"))
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	_, err = ts.do(testContext, []macaroon.Slice{{m.M()}}, readOp("e1"), readOp("e2"), readOp("e3"))
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 }
 
-func (s *checkerSuite) TestPartiallyAuthorizedRequest(c *gc.C) {
+func TestPartiallyAuthorizedRequest(t *testing.T) {
+	c := qt.New(t)
 	locator := make(dischargerLocator)
-	ids := s.newIdService("ids", locator)
+	ids := newIdService("ids", locator)
 	auth := opACL{readOp("e1"): {"alice"}, readOp("e2"): {"bob"}}
 	ts := newService(auth, ids, locator)
 
 	// Acquire a capability for e1 but rely on authentication to
 	// authorize e2.
 	m, err := newClient(locator).dischargedCapability(asUser("alice"), ts, readOp("e1"))
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	client := newClient(locator)
 	client.addMacaroon(ts, "authz", m)
 
 	_, err = client.do(asUser("bob"), ts, readOp("e1"), readOp("e2"))
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 }
 
-func (s *checkerSuite) TestAuthWithThirdPartyCaveats(c *gc.C) {
+func TestAuthWithThirdPartyCaveats(t *testing.T) {
+	c := qt.New(t)
 	locator := make(dischargerLocator)
-	ids := s.newIdService("ids", locator)
+	ids := newIdService("ids", locator)
 
 	// We make an authorizer that requires a third party discharge
 	// when authorizing.
@@ -240,9 +237,9 @@ func (s *checkerSuite) TestAuthWithThirdPartyCaveats(c *gc.C) {
 			if string(info.Condition) != "question" {
 				return nil, errgo.Newf("third party condition not recognized")
 			}
-			s.discharges = append(s.discharges, dischargeRecord{
-				location: "other third party",
-				user:     dischargeUserFromContext(ctx),
+			ids.discharges = append(ids.discharges, dischargeRecord{
+				Location: "other third party",
+				User:     dischargeUserFromContext(ctx),
 			})
 			return nil, nil
 		}),
@@ -251,20 +248,21 @@ func (s *checkerSuite) TestAuthWithThirdPartyCaveats(c *gc.C) {
 
 	client := newClient(locator)
 	_, err := client.do(asUser("bob"), ts, readOp("something"))
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
-	c.Assert(s.discharges, jc.DeepEquals, []dischargeRecord{{
-		location: "ids",
-		user:     "bob",
+	c.Assert(ids.discharges, qt.DeepEquals, []dischargeRecord{{
+		Location: "ids",
+		User:     "bob",
 	}, {
-		location: "other third party",
-		user:     "bob",
+		Location: "other third party",
+		User:     "bob",
 	}})
 }
 
-func (s *checkerSuite) TestCapabilityCombinesFirstPartyCaveats(c *gc.C) {
+func TestCapabilityCombinesFirstPartyCaveats(t *testing.T) {
+	c := qt.New(t)
 	locator := make(dischargerLocator)
-	ids := s.newIdService("ids", locator)
+	ids := newIdService("ids", locator)
 	auth := opACL{readOp("e1"): {"alice"}, readOp("e2"): {"bob"}}
 	ts := newService(auth, ids, locator)
 
@@ -273,11 +271,11 @@ func (s *checkerSuite) TestCapabilityCombinesFirstPartyCaveats(c *gc.C) {
 	// that we can combine them together into a single capability
 	// capable of both operations.
 	m1, err := newClient(locator).capability(asUser("alice"), ts, readOp("e1"))
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	m1.M().AddFirstPartyCaveat([]byte("true 1"))
 	m1.M().AddFirstPartyCaveat([]byte("true 2"))
 	m2, err := newClient(locator).capability(asUser("bob"), ts, readOp("e2"))
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	m2.M().AddFirstPartyCaveat([]byte("true 3"))
 	m2.M().AddFirstPartyCaveat([]byte("true 4"))
 
@@ -286,9 +284,9 @@ func (s *checkerSuite) TestCapabilityCombinesFirstPartyCaveats(c *gc.C) {
 	client.addMacaroon(ts, "authz2", macaroon.Slice{m2.M()})
 
 	m, err := client.capability(testContext, ts, readOp("e1"), readOp("e2"))
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
-	c.Assert(macaroonConditions(m.M().Caveats(), false), jc.DeepEquals, []string{
+	c.Assert(macaroonConditions(m.M().Caveats(), false), qt.DeepEquals, []string{
 		"true 1",
 		"true 2",
 		"true 3",
@@ -296,17 +294,19 @@ func (s *checkerSuite) TestCapabilityCombinesFirstPartyCaveats(c *gc.C) {
 	})
 }
 
-func (s *checkerSuite) TestLoginOnly(c *gc.C) {
+func TestLoginOnly(t *testing.T) {
+	c := qt.New(t)
 	locator := make(dischargerLocator)
-	ids := s.newIdService("ids", locator)
+	ids := newIdService("ids", locator)
 	auth := identchecker.ClosedAuthorizer
 	ts := newService(auth, ids, locator)
 	authInfo, err := newClient(locator).do(asUser("bob"), ts, identchecker.LoginOp)
-	c.Assert(err, gc.IsNil)
-	c.Assert(authInfo.Identity, gc.Equals, identchecker.SimpleIdentity("bob"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(authInfo.Identity, qt.Equals, identchecker.SimpleIdentity("bob"))
 }
 
-func (s *checkerSuite) TestAuthWithIdentityFromContext(c *gc.C) {
+func TestAuthWithIdentityFromContext(t *testing.T) {
+	c := qt.New(t)
 	locator := make(dischargerLocator)
 	ids := basicAuthIdService{}
 	auth := opACL{readOp("e1"): {"sherlock"}, readOp("e2"): {"bob"}}
@@ -315,27 +315,29 @@ func (s *checkerSuite) TestAuthWithIdentityFromContext(c *gc.C) {
 	// Check that we can perform the ops with basic auth in the
 	// context.
 	authInfo, err := newClient(locator).do(contextWithBasicAuth(testContext, "sherlock", "holmes"), ts, readOp("e1"))
-	c.Assert(err, gc.IsNil)
-	c.Assert(authInfo.Identity, gc.Equals, identchecker.SimpleIdentity("sherlock"))
-	c.Assert(authInfo.Macaroons, gc.HasLen, 0)
+	c.Assert(err, qt.IsNil)
+	c.Assert(authInfo.Identity, qt.Equals, identchecker.SimpleIdentity("sherlock"))
+	c.Assert(authInfo.Macaroons, qt.HasLen, 0)
 }
 
-func (s *checkerSuite) TestAuthLoginOpWithIdentityFromContext(c *gc.C) {
+func TestAuthLoginOpWithIdentityFromContext(t *testing.T) {
+	c := qt.New(t)
 	locator := make(dischargerLocator)
 	ids := basicAuthIdService{}
 	ts := newService(nil, ids, locator)
 
 	// Check that we can use LoginOp when auth isn't granted through macaroons.
 	authInfo, err := newClient(locator).do(contextWithBasicAuth(testContext, "sherlock", "holmes"), ts, identchecker.LoginOp)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	if err == nil && authInfo == nil {
 		c.Fatalf("nil err and nil authInfo")
 	}
-	c.Assert(authInfo.Identity, gc.Equals, identchecker.SimpleIdentity("sherlock"))
-	c.Assert(authInfo.Macaroons, gc.HasLen, 0)
+	c.Assert(authInfo.Identity, qt.Equals, identchecker.SimpleIdentity("sherlock"))
+	c.Assert(authInfo.Macaroons, qt.HasLen, 0)
 }
 
-func (s *checkerSuite) TestAllowWithOpsAuthorizer(c *gc.C) {
+func TestAllowWithOpsAuthorizer(t *testing.T) {
+	c := qt.New(t)
 	locator := make(dischargerLocator)
 	oven := newMacaroonStore(mustGenerateKey(), locator)
 	ts := &service{
@@ -353,34 +355,35 @@ func (s *checkerSuite) TestAllowWithOpsAuthorizer(c *gc.C) {
 		Entity: "path-/user/bob",
 		Action: "*",
 	})
-	c.Assert(err, gc.Equals, nil)
+	c.Assert(err, qt.Equals, nil)
 	// Check that we can do some operation.
 	_, err = ts.do(testContext, []macaroon.Slice{{m.M()}}, writeOp("path-/user/bob/foo"))
-	c.Assert(err, gc.Equals, nil)
+	c.Assert(err, qt.Equals, nil)
 
 	// Check that we can't do an operation on an entity outside the
 	// original operation's purview.
 	_, err = ts.do(testContext, []macaroon.Slice{{m.M()}}, writeOp("path-/user/alice"))
-	c.Assert(err, gc.ErrorMatches, `permission denied`)
+	c.Assert(err, qt.ErrorMatches, `permission denied`)
 }
 
-func (s *checkerSuite) TestDuplicateLoginMacaroons(c *gc.C) {
+func TestDuplicateLoginMacaroons(t *testing.T) {
+	c := qt.New(t)
 	locator := make(dischargerLocator)
-	ids := s.newIdService("ids", locator)
+	ids := newIdService("ids", locator)
 	auth := identchecker.ClosedAuthorizer
 	ts := newService(auth, ids, locator)
 
 	// Acquire a login macaroon for bob.
 	client1 := newClient(locator)
 	authInfo, err := client1.do(asUser("bob"), ts, identchecker.LoginOp)
-	c.Assert(err, gc.IsNil)
-	c.Assert(authInfo.Identity, gc.Equals, identchecker.SimpleIdentity("bob"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(authInfo.Identity, qt.Equals, identchecker.SimpleIdentity("bob"))
 
 	// Acquire a login macaroon for alice.
 	client2 := newClient(locator)
 	authInfo, err = client2.do(asUser("alice"), ts, identchecker.LoginOp)
-	c.Assert(err, gc.IsNil)
-	c.Assert(authInfo.Identity, gc.Equals, identchecker.SimpleIdentity("alice"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(authInfo.Identity, qt.Equals, identchecker.SimpleIdentity("alice"))
 
 	// Combine the two login macaroons into one client.
 	client3 := newClient(locator)
@@ -390,9 +393,9 @@ func (s *checkerSuite) TestDuplicateLoginMacaroons(c *gc.C) {
 	// We should authenticate as bob (because macaroons are presented ordered
 	// by "cookie"name)
 	authInfo, err = client3.do(testContext, ts, identchecker.LoginOp)
-	c.Assert(err, gc.IsNil)
-	c.Assert(authInfo.Identity, gc.Equals, identchecker.SimpleIdentity("bob"))
-	c.Assert(authInfo.Used, jc.DeepEquals, []bool{true, false})
+	c.Assert(err, qt.IsNil)
+	c.Assert(authInfo.Identity, qt.Equals, identchecker.SimpleIdentity("bob"))
+	c.Assert(authInfo.Used, qt.DeepEquals, []bool{true, false})
 
 	// Try them the other way around and we should authenticate as alice.
 	client3 = newClient(locator)
@@ -400,21 +403,22 @@ func (s *checkerSuite) TestDuplicateLoginMacaroons(c *gc.C) {
 	client3.addMacaroon(ts, "2.bob", client1.macaroons[ts]["authn"])
 
 	authInfo, err = client3.do(testContext, ts, identchecker.LoginOp)
-	c.Assert(err, gc.IsNil)
-	c.Assert(authInfo.Identity, gc.Equals, identchecker.SimpleIdentity("alice"))
-	c.Assert(authInfo.Used, jc.DeepEquals, []bool{true, false})
+	c.Assert(err, qt.IsNil)
+	c.Assert(authInfo.Identity, qt.Equals, identchecker.SimpleIdentity("alice"))
+	c.Assert(authInfo.Used, qt.DeepEquals, []bool{true, false})
 }
 
-func (s *checkerSuite) TestMacaroonOpsFatalError(c *gc.C) {
+func TestMacaroonOpsFatalError(t *testing.T) {
+	c := qt.New(t)
 	// When we get a non-VerificationError error from the
 	// oven, we don't do any more verification.
 	checker := identchecker.NewChecker(identchecker.CheckerParams{
 		MacaroonVerifier: macaroonVerifierWithError{errgo.New("an error")},
 	})
 	m, err := macaroon.New(nil, nil, "", macaroon.V2)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	_, err = checker.Auth(macaroon.Slice{m}).Allow(testContext, identchecker.LoginOp)
-	c.Assert(err, gc.ErrorMatches, `cannot retrieve macaroon: an error`)
+	c.Assert(err, qt.ErrorMatches, `cannot retrieve macaroon: an error`)
 }
 
 func macaroonConditions(caveats []macaroon.Caveat, allowThird bool) []string {
@@ -461,13 +465,12 @@ func (auth opACL) Authorize(ctx context.Context, id identchecker.Identity, ops [
 type idService struct {
 	location string
 	*discharger
-	suite *checkerSuite
+	discharges []dischargeRecord
 }
 
-func (s *checkerSuite) newIdService(location string, locator dischargerLocator) *idService {
+func newIdService(location string, locator dischargerLocator) *idService {
 	ids := &idService{
 		location: location,
-		suite:    s,
 	}
 	key := mustGenerateKey()
 	ids.discharger = &discharger{
@@ -487,9 +490,9 @@ func (ids *idService) CheckThirdPartyCaveat(ctx context.Context, info *bakery.Th
 	if username == "" {
 		return nil, errgo.Newf("no current user")
 	}
-	ids.suite.discharges = append(ids.suite.discharges, dischargeRecord{
-		location: ids.location,
-		user:     username,
+	ids.discharges = append(ids.discharges, dischargeRecord{
+		Location: ids.location,
+		User:     username,
 	})
 	return []checkers.Caveat{
 		checkers.DeclaredCaveat("username", username),

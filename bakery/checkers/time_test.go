@@ -2,16 +2,13 @@ package checkers_test
 
 import (
 	"time"
+	"testing"
 
-	gc "gopkg.in/check.v1"
+	qt "github.com/frankban/quicktest"
 	"gopkg.in/macaroon.v2"
 
 	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
 )
-
-type timeSuite struct{}
-
-var _ = gc.Suite(&timeSuite{})
 
 var t1 = time.Now()
 var t2 = t1.Add(1 * time.Hour)
@@ -75,12 +72,13 @@ var expireTimeTests = []struct {
 	},
 }}
 
-func (s *timeSuite) TestExpireTime(c *gc.C) {
+func TestExpireTime(t *testing.T) {
+	c := qt.New(t)
 	for i, test := range expireTimeTests {
 		c.Logf("%d. %s", i, test.about)
 		t, expires := checkers.ExpiryTime(nil, test.caveats)
-		c.Assert(t.Equal(test.expectTime), gc.Equals, true, gc.Commentf("obtained: %s, expected: %s", t, test.expectTime))
-		c.Assert(expires, gc.Equals, test.expectExpires)
+		c.Assert(t.Equal(test.expectTime), qt.Equals, true, qt.Commentf("obtained: %s, expected: %s", t, test.expectTime))
+		c.Assert(expires, qt.Equals, test.expectExpires)
 	}
 }
 
@@ -140,12 +138,13 @@ var macaroonsExpireTimeTests = []struct {
 	expectExpires: true,
 }}
 
-func (s *timeSuite) TestMacaroonsExpireTime(c *gc.C) {
+func TestMacaroonsExpireTime(t *testing.T) {
+	c := qt.New(t)
 	for i, test := range macaroonsExpireTimeTests {
 		c.Logf("%d. %s", i, test.about)
 		t, expires := checkers.MacaroonsExpiryTime(nil, test.macaroons)
-		c.Assert(t.Equal(test.expectTime), gc.Equals, true, gc.Commentf("obtained: %s, expected: %s", t, test.expectTime))
-		c.Assert(expires, gc.Equals, test.expectExpires)
+		c.Assert(t.Equal(test.expectTime), qt.Equals, true, qt.Commentf("obtained: %s, expected: %s", t, test.expectTime))
+		c.Assert(expires, qt.Equals, test.expectExpires)
 	}
 }
 
