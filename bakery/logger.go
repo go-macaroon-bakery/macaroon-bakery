@@ -1,8 +1,9 @@
 package bakery
 
 import (
+	"context"
+
 	"github.com/juju/loggo"
-	"golang.org/x/net/context"
 )
 
 // Logger is used by the bakery to log informational messages

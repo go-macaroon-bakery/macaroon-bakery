@@ -1,12 +1,12 @@
 package bakery_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"unicode/utf8"
 
 	qt "github.com/frankban/quicktest"
-	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2"
 

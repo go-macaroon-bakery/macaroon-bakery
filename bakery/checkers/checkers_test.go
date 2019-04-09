@@ -1,14 +1,14 @@
 package checkers_test
 
 import (
+	"context"
 	"fmt"
-	"time"
 	"testing"
+	"time"
 
-	"golang.org/x/net/context"
+	qt "github.com/frankban/quicktest"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2"
-	qt "github.com/frankban/quicktest"
 
 	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
 )

@@ -1,9 +1,8 @@
 package main
 
 import (
+	"context"
 	"net/http"
-
-	"golang.org/x/net/context"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"
 	"gopkg.in/macaroon-bakery.v2/bakery/checkers"

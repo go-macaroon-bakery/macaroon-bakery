@@ -1,12 +1,12 @@
 package bakery
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"strconv"
 	"strings"
 
-	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 
 	"gopkg.in/macaroon-bakery.v2/bakery/checkers"

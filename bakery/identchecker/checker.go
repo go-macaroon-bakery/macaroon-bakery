@@ -4,9 +4,9 @@
 package identchecker
 
 import (
+	"context"
 	"sync"
 
-	"golang.org/x/net/context"
 	errgo "gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2"
 

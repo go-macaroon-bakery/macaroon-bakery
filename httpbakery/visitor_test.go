@@ -1,6 +1,7 @@
 package httpbakery_test
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -8,7 +9,6 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"golang.org/x/net/context"
 
 	"gopkg.in/macaroon-bakery.v2/httpbakery"
 )

@@ -1,14 +1,13 @@
 package httpbakery
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 
 	"github.com/juju/webbrowser"
-	"golang.org/x/net/context"
-	"golang.org/x/net/context/ctxhttp"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/httprequest.v1"
 
@@ -163,7 +162,12 @@ func (wi WebBrowserInteractor) openWebBrowser(u *url.URL) error {
 // waitForToken returns a token from a the waitToken URL
 func waitForToken(ctx context.Context, client *Client, waitTokenURL *url.URL) (*DischargeToken, error) {
 	// TODO integrate this with waitForMacaroon somehow?
-	httpResp, err := ctxhttp.Get(ctx, client.Client, waitTokenURL.String())
+	req, err := http.NewRequest("GET", waitTokenURL.String(), nil)
+	if err != nil {
+		return nil, errgo.Mask(err)
+	}
+	req = req.WithContext(ctx)
+	httpResp, err := client.Client.Do(req)
 	if err != nil {
 		return nil, errgo.Notef(err, "cannot get %q", waitTokenURL)
 	}

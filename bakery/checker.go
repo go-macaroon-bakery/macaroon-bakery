@@ -1,11 +1,11 @@
 package bakery
 
 import (
+	"context"
 	"sort"
 	"sync"
 	"time"
 
-	"golang.org/x/net/context"
 	errgo "gopkg.in/errgo.v1"
 	macaroon "gopkg.in/macaroon.v2"
 

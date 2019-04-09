@@ -1,7 +1,8 @@
 package bakery
 
 import (
-	"golang.org/x/net/context"
+	"context"
+
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2"
 

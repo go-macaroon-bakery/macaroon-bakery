@@ -1,6 +1,7 @@
 package postgresrootkeystore_test
 
 import (
+	"context"
 	"database/sql"
 	"testing"
 	"time"
@@ -8,7 +9,6 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/frankban/quicktest/qtsuite"
 	"github.com/juju/postgrestest"
-	"golang.org/x/net/context"
 	errgo "gopkg.in/errgo.v1"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"

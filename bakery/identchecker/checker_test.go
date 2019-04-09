@@ -1,12 +1,12 @@
 package identchecker_test
 
 import (
+	"context"
 	"sort"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	"golang.org/x/net/context"
 	errgo "gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2"
 

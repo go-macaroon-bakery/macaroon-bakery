@@ -2,6 +2,7 @@ package httpbakery_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -13,11 +14,10 @@ import (
 	"net/url"
 	"sort"
 	"strings"
-	"time"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
-	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/httprequest.v1"
 	"gopkg.in/macaroon.v2"

@@ -1,15 +1,14 @@
 package agent_test
 
 import (
+	"context"
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
 	"os"
+	"testing"
 
-	"github.com/juju/testing"
-	jc "github.com/juju/testing/checkers"
-	"golang.org/x/net/context"
-	gc "gopkg.in/check.v1"
+	qt "github.com/frankban/quicktest"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/httprequest.v1"
 	"gopkg.in/macaroon.v2"
@@ -21,42 +20,19 @@ import (
 	"gopkg.in/macaroon-bakery.v2/httpbakery/agent"
 )
 
-type agentSuite struct {
-	testing.LoggingSuite
-	agentBakery  *bakery.Bakery
-	serverBakery *bakery.Bakery
-	discharger   *bakerytest.Discharger
-}
-
-var _ = gc.Suite(&agentSuite{})
-
-func (s *agentSuite) SetUpTest(c *gc.C) {
-	s.LoggingSuite.SetUpTest(c)
-	s.discharger = bakerytest.NewDischarger(nil)
-	s.agentBakery = bakery.New(bakery.BakeryParams{
-		Key: bakery.MustGenerateKey(),
-	})
-	s.serverBakery = bakery.New(bakery.BakeryParams{
-		Locator: s.discharger,
-		Key:     bakery.MustGenerateKey(),
-	})
-}
-
-func (s *agentSuite) TearDownTest(c *gc.C) {
-	s.discharger.Close()
-	s.LoggingSuite.TearDownTest(c)
-}
-
 var agentLoginOp = bakery.Op{"agent", "login"}
 
-func (s *agentSuite) TestSetUpAuth(c *gc.C) {
+func TestSetUpAuth(t *testing.T) {
+	c := qt.New(t)
+	defer c.Done()
+	f := newAgentFixture(c)
 	dischargerBakery := bakery.New(bakery.BakeryParams{
-		Key: s.discharger.Key,
+		Key: f.discharger.Key,
 	})
-	s.discharger.AddHTTPHandlers(AgentHandlers(AgentHandler{
+	f.discharger.AddHTTPHandlers(AgentHandlers(AgentHandler{
 		AgentMacaroon: func(p httprequest.Params, username string, pubKey *bakery.PublicKey) (*bakery.Macaroon, error) {
-			if username != "test-user" || *pubKey != s.agentBakery.Oven.Key().Public {
-				return nil, errgo.Newf("mismatched user/pubkey; want %s got %s", s.agentBakery.Oven.Key().Public, *pubKey)
+			if username != "test-user" || *pubKey != f.agentBakery.Oven.Key().Public {
+				return nil, errgo.Newf("mismatched user/pubkey; want %s got %s", f.agentBakery.Oven.Key().Public, *pubKey)
 			}
 			version := httpbakery.RequestVersion(p.Request)
 			return dischargerBakery.Oven.NewMacaroon(
@@ -69,7 +45,7 @@ func (s *agentSuite) TestSetUpAuth(c *gc.C) {
 			)
 		},
 	}))
-	s.discharger.Checker = httpbakery.ThirdPartyCaveatCheckerFunc(func(ctx context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
+	f.discharger.Checker = httpbakery.ThirdPartyCaveatCheckerFunc(func(ctx context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
 		if token != nil {
 			c.Logf("with token request: %v", req.URL)
 			if token.Kind != "agent" {
@@ -94,9 +70,9 @@ func (s *agentSuite) TestSetUpAuth(c *gc.C) {
 
 	client := httpbakery.NewClient()
 	err := agent.SetUpAuth(client, &agent.AuthInfo{
-		Key: s.agentBakery.Oven.Key(),
+		Key: f.agentBakery.Oven.Key(),
 		Agents: []agent.Agent{{
-			URL:      s.discharger.Location(),
+			URL:      f.discharger.Location(),
 			Username: "test-user",
 		}},
 	})
@@ -104,28 +80,30 @@ func (s *agentSuite) TestSetUpAuth(c *gc.C) {
 		Entity: "something",
 		Action: "doit",
 	}
-	c.Assert(err, gc.IsNil)
-	m, err := s.serverBakery.Oven.NewMacaroon(
+	c.Assert(err, qt.IsNil)
+	m, err := f.serverBakery.Oven.NewMacaroon(
 		context.Background(),
 		bakery.LatestVersion,
 		[]checkers.Caveat{{
-			Location:  s.discharger.Location(),
+			Location:  f.discharger.Location(),
 			Condition: "some-third-party-caveat",
 		}},
 		someOp,
 	)
-	c.Assert(err, gc.Equals, nil)
+	c.Assert(err, qt.Equals, nil)
 	ms, err := client.DischargeAll(context.Background(), m)
-	c.Assert(err, gc.Equals, nil)
-	_, err = s.serverBakery.Checker.Auth(ms).Allow(context.Background(), someOp)
-	c.Assert(err, gc.Equals, nil)
+	c.Assert(err, qt.Equals, nil)
+	_, err = f.serverBakery.Checker.Auth(ms).Allow(context.Background(), someOp)
+	c.Assert(err, qt.Equals, nil)
 }
 
-func (s *agentSuite) TestAuthInfoFromEnvironment(c *gc.C) {
+func TestAuthInfoFromEnvironment(t *testing.T) {
+	c := qt.New(t)
+	defer c.Done()
 	defer os.Setenv("BAKERY_AGENT_FILE", "")
 
 	f, err := ioutil.TempFile("", "")
-	c.Assert(err, gc.Equals, nil)
+	c.Assert(err, qt.Equals, nil)
 	defer os.Remove(f.Name())
 	defer f.Close()
 
@@ -141,21 +119,43 @@ func (s *agentSuite) TestAuthInfoFromEnvironment(c *gc.C) {
 	}
 	data, err := json.Marshal(authInfo)
 	_, err = f.Write(data)
-	c.Assert(err, gc.Equals, nil)
+	c.Assert(err, qt.Equals, nil)
 	f.Close()
 
 	os.Setenv("BAKERY_AGENT_FILE", f.Name())
 
 	authInfo1, err := agent.AuthInfoFromEnvironment()
-	c.Assert(err, gc.Equals, nil)
-	c.Assert(authInfo1, jc.DeepEquals, authInfo)
+	c.Assert(err, qt.Equals, nil)
+	c.Assert(authInfo1, qt.DeepEquals, authInfo)
 }
 
-func (s *agentSuite) TestAuthInfoFromEnvironmentNotSet(c *gc.C) {
+func TestAuthInfoFromEnvironmentNotSet(t *testing.T) {
+	c := qt.New(t)
+	defer c.Done()
 	os.Setenv("BAKERY_AGENT_FILE", "")
 	authInfo, err := agent.AuthInfoFromEnvironment()
-	c.Assert(errgo.Cause(err), gc.Equals, agent.ErrNoAuthInfo)
-	c.Assert(authInfo, gc.IsNil)
+	c.Assert(errgo.Cause(err), qt.Equals, agent.ErrNoAuthInfo)
+	c.Assert(authInfo, qt.IsNil)
+}
+
+type agentFixture struct {
+	agentBakery  *bakery.Bakery
+	serverBakery *bakery.Bakery
+	discharger   *bakerytest.Discharger
+}
+
+func newAgentFixture(c *qt.C) *agentFixture {
+	var f agentFixture
+	f.discharger = bakerytest.NewDischarger(nil)
+	c.Defer(f.discharger.Close)
+	f.agentBakery = bakery.New(bakery.BakeryParams{
+		Key: bakery.MustGenerateKey(),
+	})
+	f.serverBakery = bakery.New(bakery.BakeryParams{
+		Locator: f.discharger,
+		Key:     bakery.MustGenerateKey(),
+	})
+	return &f
 }
 
 func AgentHandlers(h AgentHandler) []httprequest.Handler {

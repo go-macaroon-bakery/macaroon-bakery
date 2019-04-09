@@ -1,12 +1,12 @@
 package agent_test
 
 import (
+	"context"
 	"net/http"
+	"testing"
 	"time"
 
-	"github.com/juju/testing"
-	"golang.org/x/net/context"
-	gc "gopkg.in/check.v1"
+	qt "github.com/frankban/quicktest"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/httprequest.v1"
 
@@ -18,36 +18,8 @@ import (
 	"gopkg.in/macaroon-bakery.v2/httpbakery/agent"
 )
 
-type legacyAgentSuite struct {
-	testing.LoggingSuite
-	agentBakery  *identchecker.Bakery
-	serverBakery *identchecker.Bakery
-	discharger   *bakerytest.Discharger
-}
-
 type visitFunc func(w http.ResponseWriter, req *http.Request, dischargeId string) error
 type agentPostFunc func(httprequest.Params, agentPostRequest) error
-
-var _ = gc.Suite(&legacyAgentSuite{})
-
-func (s *legacyAgentSuite) SetUpTest(c *gc.C) {
-	s.LoggingSuite.SetUpTest(c)
-	s.discharger = bakerytest.NewDischarger(nil)
-	s.agentBakery = identchecker.NewBakery(identchecker.BakeryParams{
-		IdentityClient: idmClient{s.discharger.Location()},
-		Key:            bakery.MustGenerateKey(),
-	})
-	s.serverBakery = identchecker.NewBakery(identchecker.BakeryParams{
-		Locator:        s.discharger,
-		IdentityClient: idmClient{s.discharger.Location()},
-		Key:            bakery.MustGenerateKey(),
-	})
-}
-
-func (s *legacyAgentSuite) TearDownTest(c *gc.C) {
-	s.discharger.Close()
-	s.LoggingSuite.TearDownTest(c)
-}
 
 var legacyAgentLoginErrorTests = []struct {
 	about string
@@ -84,58 +56,63 @@ var legacyAgentLoginErrorTests = []struct {
 	expectError: `cannot get discharge from ".*": cannot start interactive session: agent login failed`,
 }}
 
-func (s *legacyAgentSuite) TestAgentLoginError(c *gc.C) {
-	var agentPost agentPostFunc
-	s.discharger.AddHTTPHandlers(newLegacyAgentHandlers(legacyAgentHandler{
-		agentPost: func(p httprequest.Params, r agentPostRequest) error {
-			return agentPost(p, r)
-		},
-	}))
-	rendezvous := bakerytest.NewRendezvous()
-	s.discharger.Checker = httpbakery.ThirdPartyCaveatCheckerFunc(func(ctx context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
-		if token != nil {
-			return nil, errgo.Newf("received unexpected discharge token")
-		}
-		dischargeId := rendezvous.NewDischarge(info)
-		err := httpbakery.NewInteractionRequiredError(nil, req)
-		err.Info = &httpbakery.ErrorInfo{
-			LegacyVisitURL: "/visit?dischargeid=" + dischargeId,
-			LegacyWaitURL:  "/wait?dischargeid=" + dischargeId,
-		}
-		return nil, err
-	})
+func TestAgentLoginError(t *testing.T) {
+	c := qt.New(t)
+	for _, test := range legacyAgentLoginErrorTests {
+		c.Run(test.about, func(c *qt.C) {
+			f := newLegacyAgentFixture(c)
+			var agentPost agentPostFunc
+			f.discharger.AddHTTPHandlers(newLegacyAgentHandlers(legacyAgentHandler{
+				agentPost: func(p httprequest.Params, r agentPostRequest) error {
+					return agentPost(p, r)
+				},
+			}))
+			rendezvous := bakerytest.NewRendezvous()
+			f.discharger.Checker = httpbakery.ThirdPartyCaveatCheckerFunc(func(ctx context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
+				if token != nil {
+					return nil, errgo.Newf("received unexpected discharge token")
+				}
+				dischargeId := rendezvous.NewDischarge(info)
+				err := httpbakery.NewInteractionRequiredError(nil, req)
+				err.Info = &httpbakery.ErrorInfo{
+					LegacyVisitURL: "/visit?dischargeid=" + dischargeId,
+					LegacyWaitURL:  "/wait?dischargeid=" + dischargeId,
+				}
+				return nil, err
+			})
+			agentPost = test.agentPostHandler
 
-	for i, test := range legacyAgentLoginErrorTests {
-		c.Logf("%d. %s", i, test.about)
-		agentPost = test.agentPostHandler
-
-		client := httpbakery.NewClient()
-		err := agent.SetUpAuth(client, &agent.AuthInfo{
-			Key: s.agentBakery.Oven.Key(),
-			Agents: []agent.Agent{{
-				URL:      s.discharger.Location(),
-				Username: "test-user",
-			}},
+			client := httpbakery.NewClient()
+			err := agent.SetUpAuth(client, &agent.AuthInfo{
+				Key: f.agentBakery.Oven.Key(),
+				Agents: []agent.Agent{{
+					URL:      f.discharger.Location(),
+					Username: "test-user",
+				}},
+			})
+			c.Assert(err, qt.IsNil)
+			m, err := f.serverBakery.Oven.NewMacaroon(
+				context.Background(),
+				bakery.LatestVersion,
+				identityCaveats(f.discharger.Location()),
+				identchecker.LoginOp,
+			)
+			c.Assert(err, qt.IsNil)
+			ms, err := client.DischargeAll(context.Background(), m)
+			c.Assert(err, qt.ErrorMatches, test.expectError)
+			c.Assert(ms, qt.IsNil)
 		})
-		c.Assert(err, gc.IsNil)
-		m, err := s.serverBakery.Oven.NewMacaroon(
-			context.Background(),
-			bakery.LatestVersion,
-			identityCaveats(s.discharger.Location()),
-			identchecker.LoginOp,
-		)
-		c.Assert(err, gc.IsNil)
-		ms, err := client.DischargeAll(context.Background(), m)
-		c.Assert(err, gc.ErrorMatches, test.expectError)
-		c.Assert(ms, gc.IsNil)
 	}
 }
 
-func (s *legacyAgentSuite) TestSetUpAuth(c *gc.C) {
+func TestLegacySetUpAuth(t *testing.T) {
+	c := qt.New(t)
+	defer c.Done()
+	f := newLegacyAgentFixture(c)
 	rendezvous := bakerytest.NewRendezvous()
-	s.discharger.AddHTTPHandlers(newLegacyAgentHandlers(legacyAgentHandler{
+	f.discharger.AddHTTPHandlers(newLegacyAgentHandlers(legacyAgentHandler{
 		agentPost: func(p httprequest.Params, r agentPostRequest) error {
-			return s.agentPost(p, r, rendezvous)
+			return f.agentPost(p, r, rendezvous)
 		},
 		wait: func(p httprequest.Params, dischargeId string) (*bakery.Macaroon, error) {
 			caveats, err := rendezvous.Await(dischargeId, 5*time.Second)
@@ -143,10 +120,10 @@ func (s *legacyAgentSuite) TestSetUpAuth(c *gc.C) {
 				return nil, errgo.Mask(err)
 			}
 			info, _ := rendezvous.Info(dischargeId)
-			return s.discharger.DischargeMacaroon(p.Context, info, caveats)
+			return f.discharger.DischargeMacaroon(p.Context, info, caveats)
 		},
 	}))
-	s.discharger.Checker = httpbakery.ThirdPartyCaveatCheckerFunc(func(ctx context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
+	f.discharger.Checker = httpbakery.ThirdPartyCaveatCheckerFunc(func(ctx context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
 		if token != nil {
 			return nil, errgo.Newf("received unexpected discharge token")
 		}
@@ -161,32 +138,35 @@ func (s *legacyAgentSuite) TestSetUpAuth(c *gc.C) {
 
 	client := httpbakery.NewClient()
 	err := agent.SetUpAuth(client, &agent.AuthInfo{
-		Key: s.agentBakery.Oven.Key(),
+		Key: f.agentBakery.Oven.Key(),
 		Agents: []agent.Agent{{
-			URL:      s.discharger.Location(),
+			URL:      f.discharger.Location(),
 			Username: "test-user",
 		}},
 	})
-	c.Assert(err, gc.IsNil)
-	m, err := s.serverBakery.Oven.NewMacaroon(
+	c.Assert(err, qt.IsNil)
+	m, err := f.serverBakery.Oven.NewMacaroon(
 		context.Background(),
 		bakery.LatestVersion,
-		identityCaveats(s.discharger.Location()),
+		identityCaveats(f.discharger.Location()),
 		identchecker.LoginOp,
 	)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	ms, err := client.DischargeAll(context.Background(), m)
-	c.Assert(err, gc.IsNil)
-	authInfo, err := s.serverBakery.Checker.Auth(ms).Allow(context.Background(), identchecker.LoginOp)
-	c.Assert(err, gc.IsNil)
-	c.Assert(authInfo.Identity, gc.Equals, identchecker.SimpleIdentity("test-user"))
+	c.Assert(err, qt.IsNil)
+	authInfo, err := f.serverBakery.Checker.Auth(ms).Allow(context.Background(), identchecker.LoginOp)
+	c.Assert(err, qt.IsNil)
+	c.Assert(authInfo.Identity, qt.Equals, identchecker.SimpleIdentity("test-user"))
 }
 
-func (s *legacyAgentSuite) TestNoMatchingSite(c *gc.C) {
+func TestLegacyNoMatchingSite(t *testing.T) {
+	c := qt.New(t)
+	defer c.Done()
+	f := newLegacyAgentFixture(c)
 	rendezvous := bakerytest.NewRendezvous()
-	s.discharger.AddHTTPHandlers(newLegacyAgentHandlers(legacyAgentHandler{
+	f.discharger.AddHTTPHandlers(newLegacyAgentHandlers(legacyAgentHandler{
 		agentPost: func(p httprequest.Params, r agentPostRequest) error {
-			return s.agentPost(p, r, rendezvous)
+			return f.agentPost(p, r, rendezvous)
 		},
 		wait: func(p httprequest.Params, dischargeId string) (*bakery.Macaroon, error) {
 			_, err := rendezvous.Await(dischargeId, 5*time.Second)
@@ -196,7 +176,7 @@ func (s *legacyAgentSuite) TestNoMatchingSite(c *gc.C) {
 			return nil, errgo.Newf("rendezvous unexpectedly succeeded")
 		},
 	}))
-	s.discharger.Checker = httpbakery.ThirdPartyCaveatCheckerFunc(func(ctx context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
+	f.discharger.Checker = httpbakery.ThirdPartyCaveatCheckerFunc(func(ctx context.Context, req *http.Request, info *bakery.ThirdPartyCaveatInfo, token *httpbakery.DischargeToken) ([]checkers.Caveat, error) {
 		if token != nil {
 			return nil, errgo.Newf("received unexpected discharge token")
 		}
@@ -216,19 +196,19 @@ func (s *legacyAgentSuite) TestNoMatchingSite(c *gc.C) {
 			Username: "test-user",
 		}},
 	})
-	c.Assert(err, gc.IsNil)
-	m, err := s.serverBakery.Oven.NewMacaroon(
+	c.Assert(err, qt.IsNil)
+	m, err := f.serverBakery.Oven.NewMacaroon(
 		context.Background(),
 		bakery.LatestVersion,
-		identityCaveats(s.discharger.Location()),
+		identityCaveats(f.discharger.Location()),
 		identchecker.LoginOp,
 	)
 
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	_, err = client.DischargeAll(context.Background(), m)
-	c.Assert(err, gc.ErrorMatches, `cannot get discharge from ".*": cannot start interactive session: cannot find username for discharge location ".*"`)
+	c.Assert(err, qt.ErrorMatches, `cannot get discharge from ".*": cannot start interactive session: cannot find username for discharge location ".*"`)
 	_, ok := errgo.Cause(err).(*httpbakery.InteractionError)
-	c.Assert(ok, gc.Equals, true)
+	c.Assert(ok, qt.Equals, true)
 }
 
 type idmClient struct {
@@ -250,12 +230,12 @@ func (c idmClient) DeclaredIdentity(ctx context.Context, declared map[string]str
 	return identchecker.SimpleIdentity(declared["username"]), nil
 }
 
-func (s *legacyAgentSuite) agentPost(p httprequest.Params, r agentPostRequest, rendezvous *bakerytest.Rendezvous) error {
+func (f *legacyAgentFixture) agentPost(p httprequest.Params, r agentPostRequest, rendezvous *bakerytest.Rendezvous) error {
 	ctx := context.TODO()
 	if r.Body.Username == "" || r.Body.PublicKey == nil {
 		return errgo.Newf("username or public key not found")
 	}
-	authInfo, authErr := s.agentBakery.Checker.Auth(httpbakery.RequestMacaroons(p.Request)...).Allow(ctx, identchecker.LoginOp)
+	authInfo, authErr := f.agentBakery.Checker.Auth(httpbakery.RequestMacaroons(p.Request)...).Allow(ctx, identchecker.LoginOp)
 	if authErr == nil && authInfo.Identity != nil {
 		rendezvous.DischargeComplete(r.DischargeId, []checkers.Caveat{
 			checkers.DeclaredCaveat("username", authInfo.Identity.Id()),
@@ -264,7 +244,7 @@ func (s *legacyAgentSuite) agentPost(p httprequest.Params, r agentPostRequest, r
 		return nil
 	}
 	version := httpbakery.RequestVersion(p.Request)
-	m, err := s.agentBakery.Oven.NewMacaroon(ctx, version, []checkers.Caveat{
+	m, err := f.agentBakery.Oven.NewMacaroon(ctx, version, []checkers.Caveat{
 		bakery.LocalThirdPartyCaveat(r.Body.PublicKey, version),
 		checkers.DeclaredCaveat("username", r.Body.Username),
 	}, identchecker.LoginOp)
@@ -275,6 +255,28 @@ func (s *legacyAgentSuite) agentPost(p httprequest.Params, r agentPostRequest, r
 		Macaroon: m,
 		Request:  p.Request,
 	})
+}
+
+type legacyAgentFixture struct {
+	agentBakery  *identchecker.Bakery
+	serverBakery *identchecker.Bakery
+	discharger   *bakerytest.Discharger
+}
+
+func newLegacyAgentFixture(c *qt.C) *legacyAgentFixture {
+	var f legacyAgentFixture
+	f.discharger = bakerytest.NewDischarger(nil)
+	c.Defer(f.discharger.Close)
+	f.agentBakery = identchecker.NewBakery(identchecker.BakeryParams{
+		IdentityClient: idmClient{f.discharger.Location()},
+		Key:            bakery.MustGenerateKey(),
+	})
+	f.serverBakery = identchecker.NewBakery(identchecker.BakeryParams{
+		Locator:        f.discharger,
+		IdentityClient: idmClient{f.discharger.Location()},
+		Key:            bakery.MustGenerateKey(),
+	})
+	return &f
 }
 
 // legacyAgentHandler represents a handler for legacy

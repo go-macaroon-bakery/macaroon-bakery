@@ -1,13 +1,13 @@
 package httpbakery
 
 import (
+	"context"
 	"encoding/base64"
 	"net/http"
 	"path"
 	"unicode/utf8"
 
 	"github.com/julienschmidt/httprouter"
-	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/httprequest.v1"
 	"gopkg.in/macaroon.v2"

@@ -2,11 +2,11 @@ package bakery
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"sort"
 
 	"github.com/rogpeppe/fastuuid"
-	"golang.org/x/net/context"
 	errgo "gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2"
 
