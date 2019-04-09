@@ -3,11 +3,11 @@
 package checkers
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
 
-	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 )
 

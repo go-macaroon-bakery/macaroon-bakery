@@ -7,6 +7,7 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io/ioutil"
@@ -14,7 +15,6 @@ import (
 	"os"
 	"strings"
 
-	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/httprequest.v1"
 

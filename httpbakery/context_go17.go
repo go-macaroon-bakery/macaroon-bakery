@@ -3,9 +3,8 @@
 package httpbakery
 
 import (
+	"context"
 	"net/http"
-
-	"golang.org/x/net/context"
 )
 
 func contextFromRequest(req *http.Request) context.Context {

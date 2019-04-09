@@ -1,13 +1,13 @@
 package mgorootkeystore_test
 
 import (
+	"context"
 	"fmt"
 	"testing"
 	"time"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/juju/mgotest"
-	"golang.org/x/net/context"
 	"gopkg.in/mgo.v2"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"

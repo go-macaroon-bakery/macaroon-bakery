@@ -1,12 +1,12 @@
 package bakery_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"time"
 
 	qt "github.com/frankban/quicktest"
-	"golang.org/x/net/context"
 	"gopkg.in/macaroon.v2"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"

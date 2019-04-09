@@ -4,17 +4,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"testing"
 
-	gc "gopkg.in/check.v1"
+	qt "github.com/frankban/quicktest"
 	"gopkg.in/errgo.v1"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"
 	"gopkg.in/macaroon-bakery.v2/httpbakery/agent"
 )
-
-type cookieSuite struct{}
-
-var _ = gc.Suite(&cookieSuite{})
 
 var loginCookieTests = []struct {
 	about       string
@@ -65,27 +62,28 @@ var loginCookieTests = []struct {
 	expectError: "agent login has no public key",
 }}
 
-func (s *cookieSuite) TestLoginCookie(c *gc.C) {
+func TestLoginCookie(t *testing.T) {
+	c := qt.New(t)
 	key, err := bakery.GenerateKey()
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	for i, test := range loginCookieTests {
 		c.Logf("test %d: %s", i, test.about)
 
 		req, err := http.NewRequest("GET", "", nil)
-		c.Assert(err, gc.IsNil)
+		c.Assert(err, qt.IsNil)
 		test.addCookie(req, &key.Public)
 		gotUsername, gotKey, err := agent.LoginCookie(req)
 
 		if test.expectError != "" {
-			c.Assert(err, gc.ErrorMatches, test.expectError)
+			c.Assert(err, qt.ErrorMatches, test.expectError)
 			if test.expectCause != nil {
-				c.Assert(errgo.Cause(err), gc.Equals, test.expectCause)
+				c.Assert(errgo.Cause(err), qt.Equals, test.expectCause)
 			}
 			continue
 		}
-		c.Assert(gotUsername, gc.Equals, test.expectUser)
-		c.Assert(gotKey, gc.DeepEquals, &key.Public)
+		c.Assert(gotUsername, qt.Equals, test.expectUser)
+		c.Assert(gotKey, qt.DeepEquals, &key.Public)
 	}
 }
 

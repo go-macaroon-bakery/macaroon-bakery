@@ -1,6 +1,7 @@
 package httpbakery
 
 import (
+	"context"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -8,8 +9,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"golang.org/x/net/context"
-	"golang.org/x/net/context/ctxhttp"
 	errgo "gopkg.in/errgo.v1"
 )
 
@@ -66,7 +65,7 @@ func (rreq *retryableRequest) do(ctx context.Context) (*http.Response, error) {
 	if err != nil {
 		return nil, errgo.Mask(err)
 	}
-	return ctxhttp.Do(ctx, rreq.client, req)
+	return rreq.client.Do(req.WithContext(ctx))
 }
 
 // prepare returns a new HTTP request object

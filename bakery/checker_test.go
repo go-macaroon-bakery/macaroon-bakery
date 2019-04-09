@@ -1,13 +1,13 @@
 package bakery_test
 
 import (
+	"context"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
 	qt "github.com/frankban/quicktest"
-	"golang.org/x/net/context"
 	errgo "gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2"
 

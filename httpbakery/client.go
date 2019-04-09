@@ -1,6 +1,7 @@
 package httpbakery
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -10,8 +11,6 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/net/context"
-	"golang.org/x/net/context/ctxhttp"
 	"golang.org/x/net/publicsuffix"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/httprequest.v1"
@@ -629,7 +628,12 @@ func (c *Client) logger() bakery.Logger {
 
 // waitForMacaroon returns a macaroon from a legacy wait endpoint.
 func waitForMacaroon(ctx context.Context, client *Client, waitURL *url.URL) (*bakery.Macaroon, error) {
-	httpResp, err := ctxhttp.Get(ctx, client.Client, waitURL.String())
+	req, err := http.NewRequest("GET", waitURL.String(), nil)
+	if err != nil {
+		return nil, errgo.Mask(err)
+	}
+	req = req.WithContext(ctx)
+	httpResp, err := client.Client.Do(req)
 	if err != nil {
 		return nil, errgo.Notef(err, "cannot get %q", waitURL)
 	}

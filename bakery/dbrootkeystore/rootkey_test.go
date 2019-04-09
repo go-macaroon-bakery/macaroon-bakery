@@ -1,11 +1,11 @@
 package dbrootkeystore_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	qt "github.com/frankban/quicktest"
-	"golang.org/x/net/context"
 	errgo "gopkg.in/errgo.v1"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"

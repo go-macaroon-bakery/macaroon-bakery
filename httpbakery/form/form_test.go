@@ -1,12 +1,12 @@
 package form_test
 
 import (
+	"context"
 	"net/http"
+	"testing"
 
-	jujutesting "github.com/juju/testing"
-	"github.com/juju/testing/httptesting"
-	"golang.org/x/net/context"
-	gc "gopkg.in/check.v1"
+	qt "github.com/frankban/quicktest"
+	"github.com/juju/qthttptest"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/httprequest.v1"
 	"gopkg.in/juju/environschema.v1"
@@ -20,15 +20,9 @@ import (
 	"gopkg.in/macaroon-bakery.v2/httpbakery/form"
 )
 
-type formSuite struct {
-	jujutesting.LoggingSuite
-}
-
 var reqServer = httprequest.Server{
 	ErrorMapper: httpbakery.ErrorToResponse,
 }
-
-var _ = gc.Suite(&formSuite{})
 
 var formLoginTests = []struct {
 	about        string
@@ -96,7 +90,8 @@ var formLoginTests = []struct {
 	expectError: `cannot get discharge from ".*": Post .*: cannot discharge: invalid token .*`,
 }}
 
-func (s *formSuite) TestFormLogin(c *gc.C) {
+func TestFormLogin(t *testing.T) {
+	c := qt.New(t)
 	var (
 		getForm      func() (environschema.Fields, error)
 		postForm     func(values map[string]interface{}) (*httpbakery.DischargeToken, error)
@@ -144,7 +139,7 @@ func (s *formSuite) TestFormLogin(c *gc.C) {
 			Location:  discharger.Location(),
 			Condition: "test condition",
 		}}, identchecker.LoginOp)
-		c.Assert(err, gc.Equals, nil)
+		c.Assert(err, qt.Equals, nil)
 
 		client := httpbakery.NewClient()
 		filler := defaultFiller
@@ -156,11 +151,11 @@ func (s *formSuite) TestFormLogin(c *gc.C) {
 		})
 		ms, err := client.DischargeAll(context.Background(), m)
 		if test.expectError != "" {
-			c.Assert(err, gc.ErrorMatches, test.expectError)
+			c.Assert(err, qt.ErrorMatches, test.expectError)
 			continue
 		}
-		c.Assert(err, gc.IsNil)
-		c.Assert(len(ms), gc.Equals, 2)
+		c.Assert(err, qt.IsNil)
+		c.Assert(len(ms), qt.Equals, 2)
 	}
 }
 
@@ -178,7 +173,8 @@ var formTitleTests = []struct {
 	expect: "Log in to com",
 }}
 
-func (s *formSuite) TestFormTitle(c *gc.C) {
+func TestFormTitle(t *testing.T) {
+	c := qt.New(t)
 	discharger := bakerytest.NewDischarger(nil)
 	defer discharger.Close()
 	discharger.AddHTTPHandlers(FormHandlers(FormHandler{
@@ -215,10 +211,10 @@ func (s *formSuite) TestFormTitle(c *gc.C) {
 			Location:  "https://" + test.host,
 			Condition: "test condition",
 		}}, identchecker.LoginOp)
-		c.Assert(err, gc.Equals, nil)
+		c.Assert(err, qt.Equals, nil)
 		client := httpbakery.NewClient()
 		c.Logf("match %v; replace with %v", test.host, discharger.Location())
-		client.Client.Transport = httptesting.URLRewritingTransport{
+		client.Client.Transport = qthttptest.URLRewritingTransport{
 			MatchPrefix:  "https://" + test.host,
 			Replace:      discharger.Location(),
 			RoundTripper: http.DefaultTransport,
@@ -229,9 +225,9 @@ func (s *formSuite) TestFormTitle(c *gc.C) {
 		})
 
 		ms, err := client.DischargeAll(context.Background(), m)
-		c.Assert(err, gc.IsNil)
-		c.Assert(len(ms), gc.Equals, 2)
-		c.Assert(f.title, gc.Equals, test.expect)
+		c.Assert(err, qt.IsNil)
+		c.Assert(len(ms), qt.Equals, 2)
+		c.Assert(f.title, qt.Equals, test.expect)
 	}
 }
 

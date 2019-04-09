@@ -1,8 +1,8 @@
 package checkers_test
 
 import (
-	"time"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 	"gopkg.in/macaroon.v2"

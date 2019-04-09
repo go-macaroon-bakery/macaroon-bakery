@@ -2,9 +2,9 @@
 package form
 
 import (
+	"context"
 	"net/url"
 
-	"golang.org/x/net/context"
 	"golang.org/x/net/publicsuffix"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/httprequest.v1"

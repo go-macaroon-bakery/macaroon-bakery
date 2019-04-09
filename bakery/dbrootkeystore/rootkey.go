@@ -4,12 +4,12 @@
 package dbrootkeystore
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"sync"
 	"time"
 
-	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"

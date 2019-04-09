@@ -1,16 +1,16 @@
 package bakerytest_test
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
 	"sync"
-	"time"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/julienschmidt/httprouter"
-	"golang.org/x/net/context"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/httprequest.v1"
 

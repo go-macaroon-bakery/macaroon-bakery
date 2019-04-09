@@ -8,8 +8,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/google/go-cmp/cmp"
 	qt "github.com/frankban/quicktest"
+	"github.com/google/go-cmp/cmp"
 	"github.com/juju/qthttptest"
 	"gopkg.in/httprequest.v1"
 

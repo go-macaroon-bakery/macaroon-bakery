@@ -1,9 +1,8 @@
 package bakery
 
 import (
+	"context"
 	"sync"
-
-	"golang.org/x/net/context"
 )
 
 // RootKeyStore defines store for macaroon root keys.
