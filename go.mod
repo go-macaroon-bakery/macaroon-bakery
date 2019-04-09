@@ -4,7 +4,6 @@ require (
 	github.com/frankban/quicktest v1.2.2
 	github.com/golang/protobuf v1.3.1
 	github.com/google/go-cmp v0.2.1-0.20190312032427-6f77996f0c42
-	github.com/juju/loggo v0.0.0-20170605014607-8232ab8918d9
 	github.com/juju/mgotest v1.0.1
 	github.com/juju/postgrestest v1.0.1
 	github.com/juju/qthttptest v0.0.1
@@ -13,7 +12,7 @@ require (
 	github.com/rogpeppe/fastuuid v0.0.0-20150106093220-6724a57986af
 	golang.org/x/crypto v0.0.0-20190404164418-38d8ce5564a5
 	golang.org/x/net v0.0.0-20190404232315-eb5bcb51f2a3
-	gopkg.in/errgo.v1 v1.0.0
+	gopkg.in/errgo.v1 v1.0.1
 	gopkg.in/httprequest.v1 v1.2.0
 	gopkg.in/juju/environschema.v1 v1.0.0
 	gopkg.in/macaroon.v2 v2.1.0

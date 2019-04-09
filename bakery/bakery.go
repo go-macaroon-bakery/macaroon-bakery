@@ -21,8 +21,7 @@ type Bakery struct {
 // or third party caveats to be added.
 type BakeryParams struct {
 	// Logger is used to send log messages. If it is nil,
-	// DefaultLogger("bakery") will be used.
-	// github.com/juju/loggo will be used for logging.
+	// nothing will be logged.
 	Logger Logger
 
 	// Checker holds the checker used to check first party caveats.
