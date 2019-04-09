@@ -7,10 +7,9 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"sync"
+	"testing"
 
-	jujutesting "github.com/juju/testing"
-	jc "github.com/juju/testing/checkers"
-	gc "gopkg.in/check.v1"
+	qt "github.com/frankban/quicktest"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/httprequest.v1"
 
@@ -19,16 +18,11 @@ import (
 	"gopkg.in/macaroon-bakery.v2/httpbakery"
 )
 
-type KeyringSuite struct {
-	jujutesting.LoggingSuite
-}
-
-var _ = gc.Suite(&KeyringSuite{})
-
-func (s *KeyringSuite) TestCachePrepopulated(c *gc.C) {
+func TestCachePrepopulated(t *testing.T) {
+	c := qt.New(t)
 	cache := bakery.NewThirdPartyStore()
 	key, err := bakery.GenerateKey()
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	expectInfo := bakery.ThirdPartyInfo{
 		PublicKey: key.Public,
 		Version:   bakery.LatestVersion,
@@ -36,11 +30,12 @@ func (s *KeyringSuite) TestCachePrepopulated(c *gc.C) {
 	cache.AddInfo("https://0.1.2.3/", expectInfo)
 	kr := httpbakery.NewThirdPartyLocator(nil, cache)
 	info, err := kr.ThirdPartyInfo(testContext, "https://0.1.2.3/")
-	c.Assert(err, gc.IsNil)
-	c.Assert(info, jc.DeepEquals, expectInfo)
+	c.Assert(err, qt.IsNil)
+	c.Assert(info, qt.DeepEquals, expectInfo)
 }
 
-func (s *KeyringSuite) TestCacheMiss(c *gc.C) {
+func TestCacheMiss(t *testing.T) {
+	c := qt.New(t)
 	d := bakerytest.NewDischarger(nil)
 	defer d.Close()
 	kr := httpbakery.NewThirdPartyLocator(nil, nil)
@@ -51,24 +46,25 @@ func (s *KeyringSuite) TestCacheMiss(c *gc.C) {
 	}
 	location := d.Location()
 	info, err := kr.ThirdPartyInfo(testContext, location)
-	c.Assert(err, gc.IsNil)
-	c.Assert(info, jc.DeepEquals, expectInfo)
+	c.Assert(err, qt.IsNil)
+	c.Assert(info, qt.DeepEquals, expectInfo)
 
 	// Close down the service and make sure that
 	// the key is cached.
 	d.Close()
 
 	info, err = kr.ThirdPartyInfo(testContext, location)
-	c.Assert(err, gc.IsNil)
-	c.Assert(info, jc.DeepEquals, expectInfo)
+	c.Assert(err, qt.IsNil)
+	c.Assert(info, qt.DeepEquals, expectInfo)
 }
 
-func (s *KeyringSuite) TestInsecureURL(c *gc.C) {
+func TestInsecureURL(t *testing.T) {
+	c := qt.New(t)
 	// Set up a discharger with an non-HTTPS access point.
 	d := bakerytest.NewDischarger(nil)
 	defer d.Close()
 	httpsDischargeURL, err := url.Parse(d.Location())
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	srv := httptest.NewServer(httputil.NewSingleHostReverseProxy(httpsDischargeURL))
 	defer srv.Close()
@@ -76,20 +72,21 @@ func (s *KeyringSuite) TestInsecureURL(c *gc.C) {
 	// Check that we are refused because it's an insecure URL.
 	kr := httpbakery.NewThirdPartyLocator(nil, nil)
 	info, err := kr.ThirdPartyInfo(testContext, srv.URL)
-	c.Assert(err, gc.ErrorMatches, `untrusted discharge URL "http://.*"`)
-	c.Assert(info, jc.DeepEquals, bakery.ThirdPartyInfo{})
+	c.Assert(err, qt.ErrorMatches, `untrusted discharge URL "http://.*"`)
+	c.Assert(info, qt.DeepEquals, bakery.ThirdPartyInfo{})
 
 	// Check that it does work when we've enabled AllowInsecure.
 	kr.AllowInsecure()
 	info, err = kr.ThirdPartyInfo(testContext, srv.URL)
-	c.Assert(err, gc.IsNil)
-	c.Assert(info, jc.DeepEquals, bakery.ThirdPartyInfo{
+	c.Assert(err, qt.IsNil)
+	c.Assert(info, qt.DeepEquals, bakery.ThirdPartyInfo{
 		PublicKey: d.Key.Public,
 		Version:   bakery.LatestVersion,
 	})
 }
 
-func (s *KeyringSuite) TestConcurrentThirdPartyInfo(c *gc.C) {
+func TestConcurrentThirdPartyInfo(t *testing.T) {
+	c := qt.New(t)
 	// This test is designed to fail only if run with the race detector
 	// enabled.
 	d := bakerytest.NewDischarger(nil)
@@ -100,94 +97,100 @@ func (s *KeyringSuite) TestConcurrentThirdPartyInfo(c *gc.C) {
 		wg.Add(1)
 		go func() {
 			_, err := kr.ThirdPartyInfo(testContext, d.Location())
-			c.Check(err, gc.IsNil)
+			c.Check(err, qt.IsNil)
 			defer wg.Done()
 		}()
 	}
 	wg.Wait()
 }
 
-func (s *KeyringSuite) TestCustomHTTPClient(c *gc.C) {
+func TestCustomHTTPClient(t *testing.T) {
+	c := qt.New(t)
 	client := &http.Client{
 		Transport: errorTransport{},
 	}
 	kr := httpbakery.NewThirdPartyLocator(client, nil)
 	info, err := kr.ThirdPartyInfo(testContext, "https://0.1.2.3/")
-	c.Assert(err, gc.ErrorMatches, `(Get|GET) https://0.1.2.3/discharge/info: custom round trip error`)
-	c.Assert(info, jc.DeepEquals, bakery.ThirdPartyInfo{})
+	c.Assert(err, qt.ErrorMatches, `(Get|GET) https://0.1.2.3/discharge/info: custom round trip error`)
+	c.Assert(info, qt.DeepEquals, bakery.ThirdPartyInfo{})
 }
 
-func (s *KeyringSuite) TestThirdPartyInfoForLocation(c *gc.C) {
+func TestThirdPartyInfoForLocation(t *testing.T) {
+	c := qt.New(t)
 	d := bakerytest.NewDischarger(nil)
 	defer d.Close()
 	client := httpbakery.NewHTTPClient()
 	info, err := httpbakery.ThirdPartyInfoForLocation(testContext, client, d.Location())
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	expectedInfo := bakery.ThirdPartyInfo{
 		PublicKey: d.Key.Public,
 		Version:   bakery.LatestVersion,
 	}
-	c.Assert(info, gc.DeepEquals, expectedInfo)
+	c.Assert(info, qt.DeepEquals, expectedInfo)
 
 	// Check that it works with client==nil.
 	info, err = httpbakery.ThirdPartyInfoForLocation(testContext, nil, d.Location())
-	c.Assert(err, gc.IsNil)
-	c.Assert(info, gc.DeepEquals, expectedInfo)
+	c.Assert(err, qt.IsNil)
+	c.Assert(info, qt.DeepEquals, expectedInfo)
 }
 
-func (s *KeyringSuite) TestThirdPartyInfoForLocationWrongURL(c *gc.C) {
+func TestThirdPartyInfoForLocationWrongURL(t *testing.T) {
+	c := qt.New(t)
 	client := httpbakery.NewHTTPClient()
 	_, err := httpbakery.ThirdPartyInfoForLocation(testContext, client, "http://localhost:0")
 	c.Logf("%v", errgo.Details(err))
-	c.Assert(err, gc.ErrorMatches,
+	c.Assert(err, qt.ErrorMatches,
 		`(Get|GET) http://localhost:0/discharge/info: dial tcp 127.0.0.1:0: .*connection refused`)
 }
 
-func (s *KeyringSuite) TestThirdPartyInfoForLocationReturnsInvalidJSON(c *gc.C) {
+func TestThirdPartyInfoForLocationReturnsInvalidJSON(t *testing.T) {
+	c := qt.New(t)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "BADJSON")
 	}))
 	defer ts.Close()
 	client := httpbakery.NewHTTPClient()
 	_, err := httpbakery.ThirdPartyInfoForLocation(testContext, client, ts.URL)
-	c.Assert(err, gc.ErrorMatches,
+	c.Assert(err, qt.ErrorMatches,
 		fmt.Sprintf(`Get http://.*/discharge/info: unexpected content type text/plain; want application/json; content: BADJSON`))
 }
 
-func (s *KeyringSuite) TestThirdPartyInfoForLocationReturnsStatusInternalServerError(c *gc.C) {
+func TestThirdPartyInfoForLocationReturnsStatusInternalServerError(t *testing.T) {
+	c := qt.New(t)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer ts.Close()
 	client := httpbakery.NewHTTPClient()
 	_, err := httpbakery.ThirdPartyInfoForLocation(testContext, client, ts.URL)
-	c.Assert(err, gc.ErrorMatches, `Get .*/discharge/info: cannot unmarshal error response \(status 500 Internal Server Error\): unexpected content type .*`)
+	c.Assert(err, qt.ErrorMatches, `Get .*/discharge/info: cannot unmarshal error response \(status 500 Internal Server Error\): unexpected content type .*`)
 }
 
-func (s *KeyringSuite) TestThirdPartyInfoForLocationFallbackToOldVersion(c *gc.C) {
+func TestThirdPartyInfoForLocationFallbackToOldVersion(t *testing.T) {
+	c := qt.New(t)
 	// Start a bakerytest discharger so we benefit from its TLS-verification-skip logic.
 	d := bakerytest.NewDischarger(nil)
 	defer d.Close()
 
 	key, err := bakery.GenerateKey()
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	// Start a server which serves the publickey endpoint only.
 	mux := http.NewServeMux()
 	server := httptest.NewTLSServer(mux)
 	mux.HandleFunc("/publickey", func(w http.ResponseWriter, req *http.Request) {
-		c.Check(req.Method, gc.Equals, "GET")
+		c.Check(req.Method, qt.Equals, "GET")
 		httprequest.WriteJSON(w, http.StatusOK, &httpbakery.PublicKeyResponse{
 			PublicKey: &key.Public,
 		})
 	})
 	info, err := httpbakery.ThirdPartyInfoForLocation(testContext, httpbakery.NewHTTPClient(), server.URL)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	expectedInfo := bakery.ThirdPartyInfo{
 		PublicKey: key.Public,
 		Version:   bakery.Version1,
 	}
-	c.Assert(info, jc.DeepEquals, expectedInfo)
+	c.Assert(info, qt.DeepEquals, expectedInfo)
 }
 
 type errorTransport struct{}

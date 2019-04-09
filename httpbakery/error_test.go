@@ -6,23 +6,21 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"testing"
 
-	jc "github.com/juju/testing/checkers"
-	"github.com/juju/testing/httptesting"
-	gc "gopkg.in/check.v1"
+	"github.com/google/go-cmp/cmp"
+	qt "github.com/frankban/quicktest"
+	"github.com/juju/qthttptest"
 	"gopkg.in/httprequest.v1"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"
 	"gopkg.in/macaroon-bakery.v2/httpbakery"
 )
 
-type ErrorSuite struct{}
-
-var _ = gc.Suite(&ErrorSuite{})
-
-func (s *ErrorSuite) TestWriteDischargeRequiredError(c *gc.C) {
+func TestWriteDischargeRequiredError(t *testing.T) {
+	c := qt.New(t)
 	m, err := bakery.NewMacaroon([]byte("secret"), []byte("id"), "a location", bakery.LatestVersion, nil)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 	tests := []struct {
 		about            string
 		path             string
@@ -99,7 +97,7 @@ func (s *ErrorSuite) TestWriteDischargeRequiredError(c *gc.C) {
 		var req *http.Request
 		if t.requestPath != "" {
 			req0, err := http.NewRequest("GET", t.requestPath, nil)
-			c.Check(err, gc.Equals, nil)
+			c.Check(err, qt.Equals, nil)
 			req = req0
 		}
 		response := httptest.NewRecorder()
@@ -111,24 +109,25 @@ func (s *ErrorSuite) TestWriteDischargeRequiredError(c *gc.C) {
 			Request:          req,
 		})
 		httpbakery.WriteError(testContext, response, err)
-		httptesting.AssertJSONResponse(c, response, http.StatusUnauthorized, t.expectedResponse)
+		qthttptest.AssertJSONResponse(c, response, http.StatusUnauthorized, t.expectedResponse)
 	}
 }
 
-func (s *ErrorSuite) TestNewInteractionRequiredError(c *gc.C) {
+func TestNewInteractionRequiredError(t *testing.T) {
+	c := qt.New(t)
 	// With a request with no version header, the response
 	// should be 407.
 	req, err := http.NewRequest("GET", "/", nil)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	err = httpbakery.NewInteractionRequiredError(nil, req)
 	code, resp := httpbakery.ErrorToResponse(testContext, err)
-	c.Assert(code, gc.Equals, http.StatusProxyAuthRequired)
+	c.Assert(code, qt.Equals, http.StatusProxyAuthRequired)
 
 	data, err := json.Marshal(resp)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
-	c.Assert(string(data), jc.JSONEquals, &httpbakery.Error{
+	c.Assert(string(data), qthttptest.JSONEquals, &httpbakery.Error{
 		Code:    httpbakery.ErrInteractionRequired,
 		Message: httpbakery.ErrInteractionRequired.Error(),
 	})
@@ -139,16 +138,16 @@ func (s *ErrorSuite) TestNewInteractionRequiredError(c *gc.C) {
 
 	err = httpbakery.NewInteractionRequiredError(nil, req)
 	code, resp = httpbakery.ErrorToResponse(testContext, err)
-	c.Assert(code, gc.Equals, http.StatusUnauthorized)
+	c.Assert(code, qt.Equals, http.StatusUnauthorized)
 
 	h := make(http.Header)
 	resp.(httprequest.HeaderSetter).SetHeader(h)
-	c.Assert(h.Get("WWW-Authenticate"), gc.Equals, "Macaroon")
+	c.Assert(h.Get("WWW-Authenticate"), qt.Equals, "Macaroon")
 
 	data, err = json.Marshal(resp)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
-	c.Assert(string(data), jc.JSONEquals, &httpbakery.Error{
+	c.Assert(string(data), qthttptest.JSONEquals, &httpbakery.Error{
 		Code:    httpbakery.ErrInteractionRequired,
 		Message: httpbakery.ErrInteractionRequired.Error(),
 	})
@@ -159,25 +158,26 @@ func (s *ErrorSuite) TestNewInteractionRequiredError(c *gc.C) {
 
 	err = httpbakery.NewInteractionRequiredError(nil, req)
 	code, resp = httpbakery.ErrorToResponse(testContext, err)
-	c.Assert(code, gc.Equals, http.StatusUnauthorized)
+	c.Assert(code, qt.Equals, http.StatusUnauthorized)
 
 	h = make(http.Header)
 	resp.(httprequest.HeaderSetter).SetHeader(h)
-	c.Assert(h.Get("WWW-Authenticate"), gc.Equals, "Macaroon")
+	c.Assert(h.Get("WWW-Authenticate"), qt.Equals, "Macaroon")
 
 	data, err = json.Marshal(resp)
-	c.Assert(err, gc.IsNil)
+	c.Assert(err, qt.IsNil)
 
-	c.Assert(string(data), jc.JSONEquals, &httpbakery.Error{
+	c.Assert(string(data), qthttptest.JSONEquals, &httpbakery.Error{
 		Code:    httpbakery.ErrInteractionRequired,
 		Message: httpbakery.ErrInteractionRequired.Error(),
 	})
 }
 
-func (*ErrorSuite) TestSetInteraction(c *gc.C) {
+func TestSetInteraction(t *testing.T) {
+	c := qt.New(t)
 	var e httpbakery.Error
 	e.SetInteraction("foo", 5)
-	c.Assert(e, jc.DeepEquals, httpbakery.Error{
+	c.Assert(e, qt.CmpEquals(cmp.AllowUnexported(httpbakery.Error{})), httpbakery.Error{
 		Info: &httpbakery.ErrorInfo{
 			InteractionMethods: map[string]*json.RawMessage{
 				"foo": jsonRawMessage("5"),
@@ -252,16 +252,17 @@ var interactionMethodTests = []struct {
 	expect: 45,
 }}
 
-func (*ErrorSuite) TestInteractionMethod(c *gc.C) {
+func TestInteractionMethod(t *testing.T) {
+	c := qt.New(t)
 	for i, test := range interactionMethodTests {
 		c.Logf("test %d: %s", i, test.about)
 		v := reflect.New(reflect.TypeOf(test.expect))
 		err := test.err.InteractionMethod(test.kind, v.Interface())
 		if test.expectError != "" {
-			c.Assert(err, gc.ErrorMatches, test.expectError)
+			c.Assert(err, qt.ErrorMatches, test.expectError)
 		} else {
-			c.Assert(err, gc.Equals, nil)
-			c.Assert(v.Elem().Interface(), jc.DeepEquals, test.expect)
+			c.Assert(err, qt.Equals, nil)
+			c.Assert(v.Elem().Interface(), qt.DeepEquals, test.expect)
 		}
 	}
 }
