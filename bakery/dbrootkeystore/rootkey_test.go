@@ -1,23 +1,16 @@
 package dbrootkeystore_test
 
 import (
+	"testing"
 	"time"
 
-	"github.com/juju/testing"
-	jc "github.com/juju/testing/checkers"
+	qt "github.com/frankban/quicktest"
 	"golang.org/x/net/context"
-	gc "gopkg.in/check.v1"
 	errgo "gopkg.in/errgo.v1"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"
 	"gopkg.in/macaroon-bakery.v2/bakery/dbrootkeystore"
 )
-
-type RootKeyStoreSuite struct {
-	testing.LoggingSuite
-}
-
-var _ = gc.Suite(&RootKeyStoreSuite{})
 
 var epoch = time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)
 
@@ -94,14 +87,16 @@ var isValidWithPolicyTests = []struct {
 	expect: false,
 }}
 
-func (s *RootKeyStoreSuite) TestIsValidWithPolicy(c *gc.C) {
+func TestIsValidWithPolicy(t *testing.T) {
+	c := qt.New(t)
 	for i, test := range isValidWithPolicyTests {
 		c.Logf("test %d: %v", i, test.about)
-		c.Assert(test.key.IsValidWithPolicy(test.policy, test.now), gc.Equals, test.expect)
+		c.Assert(test.key.IsValidWithPolicy(test.policy, test.now), qt.Equals, test.expect)
 	}
 }
 
-func (s *RootKeyStoreSuite) TestRootKeyUsesKeysValidWithPolicy(c *gc.C) {
+func TestRootKeyUsesKeysValidWithPolicy(t *testing.T) {
+	c := qt.New(t)
 	// We re-use the TestIsValidWithPolicy tests so that we
 	// know that the database-backed logic uses the same behaviour.
 	for i, test := range isValidWithPolicyTests {
@@ -115,20 +110,21 @@ func (s *RootKeyStoreSuite) TestRootKeyUsesKeysValidWithPolicy(c *gc.C) {
 		b := memBackingWithKeys([]dbrootkeystore.RootKey{test.key})
 		store := dbrootkeystore.NewRootKeys(10, stoppedClock(test.now)).NewStore(b, test.policy)
 		key, id, err := store.RootKey(context.Background())
-		c.Assert(err, gc.Equals, nil)
+		c.Assert(err, qt.Equals, nil)
 		if test.expect {
-			c.Assert(string(id), gc.Equals, "id")
-			c.Assert(string(key), gc.Equals, "key")
+			c.Assert(string(id), qt.Equals, "id")
+			c.Assert(string(key), qt.Equals, "key")
 		} else {
 			// If it didn't match then RootKey will have
 			// generated a new key.
-			c.Assert(key, gc.HasLen, 24)
-			c.Assert(id, gc.HasLen, 32)
+			c.Assert(key, qt.HasLen, 24)
+			c.Assert(id, qt.HasLen, 32)
 		}
 	}
 }
 
-func (s *RootKeyStoreSuite) TestRootKey(c *gc.C) {
+func TestRootKey(t *testing.T) {
+	c := qt.New(t)
 	now := epoch
 	clock := clockVal(&now)
 	b := make(memBacking)
@@ -138,17 +134,17 @@ func (s *RootKeyStoreSuite) TestRootKey(c *gc.C) {
 		ExpiryDuration:   5 * time.Minute,
 	})
 	key, id, err := store.RootKey(context.Background())
-	c.Assert(err, gc.Equals, nil)
-	c.Assert(key, gc.HasLen, 24)
-	c.Assert(id, gc.HasLen, 32)
+	c.Assert(err, qt.Equals, nil)
+	c.Assert(key, qt.HasLen, 24)
+	c.Assert(id, qt.HasLen, 32)
 
 	// If we get a key within the generate interval, we should
 	// get the same one.
 	now = epoch.Add(time.Minute)
 	key1, id1, err := store.RootKey(context.Background())
-	c.Assert(err, gc.Equals, nil)
-	c.Assert(key1, gc.DeepEquals, key)
-	c.Assert(id1, gc.DeepEquals, id)
+	c.Assert(err, qt.Equals, nil)
+	c.Assert(key1, qt.DeepEquals, key)
+	c.Assert(id1, qt.DeepEquals, id)
 
 	// A different store instance should get the same root key.
 	store1 := dbrootkeystore.NewRootKeys(10, clock).NewStore(b, dbrootkeystore.Policy{
@@ -156,27 +152,28 @@ func (s *RootKeyStoreSuite) TestRootKey(c *gc.C) {
 		ExpiryDuration:   5 * time.Minute,
 	})
 	key1, id1, err = store1.RootKey(context.Background())
-	c.Assert(err, gc.Equals, nil)
-	c.Assert(key1, gc.DeepEquals, key)
-	c.Assert(id1, gc.DeepEquals, id)
+	c.Assert(err, qt.Equals, nil)
+	c.Assert(key1, qt.DeepEquals, key)
+	c.Assert(id1, qt.DeepEquals, id)
 
 	// After the generation interval has passed, we should generate a new key.
 	now = epoch.Add(2*time.Minute + time.Second)
 	key1, id1, err = store.RootKey(context.Background())
-	c.Assert(err, gc.Equals, nil)
-	c.Assert(key, gc.HasLen, 24)
-	c.Assert(id, gc.HasLen, 32)
-	c.Assert(key1, gc.Not(gc.DeepEquals), key)
-	c.Assert(id1, gc.Not(gc.DeepEquals), id)
+	c.Assert(err, qt.Equals, nil)
+	c.Assert(key, qt.HasLen, 24)
+	c.Assert(id, qt.HasLen, 32)
+	c.Assert(key1, qt.Not(qt.DeepEquals), key)
+	c.Assert(id1, qt.Not(qt.DeepEquals), id)
 
 	// The other store should pick it up too.
 	key2, id2, err := store1.RootKey(context.Background())
-	c.Assert(err, gc.Equals, nil)
-	c.Assert(key2, gc.DeepEquals, key1)
-	c.Assert(id2, gc.DeepEquals, id1)
+	c.Assert(err, qt.Equals, nil)
+	c.Assert(key2, qt.DeepEquals, key1)
+	c.Assert(id2, qt.DeepEquals, id1)
 }
 
-func (s *RootKeyStoreSuite) TestRootKeyDefaultGenerateInterval(c *gc.C) {
+func TestRootKeyDefaultGenerateInterval(t *testing.T) {
+	c := qt.New(t)
 	now := epoch
 	clock := clockVal(&now)
 	b := make(memBacking)
@@ -184,19 +181,19 @@ func (s *RootKeyStoreSuite) TestRootKeyDefaultGenerateInterval(c *gc.C) {
 		ExpiryDuration: 5 * time.Minute,
 	})
 	key, id, err := store.RootKey(context.Background())
-	c.Assert(err, gc.Equals, nil)
+	c.Assert(err, qt.Equals, nil)
 
 	now = epoch.Add(5 * time.Minute)
 	key1, id1, err := store.RootKey(context.Background())
-	c.Assert(err, gc.Equals, nil)
-	c.Assert(key1, jc.DeepEquals, key)
-	c.Assert(id1, jc.DeepEquals, id)
+	c.Assert(err, qt.Equals, nil)
+	c.Assert(key1, qt.DeepEquals, key)
+	c.Assert(id1, qt.DeepEquals, id)
 
 	now = epoch.Add(5*time.Minute + time.Millisecond)
 	key1, id1, err = store.RootKey(context.Background())
-	c.Assert(err, gc.Equals, nil)
-	c.Assert(string(key1), gc.Not(gc.Equals), string(key))
-	c.Assert(string(id1), gc.Not(gc.Equals), string(id))
+	c.Assert(err, qt.Equals, nil)
+	c.Assert(string(key1), qt.Not(qt.Equals), string(key))
+	c.Assert(string(id1), qt.Not(qt.Equals), string(id))
 }
 
 var preferredRootKeyTests = []struct {
@@ -255,18 +252,20 @@ var preferredRootKeyTests = []struct {
 	expectId: "id1",
 }}
 
-func (s *RootKeyStoreSuite) TestPreferredRootKeyFromDatabase(c *gc.C) {
+func TestPreferredRootKeyFromDatabase(t *testing.T) {
+	c := qt.New(t)
 	for i, test := range preferredRootKeyTests {
 		c.Logf("%d: %v", i, test.about)
 		b := memBackingWithKeys(test.keys)
 		store := dbrootkeystore.NewRootKeys(10, stoppedClock(test.now)).NewStore(b, test.policy)
 		_, id, err := store.RootKey(context.Background())
-		c.Assert(err, gc.Equals, nil)
-		c.Assert(string(id), gc.DeepEquals, test.expectId)
+		c.Assert(err, qt.Equals, nil)
+		c.Assert(string(id), qt.DeepEquals, test.expectId)
 	}
 }
 
-func (s *RootKeyStoreSuite) TestPreferredRootKeyFromCache(c *gc.C) {
+func TestPreferredRootKeyFromCache(t *testing.T) {
+	c := qt.New(t)
 	for i, test := range preferredRootKeyTests {
 		c.Logf("%d: %v", i, test.about)
 		b := memBackingWithKeys(test.keys)
@@ -274,8 +273,8 @@ func (s *RootKeyStoreSuite) TestPreferredRootKeyFromCache(c *gc.C) {
 		// Ensure that all the keys are in cache by getting all of them.
 		for _, key := range test.keys {
 			got, err := store.Get(context.Background(), key.Id)
-			c.Assert(err, gc.Equals, nil)
-			c.Assert(got, jc.DeepEquals, key.RootKey)
+			c.Assert(err, qt.Equals, nil)
+			c.Assert(got, qt.DeepEquals, key.RootKey)
 		}
 		// Remove all the keys from the collection so that
 		// we know we must be acquiring them from the cache.
@@ -285,12 +284,13 @@ func (s *RootKeyStoreSuite) TestPreferredRootKeyFromCache(c *gc.C) {
 
 		// Test that RootKey returns the expected key.
 		_, id, err := store.RootKey(context.Background())
-		c.Assert(err, gc.Equals, nil)
-		c.Assert(string(id), jc.DeepEquals, test.expectId)
+		c.Assert(err, qt.Equals, nil)
+		c.Assert(string(id), qt.DeepEquals, test.expectId)
 	}
 }
 
-func (s *RootKeyStoreSuite) TestGet(c *gc.C) {
+func TestGet(t *testing.T) {
+	c := qt.New(t)
 	now := epoch
 	clock := clockVal(&now)
 
@@ -308,15 +308,15 @@ func (s *RootKeyStoreSuite) TestGet(c *gc.C) {
 	keyIds := make(map[string]bool)
 	for i := 0; i < 20; i++ {
 		key, id, err := store.RootKey(context.Background())
-		c.Assert(err, gc.Equals, nil)
-		c.Assert(keyIds[string(id)], gc.Equals, false)
+		c.Assert(err, qt.Equals, nil)
+		c.Assert(keyIds[string(id)], qt.Equals, false)
 		keys = append(keys, idKey{string(id), key})
 		now = now.Add(time.Minute + time.Second)
 	}
 	for i, k := range keys {
 		key, err := store.Get(context.Background(), []byte(k.id))
-		c.Assert(err, gc.Equals, nil, gc.Commentf("key %d (%s)", i, k.id))
-		c.Assert(key, gc.DeepEquals, k.key, gc.Commentf("key %d (%s)", i, k.id))
+		c.Assert(err, qt.Equals, nil, qt.Commentf("key %d (%s)", i, k.id))
+		c.Assert(key, qt.DeepEquals, k.key, qt.Commentf("key %d (%s)", i, k.id))
 	}
 	// Check that the keys are cached.
 	//
@@ -342,17 +342,18 @@ func (s *RootKeyStoreSuite) TestGet(c *gc.C) {
 	for i := len(keys) - 1; i >= 0; i-- {
 		k := keys[i]
 		key, err := store.Get(context.Background(), []byte(k.id))
-		c.Assert(err, gc.Equals, nil)
-		c.Assert(err, gc.Equals, nil, gc.Commentf("key %d (%s)", i, k.id))
-		c.Assert(key, gc.DeepEquals, k.key, gc.Commentf("key %d (%s)", i, k.id))
+		c.Assert(err, qt.Equals, nil)
+		c.Assert(err, qt.Equals, nil, qt.Commentf("key %d (%s)", i, k.id))
+		c.Assert(key, qt.DeepEquals, k.key, qt.Commentf("key %d (%s)", i, k.id))
 	}
-	c.Assert(len(fetched), gc.Equals, len(keys)-6)
+	c.Assert(len(fetched), qt.Equals, len(keys)-6)
 	for i, id := range fetched {
-		c.Assert(id, gc.Equals, keys[len(keys)-6-i-1].id)
+		c.Assert(id, qt.Equals, keys[len(keys)-6-i-1].id)
 	}
 }
 
-func (s *RootKeyStoreSuite) TestGetCachesMisses(c *gc.C) {
+func TestGetCachesMisses(t *testing.T) {
+	c := qt.New(t)
 	var fetched []string
 	mb := make(memBacking)
 	b := &funcBacking{
@@ -367,18 +368,19 @@ func (s *RootKeyStoreSuite) TestGetCachesMisses(c *gc.C) {
 		ExpiryDuration:   30 * time.Minute,
 	})
 	key, err := store.Get(context.Background(), []byte("foo"))
-	c.Assert(err, gc.Equals, bakery.ErrNotFound)
-	c.Assert(key, gc.IsNil)
-	c.Assert(fetched, jc.DeepEquals, []string{"foo"})
+	c.Assert(err, qt.Equals, bakery.ErrNotFound)
+	c.Assert(key, qt.IsNil)
+	c.Assert(fetched, qt.DeepEquals, []string{"foo"})
 	fetched = nil
 
 	key, err = store.Get(context.Background(), []byte("foo"))
-	c.Assert(err, gc.Equals, bakery.ErrNotFound)
-	c.Assert(key, gc.IsNil)
-	c.Assert(fetched, gc.IsNil)
+	c.Assert(err, qt.Equals, bakery.ErrNotFound)
+	c.Assert(key, qt.IsNil)
+	c.Assert(fetched, qt.IsNil)
 }
 
-func (s *RootKeyStoreSuite) TestGetExpiredItemFromCache(c *gc.C) {
+func TestGetExpiredItemFromCache(t *testing.T) {
+	c := qt.New(t)
 	now := epoch
 	clock := clockVal(&now)
 	b := &funcBacking{
@@ -388,7 +390,7 @@ func (s *RootKeyStoreSuite) TestGetExpiredItemFromCache(c *gc.C) {
 		ExpiryDuration: 5 * time.Minute,
 	})
 	_, id, err := store.RootKey(context.Background())
-	c.Assert(err, gc.Equals, nil)
+	c.Assert(err, qt.Equals, nil)
 
 	b.getKey = func(id []byte) (dbrootkeystore.RootKey, error) {
 		c.Errorf("GetKey unexpectedly called")
@@ -397,7 +399,7 @@ func (s *RootKeyStoreSuite) TestGetExpiredItemFromCache(c *gc.C) {
 	now = epoch.Add(15 * time.Minute)
 
 	_, err = store.Get(context.Background(), id)
-	c.Assert(err, gc.Equals, bakery.ErrNotFound)
+	c.Assert(err, qt.Equals, bakery.ErrNotFound)
 }
 
 func memBackingWithKeys(keys []dbrootkeystore.RootKey) memBacking {
