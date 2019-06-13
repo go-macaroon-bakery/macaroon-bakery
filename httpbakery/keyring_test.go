@@ -34,6 +34,23 @@ func TestCachePrepopulated(t *testing.T) {
 	c.Assert(info, qt.DeepEquals, expectInfo)
 }
 
+func TestCachePrepopulatedInsecure(t *testing.T) {
+	c := qt.New(t)
+	// We allow an insecure URL in a prepopulated cache.
+	cache := bakery.NewThirdPartyStore()
+	key, err := bakery.GenerateKey()
+	c.Assert(err, qt.Equals, nil)
+	expectInfo := bakery.ThirdPartyInfo{
+		PublicKey: key.Public,
+		Version:   bakery.LatestVersion,
+	}
+	cache.AddInfo("http://0.1.2.3/", expectInfo)
+	kr := httpbakery.NewThirdPartyLocator(nil, cache)
+	info, err := kr.ThirdPartyInfo(testContext, "http://0.1.2.3/")
+	c.Assert(err, qt.Equals, nil)
+	c.Assert(info, qt.DeepEquals, expectInfo)
+}
+
 func TestCacheMiss(t *testing.T) {
 	c := qt.New(t)
 	d := bakerytest.NewDischarger(nil)
