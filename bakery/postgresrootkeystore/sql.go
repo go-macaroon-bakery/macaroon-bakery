@@ -23,6 +23,15 @@ const (
 )
 
 var initStatements = `
+BEGIN;
+
+-- Set up an advisory lock so that only one thread can issue the statements
+-- below at a time, to avoid issues cause by concurrent updates (especially in
+-- the 'CREATE OR REPLACE FUNCTION' statement).
+-- The lock value is random, and it should be shared by all callers of this
+-- script. It is automatically released on commit.
+SELECT pg_advisory_xact_lock(34577509137);
+
 CREATE TABLE IF NOT EXISTS {{.Table}} (
 	id BYTEA PRIMARY KEY NOT NULL,
 	rootkey BYTEA,
@@ -48,6 +57,8 @@ DROP TRIGGER IF EXISTS {{.ExpireTrigger}} ON {{.Table}};
 CREATE TRIGGER {{.ExpireTrigger}}
    BEFORE INSERT ON {{.Table}}
    EXECUTE PROCEDURE {{.ExpireFunc}}();
+
+COMMIT;
 `
 
 type templateParams struct {
