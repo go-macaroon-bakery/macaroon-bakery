@@ -504,6 +504,41 @@ func TestLegacy(t *testing.T) {
 	c.Assert(string(rk), qt.Equals, "a key")
 }
 
+func TestUsesSessionFromContext(t *testing.T) {
+	c := qt.New(t)
+	defer c.Done()
+
+	coll := testColl(c)
+
+	s1 := coll.Database.Session.Copy()
+	s2 := coll.Database.Session.Copy()
+	c.Defer(s2.Close)
+
+	coll = coll.With(s1)
+	store := mgorootkeystore.NewRootKeys(10).NewStore(coll, mgorootkeystore.Policy{
+		ExpiryDuration: 5 * time.Minute,
+	})
+	s1.Close()
+
+	ctx := mgorootkeystore.ContextWithMgoSession(context.Background(), s2)
+	_, _, err := store.RootKey(ctx)
+	c.Assert(err, qt.Equals, nil)
+}
+
+func TestDoneContext(t *testing.T) {
+	c := qt.New(t)
+	defer c.Done()
+
+	store := mgorootkeystore.NewRootKeys(10).NewStore(testColl(c), mgorootkeystore.Policy{
+		ExpiryDuration: 5 * time.Minute,
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	_, _, err := store.RootKey(ctx)
+	c.Assert(err, qt.ErrorMatches, `cannot query existing keys: context canceled`)
+}
+
 func testColl(c *qt.C) *mgo.Collection {
 	db, err := mgotest.New()
 	c.Assert(err, qt.Equals, nil)

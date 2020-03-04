@@ -3,6 +3,7 @@
 package mgorootkeystore
 
 import (
+	"context"
 	"time"
 
 	"gopkg.in/errgo.v1"
@@ -88,12 +89,35 @@ type backing struct {
 	coll *mgo.Collection
 }
 
+var _ dbrootkeystore.Backing = backing{}
+var _ dbrootkeystore.ContextBacking = backing{}
+
+// GetKey implements dbrootkeystore.Backing.
 func (b backing) GetKey(id []byte) (dbrootkeystore.RootKey, error) {
+	return getFromMongo(b.coll, id)
+}
+
+// GetKeyContext implements dbrootkeystore.ContextBacking.
+func (b backing) GetKeyContext(ctx context.Context, id []byte) (dbrootkeystore.RootKey, error) {
+	var rk dbrootkeystore.RootKey
+	var err error
+
+	f := func(coll *mgo.Collection) {
+		rk, err = getFromMongo(coll, id)
+	}
+
+	if err := b.runWithContext(ctx, f); err != nil {
+		return dbrootkeystore.RootKey{}, err
+	}
+	return rk, err
+}
+
+func getFromMongo(coll *mgo.Collection, id []byte) (dbrootkeystore.RootKey, error) {
 	var key dbrootkeystore.RootKey
-	err := mgoCollectionFindId(b.coll, id).One(&key)
+	err := mgoCollectionFindId(coll, id).One(&key)
 	if err != nil {
 		if err == mgo.ErrNotFound {
-			return b.getLegacyFromMongo(string(id))
+			return getLegacyFromMongo(coll, string(id))
 		}
 		return dbrootkeystore.RootKey{}, errgo.Notef(err, "cannot get key from database")
 	}
@@ -104,9 +128,9 @@ func (b backing) GetKey(id []byte) (dbrootkeystore.RootKey, error) {
 // getLegacyFromMongo gets a value from the old version of the
 // root key document which used a string key rather than a []byte
 // key.
-func (b backing) getLegacyFromMongo(id string) (dbrootkeystore.RootKey, error) {
+func getLegacyFromMongo(coll *mgo.Collection, id string) (dbrootkeystore.RootKey, error) {
 	var key dbrootkeystore.RootKey
-	err := mgoCollectionFindId(b.coll, id).One(&key)
+	err := mgoCollectionFindId(coll, id).One(&key)
 	if err != nil {
 		if err == mgo.ErrNotFound {
 			return dbrootkeystore.RootKey{}, bakery.ErrNotFound
@@ -116,9 +140,30 @@ func (b backing) getLegacyFromMongo(id string) (dbrootkeystore.RootKey, error) {
 	return key, nil
 }
 
+// FindLatestKey implements dbrootkeystore.Backing.
 func (b backing) FindLatestKey(createdAfter, expiresAfter, expiresBefore time.Time) (dbrootkeystore.RootKey, error) {
+	return findLatestKey(b.coll, createdAfter, expiresAfter, expiresBefore)
+}
+
+// FindLatestKeyContext implements dbrootkeystore.ContextBacking.
+func (b backing) FindLatestKeyContext(ctx context.Context, createdAfter, expiresAfter, expiresBefore time.Time) (dbrootkeystore.RootKey, error) {
+	var rk dbrootkeystore.RootKey
+	var err error
+
+	f := func(coll *mgo.Collection) {
+		rk, err = findLatestKey(coll, createdAfter, expiresAfter, expiresBefore)
+	}
+
+	if err := b.runWithContext(ctx, f); err != nil {
+		return dbrootkeystore.RootKey{}, err
+	}
+
+	return rk, err
+}
+
+func findLatestKey(coll *mgo.Collection, createdAfter, expiresAfter, expiresBefore time.Time) (dbrootkeystore.RootKey, error) {
 	var key dbrootkeystore.RootKey
-	err := b.coll.Find(bson.D{{
+	err := coll.Find(bson.D{{
 		"created", bson.D{{"$gte", createdAfter}},
 	}, {
 		"expires", bson.D{
@@ -132,9 +177,68 @@ func (b backing) FindLatestKey(createdAfter, expiresAfter, expiresBefore time.Ti
 	return key, nil
 }
 
+// InsertKey implements dbrootkeystore.Backing.
 func (b backing) InsertKey(key dbrootkeystore.RootKey) error {
-	if err := b.coll.Insert(key); err != nil {
+	return insertKey(b.coll, key)
+}
+
+// InsertKeyContext implements dbrootkeystore.ContextBacking.
+func (b backing) InsertKeyContext(ctx context.Context, key dbrootkeystore.RootKey) error {
+	var err error
+
+	f := func(coll *mgo.Collection) {
+		err = insertKey(coll, key)
+	}
+
+	if err := b.runWithContext(ctx, f); err != nil {
+		return err
+	}
+
+	return err
+}
+
+func insertKey(coll *mgo.Collection, key dbrootkeystore.RootKey) error {
+	if err := coll.Insert(key); err != nil {
 		return errgo.Notef(err, "mongo insert failed")
 	}
 	return nil
+}
+
+func (b backing) runWithContext(ctx context.Context, f func(*mgo.Collection)) error {
+	s := sessionFromContext(ctx)
+	if s == nil {
+		s = b.coll.Database.Session
+	}
+	s = s.Clone()
+
+	c := make(chan struct{})
+
+	go func() {
+		defer close(c)
+		defer s.Close()
+		f(b.coll.With(s))
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-c:
+		return nil
+	}
+}
+
+type contextSessionKey struct{}
+
+// ContextWithMgoSession adds the given mgo.Session to the given
+// context.Context. Any operations requiring database access that are
+// made using a context with an attached session will use the session
+// from the context to access mongodb, rather than the session in the
+// collection used when the RootKeyStore was created.
+func ContextWithMgoSession(ctx context.Context, s *mgo.Session) context.Context {
+	return context.WithValue(ctx, contextSessionKey{}, s)
+}
+
+func sessionFromContext(ctx context.Context) *mgo.Session {
+	s, _ := ctx.Value(contextSessionKey{}).(*mgo.Session)
+	return s
 }
