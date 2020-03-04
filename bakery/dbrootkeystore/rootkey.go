@@ -57,8 +57,8 @@ type Backing interface {
 	// such that all of the following conditions hold:
 	//
 	// 	k.Created >= createdAfter
-	//	k.Expires >= expiresAfter
-	//	k.Expires <= expiresBefore
+	// 	k.Expires >= expiresAfter
+	// 	k.Expires <= expiresBefore
 	//
 	// If no such key was found, the zero root key should be returned
 	// with a nil error.
@@ -67,6 +67,52 @@ type Backing interface {
 	// InsertKey inserts the given root key into the backing store.
 	// It may return an error if the id or key already exist.
 	InsertKey(key RootKey) error
+}
+
+// A ContextBacking is like a Backing but all methods accept a
+// context.Context. If a Backing also implements ContextBacking then the
+// ContextBacking methods will be used in preference.
+type ContextBacking interface {
+	// GetKeyContext gets the key with the given id from the backing
+	// store. If the key is not found, it should return an error with
+	// a bakery.ErrNotFound cause.
+	GetKeyContext(ctx context.Context, id []byte) (RootKey, error)
+
+	// FindLatestKeyContext returns the most recently created root
+	// key k such that all of the following conditions hold:
+	//
+	// 	k.Created >= createdAfter
+	// 	k.Expires >= expiresAfter
+	// 	k.Expires <= expiresBefore
+	//
+	// If no such key was found, the zero root key should be returned
+	// with a nil error.
+	FindLatestKeyContext(ctx context.Context, createdAfter, expiresAfter, expiresBefore time.Time) (RootKey, error)
+
+	// InsertKeyContext inserts the given root key into the backing
+	// store. It may return an error if the id or key already exist.
+	InsertKeyContext(ctx context.Context, key RootKey) error
+}
+
+// A backingWrapper is used to convert a Backing into a ContextBacking by
+// accepting and ignoring the contexts.
+type backingWrapper struct {
+	b Backing
+}
+
+// GetKey implements ContextBacking.
+func (w backingWrapper) GetKeyContext(_ context.Context, id []byte) (RootKey, error) {
+	return w.b.GetKey(id)
+}
+
+// FindLatestKey implements ContextBacking.
+func (w backingWrapper) FindLatestKeyContext(_ context.Context, createdAfter, expiresAfter, expiresBefore time.Time) (RootKey, error) {
+	return w.b.FindLatestKey(createdAfter, expiresAfter, expiresBefore)
+}
+
+// InsertKey implements ContextBacking.
+func (w backingWrapper) InsertKeyContext(_ context.Context, key RootKey) error {
+	return w.b.InsertKey(key)
 }
 
 // RootKey is the type stored in the underlying database.
@@ -134,8 +180,10 @@ type Policy struct {
 	ExpiryDuration time.Duration
 }
 
-// NewStore returns a new RootKeyStore implementation that
-// stores and obtains root keys from the given collection.
+// NewStore returns a new RootKeyStore implementation that stores and
+// obtains root keys from the given Backing. If the given Backing also
+// implements ContextBacking, then the ContextBacking methods will be
+// used in preference.
 //
 // Root keys will be generated and stored following the
 // given store policy.
@@ -146,9 +194,13 @@ func (s *RootKeys) NewStore(b Backing, policy Policy) bakery.RootKeyStore {
 	if policy.GenerateInterval == 0 {
 		policy.GenerateInterval = policy.ExpiryDuration
 	}
+	cb, ok := b.(ContextBacking)
+	if !ok {
+		cb = backingWrapper{b: b}
+	}
 	return &store{
 		keys:    s,
-		backing: b,
+		backing: cb,
 		policy:  policy,
 	}
 }
@@ -160,8 +212,8 @@ func (s *RootKeys) NewStore(b Backing, policy Policy) bakery.RootKeyStore {
 // bakery.ErrNotFound.
 //
 // Called with s.mu locked.
-func (s *RootKeys) get(id []byte, b Backing) (RootKey, error) {
-	key, cached, err := s.get0(id, b)
+func (s *RootKeys) get(ctx context.Context, id []byte, b ContextBacking) (RootKey, error) {
+	key, cached, err := s.get0(ctx, id, b)
 	if err != nil && err != bakery.ErrNotFound {
 		return RootKey{}, errgo.Mask(err)
 	}
@@ -178,7 +230,7 @@ func (s *RootKeys) get(id []byte, b Backing) (RootKey, error) {
 // get0 is the inner version of RootKeys.get. It returns an item and reports
 // whether it was found in the cache, but doesn't check whether the
 // item has expired or move the returned item to s.cache.
-func (s *RootKeys) get0(id []byte, b Backing) (key RootKey, inCache bool, err error) {
+func (s *RootKeys) get0(ctx context.Context, id []byte, b ContextBacking) (key RootKey, inCache bool, err error) {
 	if k, ok := s.cache[string(id)]; ok {
 		if !k.IsValid() {
 			return RootKey{}, true, bakery.ErrNotFound
@@ -191,7 +243,7 @@ func (s *RootKeys) get0(id []byte, b Backing) (key RootKey, inCache bool, err er
 		}
 		return k, false, nil
 	}
-	k, err := b.GetKey(id)
+	k, err := b.GetKeyContext(ctx, id)
 	return k, false, err
 }
 
@@ -224,7 +276,7 @@ func (s *RootKeys) setCurrent(policy Policy, key RootKey) {
 type store struct {
 	keys    *RootKeys
 	policy  Policy
-	backing Backing
+	backing ContextBacking
 }
 
 // Get implements bakery.RootKeyStore.Get.
@@ -232,7 +284,7 @@ func (s *store) Get(ctx context.Context, id []byte) ([]byte, error) {
 	s.keys.mu.Lock()
 	defer s.keys.mu.Unlock()
 
-	key, err := s.keys.get(id, s.backing)
+	key, err := s.keys.get(ctx, id, s.backing)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +294,7 @@ func (s *store) Get(ctx context.Context, id []byte) ([]byte, error) {
 // RootKey implements bakery.RootKeyStore.RootKey by
 // returning an existing key from the cache when compatible
 // with the current policy.
-func (s *store) RootKey(context.Context) ([]byte, []byte, error) {
+func (s *store) RootKey(ctx context.Context) ([]byte, []byte, error) {
 	if key := s.rootKeyFromCache(); key.IsValid() {
 		return key.RootKey, key.Id, nil
 	}
@@ -253,7 +305,7 @@ func (s *store) RootKey(context.Context) ([]byte, []byte, error) {
 	//
 	// Note that this query mirrors the logic found in
 	// store.rootKeyFromCache.
-	key, err := s.findBestRootKey()
+	key, err := s.findBestRootKey(ctx)
 	if err != nil {
 		return nil, nil, errgo.Notef(err, "cannot query existing keys")
 	}
@@ -264,7 +316,7 @@ func (s *store) RootKey(context.Context) ([]byte, []byte, error) {
 		if err != nil {
 			return nil, nil, errgo.Notef(err, "cannot generate key")
 		}
-		if err := s.backing.InsertKey(key); err != nil {
+		if err := s.backing.InsertKeyContext(ctx, key); err != nil {
 			return nil, nil, errgo.Notef(err, "cannot create root key")
 		}
 	}
@@ -275,12 +327,12 @@ func (s *store) RootKey(context.Context) ([]byte, []byte, error) {
 	return key.RootKey, key.Id, nil
 }
 
-func (s *store) findBestRootKey() (RootKey, error) {
+func (s *store) findBestRootKey(ctx context.Context) (RootKey, error) {
 	now := s.keys.clock.Now()
 	createdAfter := now.Add(-s.policy.GenerateInterval)
 	expiresAfter := now.Add(s.policy.ExpiryDuration)
 	expiresBefore := now.Add(s.policy.ExpiryDuration + s.policy.GenerateInterval)
-	return s.backing.FindLatestKey(createdAfter, expiresAfter, expiresBefore)
+	return s.backing.FindLatestKeyContext(ctx, createdAfter, expiresAfter, expiresBefore)
 }
 
 // rootKeyFromCache returns a root key from the cached keys.
