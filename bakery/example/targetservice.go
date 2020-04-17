@@ -31,8 +31,17 @@ func targetService(endpoint, authEndpoint string, authPK *bakery.PublicKey) (htt
 	if err != nil {
 		return nil, err
 	}
-	pkLocator := httpbakery.NewThirdPartyLocator(nil, nil)
-	pkLocator.AllowInsecure()
+	cache := bakery.NewThirdPartyStore()
+	// NB: in the real world, authEndpoint would be https (here it's http) and
+	// so the third party locator could retrieve the ThirdPartyInfo securely
+	// automatically. For the sake of clarity in this example, assume the info
+	// is encoded statically, to avoid the http request to an untrusted
+	// endpoint. (We could also use pkLocator.AllowInsecure() instead).
+	cache.AddInfo(authEndpoint, bakery.ThirdPartyInfo{
+		PublicKey: *authPK,
+		Version: bakery.LatestVersion,
+	})
+	pkLocator := httpbakery.NewThirdPartyLocator(nil, cache)
 	b := identchecker.NewBakery(identchecker.BakeryParams{
 		Key:      key,
 		Location: endpoint,

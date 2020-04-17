@@ -15,7 +15,7 @@ import (
 func authService(endpoint string, key *bakery.KeyPair) (http.Handler, error) {
 	d := httpbakery.NewDischarger(httpbakery.DischargerParams{
 		Checker: httpbakery.ThirdPartyCaveatCheckerFunc(thirdPartyChecker),
-		Key:     bakery.MustGenerateKey(),
+		Key:     key,
 	})
 
 	mux := http.NewServeMux()
