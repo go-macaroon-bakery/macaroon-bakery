@@ -7,11 +7,11 @@ import (
 	"sort"
 
 	"github.com/rogpeppe/fastuuid"
-	errgo "gopkg.in/errgo.v1"
+	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2"
 
-	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
-	"gopkg.in/macaroon-bakery.v2/bakery/internal/macaroonpb"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/checkers"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/internal/macaroonpb"
 )
 
 // MacaroonVerifier verifies macaroons and returns the operations and

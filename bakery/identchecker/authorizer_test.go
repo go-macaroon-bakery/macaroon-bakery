@@ -5,11 +5,11 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-	errgo "gopkg.in/errgo.v1"
+	"gopkg.in/errgo.v1"
 
-	"gopkg.in/macaroon-bakery.v2/bakery"
-	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
-	"gopkg.in/macaroon-bakery.v2/bakery/identchecker"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/checkers"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/identchecker"
 )
 
 func TestAuthorizerFunc(t *testing.T) {

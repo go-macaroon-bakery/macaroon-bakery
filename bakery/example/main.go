@@ -23,8 +23,8 @@ import (
 	"net"
 	"net/http"
 
-	"gopkg.in/macaroon-bakery.v2/bakery"
-	"gopkg.in/macaroon-bakery.v2/httpbakery"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/httpbakery"
 )
 
 var defaultHTTPClient = httpbakery.NewHTTPClient()

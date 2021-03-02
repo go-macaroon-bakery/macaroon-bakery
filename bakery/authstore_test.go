@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 
-	errgo "gopkg.in/errgo.v1"
+	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2"
 
-	"gopkg.in/macaroon-bakery.v2/bakery"
-	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/checkers"
 )
 
 type macaroonStore struct {

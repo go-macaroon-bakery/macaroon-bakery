@@ -9,7 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	errgo "gopkg.in/errgo.v1"
+	"gopkg.in/errgo.v1"
 )
 
 // newRetrableRequest wraps an HTTP request so that it can

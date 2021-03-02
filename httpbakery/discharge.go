@@ -12,8 +12,8 @@ import (
 	"gopkg.in/httprequest.v1"
 	"gopkg.in/macaroon.v2"
 
-	"gopkg.in/macaroon-bakery.v2/bakery"
-	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/checkers"
 )
 
 // ThirdPartyCaveatChecker is used to check third party caveats.
@@ -206,7 +206,7 @@ func (d *Discharger) Handlers() []httprequest.Handler {
 	return srv.Handlers(f)
 }
 
-//go:generate httprequest-generate-client gopkg.in/macaroon-bakery.v2-unstable/httpbakery dischargeHandler dischargeClient
+//go:generate httprequest-generate-client github.com/go-macaroon-bakery/macaroon-bakery/v3-unstable/httpbakery dischargeHandler dischargeClient
 
 // dischargeHandler is the type used to define the httprequest handler
 // methods for a discharger.

@@ -11,7 +11,7 @@ import (
 	"gopkg.in/juju/environschema.v1"
 	"gopkg.in/juju/environschema.v1/form"
 
-	"gopkg.in/macaroon-bakery.v2/httpbakery"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/httpbakery"
 )
 
 /*
