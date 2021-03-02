@@ -6,7 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"gopkg.in/macaroon.v2"
 
-	"gopkg.in/macaroon-bakery.v2/bakery"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery"
 )
 
 var canonicalOpsTests = []struct {

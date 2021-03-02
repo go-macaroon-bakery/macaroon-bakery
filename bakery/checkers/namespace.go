@@ -6,7 +6,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	errgo "gopkg.in/errgo.v1"
+	"gopkg.in/errgo.v1"
 )
 
 // Namespace holds maps from schema URIs to the

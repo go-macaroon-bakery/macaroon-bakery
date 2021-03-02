@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	errgo "gopkg.in/errgo.v1"
+	"gopkg.in/errgo.v1"
 	macaroon "gopkg.in/macaroon.v2"
 
-	"gopkg.in/macaroon-bakery.v2/bakery/checkers"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/checkers"
 )
 
 // Op holds an entity and action to be authorized on that entity.

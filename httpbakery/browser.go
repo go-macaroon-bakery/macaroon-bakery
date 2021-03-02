@@ -11,7 +11,7 @@ import (
 	"gopkg.in/errgo.v1"
 	"gopkg.in/httprequest.v1"
 
-	"gopkg.in/macaroon-bakery.v2/bakery"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery"
 )
 
 const WebBrowserInteractionKind = "browser-window"

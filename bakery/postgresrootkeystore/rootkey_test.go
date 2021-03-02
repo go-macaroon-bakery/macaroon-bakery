@@ -9,11 +9,11 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/frankban/quicktest/qtsuite"
 	"github.com/juju/postgrestest"
-	errgo "gopkg.in/errgo.v1"
+	"gopkg.in/errgo.v1"
 
-	"gopkg.in/macaroon-bakery.v2/bakery"
-	"gopkg.in/macaroon-bakery.v2/bakery/dbrootkeystore"
-	"gopkg.in/macaroon-bakery.v2/bakery/postgresrootkeystore"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/dbrootkeystore"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/postgresrootkeystore"
 )
 
 const testTable = "testrootkeys"

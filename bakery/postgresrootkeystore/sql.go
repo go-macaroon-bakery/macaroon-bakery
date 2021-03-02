@@ -7,10 +7,10 @@ import (
 	"text/template"
 	"time"
 
-	errgo "gopkg.in/errgo.v1"
+	"gopkg.in/errgo.v1"
 
-	"gopkg.in/macaroon-bakery.v2/bakery"
-	"gopkg.in/macaroon-bakery.v2/bakery/dbrootkeystore"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/dbrootkeystore"
 )
 
 type stmtId int

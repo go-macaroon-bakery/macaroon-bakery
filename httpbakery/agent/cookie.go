@@ -7,7 +7,7 @@ import (
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2"
 
-	"gopkg.in/macaroon-bakery.v2/bakery"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery"
 )
 
 const cookieName = "agent-login"
