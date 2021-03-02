@@ -41,7 +41,14 @@ func main() {
 	serverEndpoint := mustServe(func(endpoint string) (http.Handler, error) {
 		return targetService(endpoint, authEndpoint, authPublicKey)
 	})
-	resp, err := clientRequest(newClient(), serverEndpoint)
+
+	resp, err := clientRequest(newClient(), serverEndpoint+"/gold/")
+	if err != nil {
+		log.Fatalf("client failed: %v", err)
+	}
+	fmt.Printf("client success: %q\n", resp)
+
+	resp, err = clientRequest(newClient(), serverEndpoint+"/silver/")
 	if err != nil {
 		log.Fatalf("client failed: %v", err)
 	}
