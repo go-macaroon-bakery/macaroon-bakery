@@ -7,8 +7,8 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
-	"github.com/juju/mgo/v2"
 	"github.com/juju/mgotest"
+	"gopkg.in/mgo.v2"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"
 	"gopkg.in/macaroon-bakery.v2/bakery/dbrootkeystore"
