@@ -6,9 +6,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/juju/mgo/v2"
-	"github.com/juju/mgo/v2/bson"
 	"gopkg.in/errgo.v1"
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 
 	"gopkg.in/macaroon-bakery.v2/bakery"
 	"gopkg.in/macaroon-bakery.v2/bakery/dbrootkeystore"

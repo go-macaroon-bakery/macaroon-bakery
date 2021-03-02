@@ -128,7 +128,7 @@ func TestCustomHTTPClient(t *testing.T) {
 	}
 	kr := httpbakery.NewThirdPartyLocator(client, nil)
 	info, err := kr.ThirdPartyInfo(testContext, "https://0.1.2.3/")
-	c.Assert(err, qt.ErrorMatches, `(Get|GET) ["]?https://0.1.2.3/discharge/info["]?: custom round trip error`)
+	c.Assert(err, qt.ErrorMatches, `(Get|GET) https://0.1.2.3/discharge/info: custom round trip error`)
 	c.Assert(info, qt.DeepEquals, bakery.ThirdPartyInfo{})
 }
 
@@ -157,7 +157,7 @@ func TestThirdPartyInfoForLocationWrongURL(t *testing.T) {
 	_, err := httpbakery.ThirdPartyInfoForLocation(testContext, client, "http://localhost:0")
 	c.Logf("%v", errgo.Details(err))
 	c.Assert(err, qt.ErrorMatches,
-		`(Get|GET) ["]?http://localhost:0/discharge/info["]?: dial tcp 127.0.0.1:0: .*connection refused`)
+		`(Get|GET) http://localhost:0/discharge/info: dial tcp 127.0.0.1:0: .*connection refused`)
 }
 
 func TestThirdPartyInfoForLocationReturnsInvalidJSON(t *testing.T) {
@@ -169,7 +169,7 @@ func TestThirdPartyInfoForLocationReturnsInvalidJSON(t *testing.T) {
 	client := httpbakery.NewHTTPClient()
 	_, err := httpbakery.ThirdPartyInfoForLocation(testContext, client, ts.URL)
 	c.Assert(err, qt.ErrorMatches,
-		fmt.Sprintf(`Get ["]?http://.*/discharge/info["]?: unexpected content type text/plain; want application/json; content: BADJSON`))
+		fmt.Sprintf(`Get http://.*/discharge/info: unexpected content type text/plain; want application/json; content: BADJSON`))
 }
 
 func TestThirdPartyInfoForLocationReturnsStatusInternalServerError(t *testing.T) {
