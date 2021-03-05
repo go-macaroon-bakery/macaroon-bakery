@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"gopkg.in/errgo.v1"
-	macaroon "gopkg.in/macaroon.v2"
+	"gopkg.in/macaroon.v2"
 
-	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v3/bakery/checkers"
 )
 
 // Op holds an entity and action to be authorized on that entity.

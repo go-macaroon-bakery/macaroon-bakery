@@ -1,5 +1,5 @@
 language: go
-go_import_path: "github.com/go-macaroon-bakery/macaroon-bakery/v3"
+go_import_path: "gopkg.in/macaroon-bakery.v3"
 go: 
   - "1.12.x"
 script: GO111MODULE=on go test ./...

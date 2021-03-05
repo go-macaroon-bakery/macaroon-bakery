@@ -7,8 +7,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"gopkg.in/macaroon.v2"
 
-	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery"
-	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v3/bakery"
+	"gopkg.in/macaroon-bakery.v3/bakery/checkers"
 )
 
 func TestNewMacaroon(t *testing.T) {

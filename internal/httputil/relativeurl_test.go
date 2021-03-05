@@ -11,7 +11,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/go-macaroon-bakery/macaroon-bakery/v3/internal/httputil"
+	"gopkg.in/macaroon-bakery.v3/internal/httputil"
 )
 
 var relativeURLTests = []struct {

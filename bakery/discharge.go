@@ -9,7 +9,7 @@ import (
 
 	"gopkg.in/errgo.v1"
 
-	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v3/bakery/checkers"
 )
 
 // LocalThirdPartyCaveat returns a third-party caveat that, when added

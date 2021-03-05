@@ -10,8 +10,8 @@ import (
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2"
 
-	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery"
-	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v3/bakery"
+	"gopkg.in/macaroon-bakery.v3/bakery/checkers"
 )
 
 // TestSingleServiceFirstParty creates a single service
