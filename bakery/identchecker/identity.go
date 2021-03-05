@@ -5,7 +5,7 @@ import (
 
 	"gopkg.in/errgo.v1"
 
-	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v3/bakery/checkers"
 )
 
 // IdentityClient represents an abstract identity manager. User

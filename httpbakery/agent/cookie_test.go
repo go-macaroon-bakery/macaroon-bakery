@@ -9,8 +9,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"gopkg.in/errgo.v1"
 
-	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery"
-	"github.com/go-macaroon-bakery/macaroon-bakery/v3/httpbakery/agent"
+	"gopkg.in/macaroon-bakery.v3/bakery"
+	"gopkg.in/macaroon-bakery.v3/httpbakery/agent"
 )
 
 var loginCookieTests = []struct {

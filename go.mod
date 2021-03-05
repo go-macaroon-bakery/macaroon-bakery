@@ -1,4 +1,4 @@
-module github.com/go-macaroon-bakery/macaroon-bakery/v3
+module gopkg.in/macaroon-bakery.v3
 
 require (
 	github.com/frankban/quicktest v1.7.3

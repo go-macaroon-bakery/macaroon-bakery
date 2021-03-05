@@ -10,7 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/go-macaroon-bakery/macaroon-bakery/v3/httpbakery"
+	"gopkg.in/macaroon-bakery.v3/httpbakery"
 )
 
 func TestLegacyGetInteractionMethodsGetFailure(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 	"golang.org/x/crypto/nacl/box"
 	"gopkg.in/errgo.v1"
 
-	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v3/bakery/checkers"
 )
 
 type caveatRecord struct {

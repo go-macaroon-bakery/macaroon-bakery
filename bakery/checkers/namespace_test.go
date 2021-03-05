@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v3/bakery/checkers"
 )
 
 var resolveTests = []struct {

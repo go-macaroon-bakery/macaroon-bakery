@@ -8,8 +8,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"gopkg.in/errgo.v1"
 
-	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/checkers"
-	"github.com/go-macaroon-bakery/macaroon-bakery/v3/httpbakery"
+	"gopkg.in/macaroon-bakery.v3/bakery/checkers"
+	"gopkg.in/macaroon-bakery.v3/httpbakery"
 )
 
 type checkTest struct {
