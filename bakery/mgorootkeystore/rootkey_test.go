@@ -92,6 +92,7 @@ var isValidWithPolicyTests = []struct {
 
 func TestIsValidWithPolicy(t *testing.T) {
 	c := qt.New(t)
+	defer c.Done()
 	var now time.Time
 	c.Patch(mgorootkeystore.Clock, clockVal(&now))
 	for i, test := range isValidWithPolicyTests {
@@ -102,6 +103,7 @@ func TestIsValidWithPolicy(t *testing.T) {
 
 func TestRootKeyUsesKeysValidWithPolicy(t *testing.T) {
 	c := qt.New(t)
+	defer c.Done()
 	// We re-use the TestIsValidWithPolicy tests so that we
 	// know that the mongo logic uses the same behaviour.
 	var now time.Time
