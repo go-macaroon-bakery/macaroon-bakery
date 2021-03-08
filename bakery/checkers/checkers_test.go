@@ -85,7 +85,7 @@ var checkerTests = []struct {
 		expectError: `caveat "time-before bad-date" not satisfied: parsing time "bad-date" as "2006-01-02T15:04:05.999999999Z07:00": cannot parse "bad-date" as "2006"`,
 	}, {
 		caveat:      checkers.TimeBeforeCaveat(now).Condition + " ",
-		expectError: `caveat "time-before 2006-01-02T15:04:05.123Z " not satisfied: parsing time "2006-01-02T15:04:05.123Z ": extra text:  `,
+		expectError: `caveat "time-before 2006-01-02T15:04:05.123Z " not satisfied: parsing time "2006-01-02T15:04:05.123Z ": extra text: "? "?`,
 	}},
 }, {
 	about: "real time",
