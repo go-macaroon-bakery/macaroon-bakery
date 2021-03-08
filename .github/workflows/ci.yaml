@@ -1,0 +1,49 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  build_test:
+    name: Build and Test
+    strategy:
+      matrix:
+        go: ['1.12', '1.13', '1.14', '1.15', '1.16']
+    runs-on: ubuntu-latest
+    container:
+      image: ubuntu
+      volumes:
+      - /etc/ssl/certs:/etc/ssl/certs
+    services:
+      postgres:
+        image: ubuntu/postgres
+        env:
+          POSTGRES_PASSWORD: password
+        # Set health checks to wait until postgres has started
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      mongo:
+        image: mongo:4.4-bionic   
+    steps:
+    - uses: actions/checkout@v2.3.4
+    - uses: actions/setup-go@v2.1.3
+      with:
+        go-version: ${{ matrix.go }}
+        stable: false
+    - uses: actions/cache@v2
+      with:
+        path: ~/go/pkg/mod
+        key: ubuntu-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ubuntu-go-
+    - name: Install dependencies
+      run: apt-get update -y && apt-get install -y gcc git-core
+    - name: Build and Test
+      run: go test ./...
+      env:
+        MGOCONNECTIONSTRING: mongo
+        PGHOST: postgres
+        PGPASSWORD: password
+        PGSSLMODE: disable
+        PGUSER: postgres

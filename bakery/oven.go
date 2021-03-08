@@ -6,12 +6,12 @@ import (
 	"encoding/base64"
 	"sort"
 
+	"github.com/go-macaroon-bakery/macaroonpb"
 	"github.com/rogpeppe/fastuuid"
 	"gopkg.in/errgo.v1"
 	"gopkg.in/macaroon.v2"
 
 	"gopkg.in/macaroon-bakery.v3/bakery/checkers"
-	"gopkg.in/macaroon-bakery.v3/bakery/internal/macaroonpb"
 )
 
 // MacaroonVerifier verifies macaroons and returns the operations and
