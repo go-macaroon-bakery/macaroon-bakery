@@ -7,7 +7,7 @@ require (
 	github.com/juju/mgo/v2 v2.0.0-20210302023703-70d5d206e208
 	github.com/juju/mgotest v1.0.2
 	github.com/juju/postgrestest v1.1.0
-	github.com/juju/qthttptest v0.0.1
+	github.com/juju/qthttptest v0.1.1
 	github.com/juju/webbrowser v0.0.0-20160309143629-54b8c57083b4
 	github.com/julienschmidt/httprouter v1.2.0
 	github.com/kr/text v0.2.0 // indirect
