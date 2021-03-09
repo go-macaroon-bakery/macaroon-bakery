@@ -9,8 +9,8 @@ import (
 	qt "github.com/frankban/quicktest"
 	"gopkg.in/macaroon.v2"
 
-	"gopkg.in/macaroon-bakery.v3/bakery"
-	"gopkg.in/macaroon-bakery.v3/bakery/checkers"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/checkers"
 )
 
 // testContext holds the testing background context - its associated time when checking

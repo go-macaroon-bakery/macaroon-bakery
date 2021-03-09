@@ -7,7 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	"golang.org/x/crypto/nacl/box"
 
-	"gopkg.in/macaroon-bakery.v3/bakery/checkers"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/checkers"
 )
 
 var (

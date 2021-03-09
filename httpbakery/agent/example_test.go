@@ -1,9 +1,9 @@
 package agent_test
 
 import (
-	"gopkg.in/macaroon-bakery.v3/bakery"
-	"gopkg.in/macaroon-bakery.v3/httpbakery"
-	"gopkg.in/macaroon-bakery.v3/httpbakery/agent"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/httpbakery"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/httpbakery/agent"
 )
 
 func ExampleSetUpAuth() {

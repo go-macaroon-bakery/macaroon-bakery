@@ -1,6 +1,6 @@
 package postgresrootkeystore
 
-import "gopkg.in/macaroon-bakery.v3/bakery/dbrootkeystore"
+import "github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/dbrootkeystore"
 
 var (
 	Clock      = &clock

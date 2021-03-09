@@ -10,9 +10,9 @@ import (
 	"github.com/juju/mgo/v2"
 	"github.com/juju/mgotest"
 
-	"gopkg.in/macaroon-bakery.v3/bakery"
-	"gopkg.in/macaroon-bakery.v3/bakery/dbrootkeystore"
-	"gopkg.in/macaroon-bakery.v3/bakery/mgorootkeystore"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/dbrootkeystore"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/mgorootkeystore"
 )
 
 var epoch = time.Date(2000, time.January, 1, 0, 0, 0, 0, time.UTC)
