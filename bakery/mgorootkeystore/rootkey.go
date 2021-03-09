@@ -10,8 +10,8 @@ import (
 	"github.com/juju/mgo/v2/bson"
 	"gopkg.in/errgo.v1"
 
-	"gopkg.in/macaroon-bakery.v3/bakery"
-	"gopkg.in/macaroon-bakery.v3/bakery/dbrootkeystore"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/dbrootkeystore"
 )
 
 // Functions defined as variables so they can be overidden

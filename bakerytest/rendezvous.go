@@ -8,9 +8,9 @@ import (
 
 	"gopkg.in/errgo.v1"
 
-	"gopkg.in/macaroon-bakery.v3/bakery"
-	"gopkg.in/macaroon-bakery.v3/bakery/checkers"
-	"gopkg.in/macaroon-bakery.v3/httpbakery"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery/checkers"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/httpbakery"
 )
 
 // Rendezvous implements a place where discharge information

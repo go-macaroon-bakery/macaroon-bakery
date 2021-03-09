@@ -5,7 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"gopkg.in/macaroon-bakery.v3/bakery"
+	"github.com/go-macaroon-bakery/macaroon-bakery/v3/bakery"
 )
 
 func TestMemStore(t *testing.T) {
