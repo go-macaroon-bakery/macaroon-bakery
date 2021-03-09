@@ -9,7 +9,7 @@ require (
 	github.com/juju/postgrestest v1.1.0
 	github.com/juju/qthttptest v0.1.1
 	github.com/juju/webbrowser v0.0.0-20160309143629-54b8c57083b4
-	github.com/julienschmidt/httprouter v1.2.0
+	github.com/julienschmidt/httprouter v1.3.0
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lib/pq v1.3.0 // indirect
 	github.com/rogpeppe/fastuuid v0.0.0-20150106093220-6724a57986af
