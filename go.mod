@@ -1,9 +1,9 @@
 module github.com/go-macaroon-bakery/macaroon-bakery/v3
 
 require (
-	github.com/frankban/quicktest v1.11.3
+	github.com/frankban/quicktest v1.12.0
 	github.com/go-macaroon-bakery/macaroonpb v1.0.0
-	github.com/google/go-cmp v0.5.4
+	github.com/google/go-cmp v0.5.5
 	github.com/juju/mgo/v2 v2.0.0-20210302023703-70d5d206e208
 	github.com/juju/mgotest v1.0.2
 	github.com/juju/postgrestest v1.1.0
