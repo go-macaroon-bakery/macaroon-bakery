@@ -8,7 +8,7 @@ require (
 	github.com/google/go-cmp v0.5.4
 	github.com/juju/mgo/v2 v2.0.0-20220111072304-f200228f1090
 	github.com/juju/mgotest v1.0.3
-	github.com/juju/postgrestest v1.1.0
+	github.com/juju/postgrestest v1.1.1
 	github.com/juju/qthttptest v0.1.3
 	github.com/juju/webbrowser v0.0.0-20160309143629-54b8c57083b4
 	github.com/julienschmidt/httprouter v1.3.0
