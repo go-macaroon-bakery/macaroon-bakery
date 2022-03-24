@@ -3,9 +3,9 @@ module github.com/go-macaroon-bakery/macaroon-bakery/v3
 go 1.17
 
 require (
-	github.com/frankban/quicktest v1.11.3
+	github.com/frankban/quicktest v1.14.3
 	github.com/go-macaroon-bakery/macaroonpb v1.0.0
-	github.com/google/go-cmp v0.5.4
+	github.com/google/go-cmp v0.5.7
 	github.com/juju/mgo/v2 v2.0.0-20220111072304-f200228f1090
 	github.com/juju/mgotest v1.0.3
 	github.com/juju/postgrestest v1.1.0
@@ -25,9 +25,10 @@ require (
 require (
 	github.com/golang/protobuf v1.4.3 // indirect
 	github.com/juju/schema v1.0.0 // indirect
-	github.com/kr/pretty v0.2.1 // indirect
+	github.com/kr/pretty v0.3.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lib/pq v1.3.0 // indirect
+	github.com/rogpeppe/go-internal v1.6.1 // indirect
 	github.com/xdg-go/stringprep v1.0.2 // indirect
 	golang.org/x/sys v0.0.0-20201119102817-f84b799fce68 // indirect
 	golang.org/x/text v0.3.5 // indirect
