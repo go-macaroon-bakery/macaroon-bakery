@@ -1,9 +1,9 @@
 package httpbakery
 
 import (
+	"bytes"
 	"context"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"reflect"
 	"sync"
@@ -159,7 +159,8 @@ func (r *readStopper) Close() error {
 	return r.rreq.close()
 }
 
-var nopCloserType = reflect.TypeOf(ioutil.NopCloser(nil))
+var nopCloserType = reflect.TypeOf(io.NopCloser(nil))
+var nopCloserWriterToType = reflect.TypeOf(io.NopCloser(bytes.NewReader([]byte{})))
 
 type readSeekCloser interface {
 	io.ReadSeeker
@@ -173,7 +174,7 @@ func seekerFromBody(r io.ReadCloser) readSeekCloser {
 		return r
 	}
 	rv := reflect.ValueOf(r)
-	if rv.Type() != nopCloserType {
+	if rv.Type() != nopCloserType && rv.Type() != nopCloserWriterToType {
 		return nil
 	}
 	// It's a value created by nopCloser. Extract the

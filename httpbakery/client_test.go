@@ -275,6 +275,24 @@ func TestWithNonSeekableCloserBody(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `request body is not seekable`)
 }
 
+// Regression test for https://github.com/go-macaroon-bakery/macaroon-bakery/issues/276
+// Test that client.Do(req) works when req.Body implements WriterTo
+func TestWithWriterToBody(t *testing.T) {
+	c := qt.New(t)
+	// Here we're just testing the newRetryableRequest logic
+	// We don't care about the request or response
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("hello"))
+	}))
+
+	req, err := http.NewRequest("GET", srv.URL, bytes.NewReader([]byte{0, 1, 2, 3}))
+	c.Assert(err, qt.IsNil)
+	// req.Body = io.NopCloser(bytes.Reader)
+	// In Go 1.19+, this has type io.nopCloserWriterTo, not io.nopCloser
+	_, err = httpbakery.NewClient().Do(req)
+	c.Assert(err, qt.IsNil)
+}
+
 type readCloser struct {
 }
 
