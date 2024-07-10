@@ -191,12 +191,25 @@ type Policy struct {
 // It is expected that all Backing instances passed to a given Store's
 // NewStore method should refer to the same underlying database.
 func (s *RootKeys) NewStore(b Backing, policy Policy) bakery.RootKeyStore {
-	if policy.GenerateInterval == 0 {
-		policy.GenerateInterval = policy.ExpiryDuration
-	}
 	cb, ok := b.(ContextBacking)
 	if !ok {
 		cb = backingWrapper{b: b}
+	}
+	return s.NewContextStore(cb, policy)
+}
+
+// NewContextStore returns a new RootKeyStore implementation that stores
+// and obtains root keys from the given ContextBacking.
+//
+// Root keys will be generated and stored following the
+// given store policy.
+//
+// It is expected that all ContextBacking instances passed to a given
+// Store's NewContextStore method should refer to the same underlying
+// database.
+func (s *RootKeys) NewContextStore(cb ContextBacking, policy Policy) bakery.RootKeyStore {
+	if policy.GenerateInterval == 0 {
+		policy.GenerateInterval = policy.ExpiryDuration
 	}
 	return &store{
 		keys:    s,

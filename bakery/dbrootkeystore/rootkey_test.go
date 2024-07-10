@@ -405,8 +405,56 @@ func TestGetExpiredItemFromCache(t *testing.T) {
 func TestContextBackingTakesPrecedence(t *testing.T) {
 	c := qt.New(t)
 
-	b := contextBacking{make(memBacking)}
+	b := fullContextBacking{make(memBacking)}
 	store := dbrootkeystore.NewRootKeys(5, nil).NewStore(b, dbrootkeystore.Policy{
+		GenerateInterval: 1 * time.Minute,
+		ExpiryDuration:   30 * time.Minute,
+	})
+
+	ctx := context.Background()
+
+	key1, id, err := store.RootKey(ctx)
+	c.Assert(err, qt.Equals, nil)
+
+	key2, err := store.Get(ctx, id)
+	c.Assert(err, qt.Equals, nil)
+
+	c.Assert(key1, qt.DeepEquals, key2)
+}
+
+type fullContextBacking struct {
+	b dbrootkeystore.Backing
+}
+
+func (b fullContextBacking) GetKey(id []byte) (dbrootkeystore.RootKey, error) {
+	return dbrootkeystore.RootKey{}, errgo.Newf("Unexected call to GetKey")
+}
+
+func (b fullContextBacking) GetKeyContext(_ context.Context, id []byte) (dbrootkeystore.RootKey, error) {
+	return b.b.GetKey(id)
+}
+
+func (b fullContextBacking) FindLatestKey(createdAfter, expiresAfter, expiresBefore time.Time) (dbrootkeystore.RootKey, error) {
+	return dbrootkeystore.RootKey{}, errgo.Newf("Unexected call to FindLatestKey")
+}
+
+func (b fullContextBacking) FindLatestKeyContext(_ context.Context, createdAfter, expiresAfter, expiresBefore time.Time) (dbrootkeystore.RootKey, error) {
+	return b.b.FindLatestKey(createdAfter, expiresAfter, expiresBefore)
+}
+
+func (b fullContextBacking) InsertKey(_ dbrootkeystore.RootKey) error {
+	return errgo.Newf("Unexected call to FindLatestKey")
+}
+
+func (b fullContextBacking) InsertKeyContext(_ context.Context, key dbrootkeystore.RootKey) error {
+	return b.b.InsertKey(key)
+}
+
+func TestContextBackingStore(t *testing.T) {
+	c := qt.New(t)
+
+	b := contextBacking{make(memBacking)}
+	store := dbrootkeystore.NewRootKeys(5, nil).NewContextStore(b, dbrootkeystore.Policy{
 		GenerateInterval: 1 * time.Minute,
 		ExpiryDuration:   30 * time.Minute,
 	})
@@ -426,24 +474,12 @@ type contextBacking struct {
 	b dbrootkeystore.Backing
 }
 
-func (b contextBacking) GetKey(id []byte) (dbrootkeystore.RootKey, error) {
-	return dbrootkeystore.RootKey{}, errgo.Newf("Unexected call to GetKey")
-}
-
 func (b contextBacking) GetKeyContext(_ context.Context, id []byte) (dbrootkeystore.RootKey, error) {
 	return b.b.GetKey(id)
 }
 
-func (b contextBacking) FindLatestKey(createdAfter, expiresAfter, expiresBefore time.Time) (dbrootkeystore.RootKey, error) {
-	return dbrootkeystore.RootKey{}, errgo.Newf("Unexected call to FindLatestKey")
-}
-
 func (b contextBacking) FindLatestKeyContext(_ context.Context, createdAfter, expiresAfter, expiresBefore time.Time) (dbrootkeystore.RootKey, error) {
 	return b.b.FindLatestKey(createdAfter, expiresAfter, expiresBefore)
-}
-
-func (b contextBacking) InsertKey(_ dbrootkeystore.RootKey) error {
-	return errgo.Newf("Unexected call to FindLatestKey")
 }
 
 func (b contextBacking) InsertKeyContext(_ context.Context, key dbrootkeystore.RootKey) error {
