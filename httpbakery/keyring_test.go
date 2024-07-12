@@ -157,7 +157,7 @@ func TestThirdPartyInfoForLocationWrongURL(t *testing.T) {
 	_, err := httpbakery.ThirdPartyInfoForLocation(testContext, client, "http://localhost:0")
 	c.Logf("%v", errgo.Details(err))
 	c.Assert(err, qt.ErrorMatches,
-		`(Get|GET) ["]?http://localhost:0/discharge/info["]?: dial tcp 127.0.0.1:0: .*connection refused`)
+		`(Get|GET) ["]?http://localhost:0/discharge/info["]?: dial tcp (127.0.0.1|\[::1\]):0: .*connection refused`)
 }
 
 func TestThirdPartyInfoForLocationReturnsInvalidJSON(t *testing.T) {
