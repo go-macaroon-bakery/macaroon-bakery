@@ -17,7 +17,7 @@ require (
 	golang.org/x/net v0.0.0-20210226172049-e18ecbb05110
 	gopkg.in/errgo.v1 v1.0.1
 	gopkg.in/httprequest.v1 v1.2.1
-	gopkg.in/juju/environschema.v1 v1.0.0
+	gopkg.in/juju/environschema.v1 v1.0.1
 	gopkg.in/macaroon.v2 v2.1.0
 	gopkg.in/yaml.v2 v2.4.0
 )
