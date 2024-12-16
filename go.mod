@@ -10,7 +10,7 @@ require (
 	github.com/juju/mgotest v1.0.3
 	github.com/juju/postgrestest v1.1.0
 	github.com/juju/qthttptest v0.1.3
-	github.com/juju/webbrowser v0.0.0-20160309143629-54b8c57083b4
+	github.com/juju/webbrowser v1.0.0
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/rogpeppe/fastuuid v0.0.0-20150106093220-6724a57986af
 	golang.org/x/crypto v0.0.0-20191011191535-87dc89f01550
